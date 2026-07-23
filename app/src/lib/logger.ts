@@ -1,4 +1,4 @@
-import pino from 'pino';
+import pino, { type Logger } from 'pino';
 import pinoPretty from 'pino-pretty';
 import { redactSecrets } from './redact';
 
@@ -60,6 +60,50 @@ export const logger = pino(
 );
 
 // Logger para contexto (request-scoped)
-export function childLogger(bindings: Record<string, unknown>) {
+export function childLogger(bindings: Record<string, unknown>): Logger {
   return logger.child(bindings);
+}
+
+/**
+ * Sprint 1 v0.2: helper para request-scoped logging.
+ *
+ * Extrae o genera un correlationId del request y crea un child logger
+ * con bindings para orgId/userId (si están disponibles).
+ *
+ * Ver `errors-ux.md §7` para el contrato de correlation IDs.
+ *
+ * Uso en API routes:
+ * ```ts
+ * const { correlationId, logger: reqLogger } = logRequest(req);
+ * reqLogger.info('dashboard.generate started');
+ * // ...
+ * return Response.json(result, {
+ *   headers: { 'x-correlation-id': correlationId },
+ * });
+ * ```
+ */
+export interface RequestLogContext {
+  correlationId: string;
+  logger: Logger;
+}
+
+export function logRequest(req: Request): RequestLogContext {
+  const correlationId = req.headers.get('x-correlation-id') ?? generateCorrelationId();
+  const url = new URL(req.url);
+  const bindings: Record<string, unknown> = {
+    correlationId,
+    method: req.method,
+    path: url.pathname,
+  };
+  return {
+    correlationId,
+    logger: logger.child(bindings),
+  };
+}
+
+/**
+ * Genera un correlation ID único con prefijo `req_`.
+ */
+export function generateCorrelationId(): string {
+  return `req_${crypto.randomUUID()}`;
 }

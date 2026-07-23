@@ -21,12 +21,23 @@ function isPublicPath(pathname: string): boolean {
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
+  // Correlation ID: propagate from header if present, otherwise generate.
+  // Set on both request (for downstream handlers) and response (for client + logs).
+  const correlationId =
+    req.headers.get('x-correlation-id') ?? `req_${crypto.randomUUID()}`;
+
   const requestHeaders = new Headers(req.headers);
-  requestHeaders.set('x-request-id', crypto.randomUUID());
-  requestHeaders.set('x-org-id', req.headers.get('x-org-id') ?? req.cookies.get('dashbi.activeOrgId')?.value ?? '');
+  requestHeaders.set('x-correlation-id', correlationId);
+  requestHeaders.set('x-request-id', correlationId);
+  requestHeaders.set(
+    'x-org-id',
+    req.headers.get('x-org-id') ?? req.cookies.get('dashbi.activeOrgId')?.value ?? '',
+  );
 
   if (isPublicPath(pathname)) {
-    return NextResponse.next({ request: { headers: requestHeaders } });
+    const response = NextResponse.next({ request: { headers: requestHeaders } });
+    response.headers.set('x-correlation-id', correlationId);
+    return response;
   }
 
   const session = req.cookies.get(SESSION_COOKIE)?.value;
@@ -34,10 +45,14 @@ export function middleware(req: NextRequest) {
     const url = req.nextUrl.clone();
     url.pathname = '/login';
     url.searchParams.set('redirect', pathname);
-    return NextResponse.redirect(url);
+    const redirectResponse = NextResponse.redirect(url);
+    redirectResponse.headers.set('x-correlation-id', correlationId);
+    return redirectResponse;
   }
 
-  return NextResponse.next({ request: { headers: requestHeaders } });
+  const response = NextResponse.next({ request: { headers: requestHeaders } });
+  response.headers.set('x-correlation-id', correlationId);
+  return response;
 }
 
 export const config = {
