@@ -1,0 +1,84 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* CSS variables (default theme: moderno-saas) */
+:root {
+  --color-primary: 239 84% 67%;        /* indigo-500 */
+  --color-secondary: 258 90% 66%;      /* violet-500 */
+  --color-success: 160 84% 39%;        /* emerald-500 */
+  --color-warning: 38 92% 50%;         /* amber-500 */
+  --color-danger: 0 84% 60%;           /* red-500 */
+  --color-muted: 220 9% 46%;           /* gray-500 */
+  --color-accent: 330 81% 60%;         /* pink-500 */
+  --color-background: 0 0% 100%;
+  --color-surface: 220 14% 96%;        /* gray-50 */
+  --color-border: 220 13% 91%;         /* gray-200 */
+  --color-text: 222 47% 11%;           /* gray-900 */
+  --color-text-muted: 220 9% 46%;      /* gray-500 */
+
+  --font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-family-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --font-heading-weight: 600;
+  --font-body-weight: 400;
+  --font-kpi-weight: 700;
+  --font-base-size: 14px;
+
+  --spacing-card-padding: 24px;
+  --spacing-card-gap: 16px;
+  --spacing-border-radius: 12px;
+
+  --shadow-card: 0 1px 3px 0 rgb(0 0 0 / 0.08), 0 1px 2px -1px rgb(0 0 0 / 0.06);
+}
+
+/* Corporate theme */
+[data-theme="corporate"] {
+  --color-primary: 224 76% 40%;       /* blue-800 */
+  --color-secondary: 215 19% 35%;     /* slate-600 */
+  --color-success: 142 71% 30%;       /* green-700 */
+  --color-warning: 32 81% 36%;        /* amber-700 */
+  --color-danger: 0 70% 42%;          /* red-700 */
+  --color-muted: 215 16% 47%;         /* slate-500 */
+  --color-accent: 192 91% 30%;        /* cyan-700 */
+  --color-background: 0 0% 100%;
+  --color-surface: 210 40% 98%;       /* slate-50 */
+  --color-border: 215 20% 75%;        /* slate-300 */
+  --color-text: 222 47% 11%;
+  --color-text-muted: 215 19% 35%;
+
+  --font-heading-weight: 700;
+  --spacing-card-padding: 16px;
+  --spacing-card-gap: 12px;
+  --spacing-border-radius: 4px;
+  --shadow-card: none;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  
+  body {
+    font-family: var(--font-family);
+    font-weight: var(--font-body-weight);
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    font-weight: var(--font-heading-weight);
+  }
+}
+
+@layer components {
+  .widget-wrapper {
+    background: hsl(var(--color-surface));
+    border: 1px solid hsl(var(--color-border));
+    border-radius: var(--spacing-border-radius);
+    padding: var(--spacing-card-padding);
+    box-shadow: var(--shadow-card);
+  }
+  
+  .widget-wrapper[data-editing="true"] {
+    border: 2px dashed hsl(var(--color-primary));
+    cursor: move;
+  }
+}

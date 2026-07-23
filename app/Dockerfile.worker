@@ -1,0 +1,42 @@
+# Dockerfile para PDF Worker (Puppeteer + Chrome)
+
+FROM node:22-bookworm-slim AS base
+
+# Install Chrome dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates fonts-liberation libasound2 libatk-bridge2.0-0 libatk1.0-0 \
+    libc6 libcairo2 libcups2 libdbus-1-3 libexpat1 libfontconfig1 libgbm1 \
+    libgcc-s1 libglib2.0-0 libgtk-3-0 libnspr4 libnss3 libpango-1.0-0 \
+    libpangocairo-1.0-0 libstdc++6 libx11-6 libx11-xcb1 libxcb1 libxcomposite1 \
+    libxcursor1 libxdamage1 libxext6 libxfixes3 libxi6 libxrandr2 libxrender1 \
+    libxss1 libxtst6 lsb-release wget xdg-utils chromium fonts-noto-color-emoji \
+    && rm -rf /var/lib/apt/lists/*
+
+# pnpm
+RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
+
+WORKDIR /app
+
+# Install deps (solo lo necesario para el worker)
+COPY package.json pnpm-lock.yaml .npmrc ./
+RUN pnpm install --frozen-lockfile --filter=puppeteer...
+
+# Copy worker source
+COPY worker/ ./worker/
+COPY src/lib/pdf ./src/lib/pdf 2>/dev/null || true
+COPY src/lib/logger ./src/lib/logger 2>/dev/null || true
+COPY src/lib/env ./src/lib/env 2>/dev/null || true
+COPY src/lib/queue ./src/lib/queue 2>/dev/null || true
+
+# Security: non-root
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 worker && \
+    chown -R worker:nodejs /app
+USER worker
+
+ENV NODE_ENV=production
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+
+EXPOSE 3001
+
+CMD ["node", "worker/index.js"]

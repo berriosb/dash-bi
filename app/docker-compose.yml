@@ -1,0 +1,142 @@
+# dash-bi Docker Compose (development + production-ready)
+
+services:
+  # ─────────────────────────────────────────────────────────────────
+  # PostgreSQL 16 con Row Level Security
+  # ─────────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: dash-bi-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-dashbi}
+      POSTGRES_USER: ${POSTGRES_USER:-dashbi}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}
+      # Read-only user para queries ejecutadas por IA (defense in depth)
+      POSTGRES_READONLY_USER: ${POSTGRES_READONLY_USER:-dashbi_readonly}
+      POSTGRES_READONLY_PASSWORD: ${POSTGRES_READONLY_PASSWORD:?POSTGRES_READONLY_PASSWORD required}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./scripts/postgres/init-readonly.sql:/docker-entrypoint-initdb.d/00-init-readonly.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dashbi}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─────────────────────────────────────────────────────────────────
+  # Redis (cache + queue para BullMQ)
+  # ─────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: dash-bi-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ─────────────────────────────────────────────────────────────────
+  # Next.js app (sin Puppeteer)
+  # ─────────────────────────────────────────────────────────────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: ${DOCKER_TARGET:-production}
+    container_name: dash-bi-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # Database
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      DATABASE_READONLY_URL: postgresql://${POSTGRES_READONLY_USER}:${POSTGRES_READONLY_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      
+      # Redis
+      REDIS_URL: redis://redis:6379
+      
+      # Auth
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET required}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3000}
+      
+      # Google OAuth (para Sheets connector)
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-http://localhost:3000/api/auth/google/callback}
+      
+      # Email
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-resend}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-dash-bi <noreply@dash-bi.com>}
+      
+      # Encryption (BYOK + secrets)
+      LLM_KEY_ENCRYPTION_KEY: ${LLM_KEY_ENCRYPTION_KEY:?LLM_KEY_ENCRYPTION_KEY required (32 bytes hex)}
+      
+      # PDF Worker (servicio interno)
+      PDF_WORKER_URL: http://pdf-worker:3001
+      PDF_WORKER_SECRET: ${PDF_WORKER_SECRET:?PDF_WORKER_SECRET required}
+      
+      # Sentry
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-development}
+      
+      # App
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+      NODE_ENV: ${NODE_ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ─────────────────────────────────────────────────────────────────
+  # PDF Worker (Puppeteer aislado)
+  # ─────────────────────────────────────────────────────────────────
+  pdf-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: dash-bi-pdf-worker
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      REDIS_URL: redis://redis:6379
+      PDF_WORKER_PORT: 3001
+      PDF_WORKER_SECRET: ${PDF_WORKER_SECRET:?PDF_WORKER_SECRET required}
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+      NODE_ENV: ${NODE_ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Chrome limits
+      PUPPETEER_TIMEOUT_MS: ${PUPPETEER_TIMEOUT_MS:-30000}
+      PUPPETEER_MAX_CONCURRENT: ${PUPPETEER_MAX_CONCURRENT:-3}
+    # NO expuesto públicamente (solo accesible desde app via red interna)
+    expose:
+      - "3001"
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+
+volumes:
+  pgdata:
+    name: dash-bi-pgdata
+  redisdata:
+    name: dash-bi-redisdata

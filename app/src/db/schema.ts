@@ -1,0 +1,301 @@
+import {
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+  boolean,
+  integer,
+  jsonb,
+  unique,
+  index,
+  pgEnum,
+} from 'drizzle-orm/pg-core';
+
+// ─────────────────────────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────────────────────────
+
+export const connectorTypeEnum = pgEnum('connector_type', [
+  'postgres',
+  'stripe',
+  'sheets',
+]);
+
+export const themeEnum = pgEnum('theme', ['moderno-saas', 'corporate']);
+
+export const planEnum = pgEnum('plan', ['free', 'pro', 'enterprise']);
+
+export const roleEnum = pgEnum('org_role', ['admin', 'editor', 'viewer']);
+
+export const llmProviderEnum = pgEnum('llm_provider', [
+  'openai',
+  'anthropic',
+  'gemini',
+]);
+
+// ─────────────────────────────────────────────────────────────────
+// Organizations (tenants)
+// ─────────────────────────────────────────────────────────────────
+
+export const orgs = pgTable(
+  'orgs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    name: text('name').notNull(),
+    slug: text('slug').notNull().unique(),
+
+    // LLM config (BYOK cifrado)
+    llmProvider: llmProviderEnum('llm_provider').notNull().default('openai'),
+    llmModel: text('llm_model').notNull().default('gpt-4o'),
+    llmApiKeyEncrypted: text('llm_api_key_encrypted'),
+    llmFallbackProvider: llmProviderEnum('llm_fallback_provider'),
+    llmFallbackModel: text('llm_fallback_model'),
+
+    // Theme & branding
+    defaultTheme: themeEnum('default_theme').notNull().default('moderno-saas'),
+    brandLogoUrl: text('brand_logo_url'),
+    brandPrimaryColor: text('brand_primary_color'),
+
+    // Plan & quotas
+    plan: planEnum('plan').notNull().default('free'),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    slugIdx: unique('orgs_slug_unique').on(t.slug),
+  }),
+);
+
+// ─────────────────────────────────────────────────────────────────
+// Users (globales, pueden pertenecer a múltiples orgs)
+// ─────────────────────────────────────────────────────────────────
+
+export const users = pgTable(
+  'users',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    email: text('email').notNull().unique(),
+    name: text('name'),
+    avatarUrl: text('avatar_url'),
+
+    emailVerified: boolean('email_verified').notNull().default(false),
+
+    activeOrgId: uuid('active_org_id'),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
+  },
+  (t) => ({
+    emailIdx: unique('users_email_unique').on(t.email),
+  }),
+);
+
+// ─────────────────────────────────────────────────────────────────
+// Sessions (better-auth)
+// ─────────────────────────────────────────────────────────────────
+
+export const sessions = pgTable('sessions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  token: text('token').notNull().unique(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  ipAddress: text('ip_address'),
+  userAgent: text('user_agent'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ─────────────────────────────────────────────────────────────────
+// Org Members (many-to-many)
+// ─────────────────────────────────────────────────────────────────
+
+export const orgMembers = pgTable(
+  'org_members',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    role: roleEnum('role').notNull(),
+
+    invitedBy: uuid('invited_by').references(() => users.id),
+    invitedAt: timestamp('invited_at', { withTimezone: true }).notNull().defaultNow(),
+    joinedAt: timestamp('joined_at', { withTimezone: true }),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uniqueMember: unique('org_members_unique').on(t.orgId, t.userId),
+    orgIdx: index('org_members_org_idx').on(t.orgId),
+    userIdx: index('org_members_user_idx').on(t.userId),
+  }),
+);
+
+// ─────────────────────────────────────────────────────────────────
+// Data Sources (tenant-scoped)
+// ─────────────────────────────────────────────────────────────────
+
+export const dataSources = pgTable(
+  'data_sources',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+
+    type: connectorTypeEnum('type').notNull(),
+    name: text('name').notNull(),
+
+    configEncrypted: text('config_encrypted').notNull(),
+
+    schemaCache: jsonb('schema_cache'),
+    schemaCachedAt: timestamp('schema_cached_at', { withTimezone: true }),
+
+    lastTestedAt: timestamp('last_tested_at', { withTimezone: true }),
+    lastTestOk: boolean('last_test_ok'),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    orgIdx: index('data_sources_org_idx').on(t.orgId),
+  }),
+);
+
+// ─────────────────────────────────────────────────────────────────
+// Dashboards (tenant-scoped)
+// ─────────────────────────────────────────────────────────────────
+
+export const dashboards = pgTable(
+  'dashboards',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+
+    title: text('title').notNull(),
+    description: text('description'),
+    theme: themeEnum('theme').notNull().default('moderno-saas'),
+
+    // Widgets (JSON validado por Zod antes de guardar)
+    widgets: jsonb('widgets').notNull().default([]),
+
+    // Schema version (para migraciones futuras del formato)
+    schemaVersion: integer('schema_version').notNull().default(1),
+
+    createdBy: uuid('created_by').notNull().references(() => users.id),
+    updatedBy: uuid('updated_by').references(() => users.id),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    orgIdx: index('dashboards_org_idx').on(t.orgId),
+  }),
+);
+
+// ─────────────────────────────────────────────────────────────────
+// Dashboard Versions (history for rollback)
+// ─────────────────────────────────────────────────────────────────
+
+export const dashboardVersions = pgTable(
+  'dashboard_versions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    dashboardId: uuid('dashboard_id').notNull().references(() => dashboards.id, { onDelete: 'cascade' }),
+    orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+
+    version: integer('version').notNull(),
+    widgets: jsonb('widgets').notNull(),
+    theme: themeEnum('theme').notNull(),
+
+    createdBy: uuid('created_by').notNull().references(() => users.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+
+    prompt: text('prompt'),
+    generatedBy: text('generated_by'),
+  },
+  (t) => ({
+    dashboardVersionUnique: unique('dashboard_versions_unique').on(t.dashboardId, t.version),
+    orgIdx: index('dashboard_versions_org_idx').on(t.orgId),
+  }),
+);
+
+// ─────────────────────────────────────────────────────────────────
+// Public Links (compartir dashboards sin auth)
+// ─────────────────────────────────────────────────────────────────
+
+export const publicLinks = pgTable(
+  'public_links',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+    dashboardId: uuid('dashboard_id').notNull().references(() => dashboards.id, { onDelete: 'cascade' }),
+
+    token: text('token').notNull().unique(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+
+    viewCount: integer('view_count').notNull().default(0),
+    lastViewedAt: timestamp('last_viewed_at', { withTimezone: true }),
+
+    createdBy: uuid('created_by').notNull().references(() => users.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    tokenIdx: unique('public_links_token_unique').on(t.token),
+    orgIdx: index('public_links_org_idx').on(t.orgId),
+  }),
+);
+
+// ─────────────────────────────────────────────────────────────────
+// LLM Usage (cost tracking)
+// ─────────────────────────────────────────────────────────────────
+
+export const llmUsage = pgTable(
+  'llm_usage',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id').references(() => users.id),
+
+    provider: llmProviderEnum('provider').notNull(),
+    model: text('model').notNull(),
+
+    promptTokens: integer('prompt_tokens').notNull(),
+    completionTokens: integer('completion_tokens').notNull(),
+    costUsd: text('cost_usd').notNull(), // numeric, stored as text to avoid precision issues
+
+    latencyMs: integer('latency_ms'),
+    success: boolean('success').notNull(),
+    error: text('error'),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    orgIdx: index('llm_usage_org_idx').on(t.orgId),
+    createdAtIdx: index('llm_usage_created_at_idx').on(t.createdAt),
+  }),
+);
+
+// ─────────────────────────────────────────────────────────────────
+// Audit Log
+// ─────────────────────────────────────────────────────────────────
+
+export const auditLog = pgTable(
+  'audit_log',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id'),
+
+    action: text('action').notNull(),
+    resource: text('resource'),
+    metadata: jsonb('metadata'),
+
+    ip: text('ip'),
+    userAgent: text('user_agent'),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    orgIdx: index('audit_log_org_idx').on(t.orgId),
+    createdAtIdx: index('audit_log_created_at_idx').on(t.createdAt),
+  }),
+);
