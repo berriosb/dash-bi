@@ -1,4 +1,6 @@
 import type { Connector, Query, QueryResult } from '@/lib/connectors/types';
+import { validateQuery } from '@/lib/security/validate-query';
+import type { OrgRole } from '@/lib/auth/permissions';
 
 export class QueryTimeoutError extends Error {
   constructor(public timeoutMs: number) {
@@ -30,17 +32,39 @@ export function recordSuccess(connectorId: string): void {
   circuitBreakers.delete(connectorId);
 }
 
+export interface ExecuteOptions {
+  timeoutMs?: number;
+  retries?: number;
+  /**
+   * Sprint 1: rol del user ejecutando. Se pasa a validateQuery para
+   * aplicar assertRolePermissions (PII masking para viewer).
+   */
+  role?: OrgRole;
+  /**
+   * Si true, valida la query con validateQuery() antes de ejecutar.
+   * Default: true. Pasar false solo en paths internos de confianza
+   * (ej: cuando la query ya fue validada por un caller superior).
+   */
+  validate?: boolean;
+}
+
 export async function executeWithTimeout(
   connector: Connector,
   connectorId: string,
   query: Query,
-  opts: { timeoutMs?: number; retries?: number } = {},
+  opts: ExecuteOptions = {},
 ): Promise<QueryResult> {
   const timeoutMs = opts.timeoutMs ?? 30000;
   const retries = opts.retries ?? 1;
+  const shouldValidate = opts.validate !== false;
 
   if (isCircuitOpen(connectorId)) {
-    throw new Error(`Circuit breaker is OPEN for connector ${connectorId}`);
+    throw new QueryCircuitOpenError(connectorId);
+  }
+
+  // Sprint 1: validar ANTES de ejecutar (T2 SQL injection defense)
+  if (shouldValidate) {
+    validateQuery(query, connector.type, opts.role);
   }
 
   const start = Date.now();
@@ -65,4 +89,11 @@ export async function executeWithTimeout(
   }
 
   throw new Error('Unreachable query execution state');
+}
+
+export class QueryCircuitOpenError extends Error {
+  constructor(public connectorId: string) {
+    super(`Circuit breaker is OPEN for connector ${connectorId}`);
+    this.name = 'QueryCircuitOpenError';
+  }
 }
