@@ -10,9 +10,15 @@ export type ArchetypeValidationError = {
     | 'forbidden_widget_type'
     | 'missing_required_slot'
     | 'multiple_widgets_in_single_slot'
-    | 'unknown_archetype';
+    | 'unknown_archetype'
+    | 'widgets_overlap'
+    | 'widget_out_of_bounds';
   slot?: string;
   widgetId?: string;
+  widgetA?: string;
+  widgetB?: string;
+  axis?: 'col' | 'colSpan' | 'row' | 'rowSpan';
+  value?: number;
   expected?: number;
   got?: number;
   type?: string;
@@ -106,11 +112,92 @@ export function validateArchetype(dashboard: Dashboard): ArchetypeValidationResu
     }
   }
 
+  // Overlap check (Sprint 1 v0.2): ningún widget puede ocupar la misma celda que otro
+  // Ver `dashboard-archetypes.md §8` para la justificación.
+  for (let i = 0; i < dashboard.widgets.length; i++) {
+    for (let j = i + 1; j < dashboard.widgets.length; j++) {
+      const a = dashboard.widgets[i];
+      const b = dashboard.widgets[j];
+      if (!a || !b) continue;
+      if (widgetsOverlap(a.position, b.position)) {
+        errors.push({
+          kind: 'widgets_overlap',
+          widgetA: a.id,
+          widgetB: b.id,
+          archetype: dashboard.archetype,
+          message: `Widgets "${a.id}" y "${b.id}" se solapan en el grid 12-col. Mover uno de ellos.`,
+        });
+      }
+    }
+  }
+
+  // Bounds check: widgets deben estar dentro del grid 12-col
+  for (const w of dashboard.widgets) {
+    if (w.position.col < 1 || w.position.col > 12) {
+      errors.push({
+        kind: 'widget_out_of_bounds',
+        widgetId: w.id,
+        axis: 'col',
+        value: w.position.col,
+        archetype: dashboard.archetype,
+        message: `Widget "${w.id}" tiene col=${w.position.col} fuera de rango [1, 12].`,
+      });
+    }
+    if (w.position.col + w.position.colSpan - 1 > 12) {
+      errors.push({
+        kind: 'widget_out_of_bounds',
+        widgetId: w.id,
+        axis: 'colSpan',
+        value: w.position.colSpan,
+        archetype: dashboard.archetype,
+        message: `Widget "${w.id}" excede el ancho del grid (col=${w.position.col} + colSpan=${w.position.colSpan} > 12).`,
+      });
+    }
+    if (w.position.row < 1) {
+      errors.push({
+        kind: 'widget_out_of_bounds',
+        widgetId: w.id,
+        axis: 'row',
+        value: w.position.row,
+        archetype: dashboard.archetype,
+        message: `Widget "${w.id}" tiene row=${w.position.row} fuera de rango (>=1).`,
+      });
+    }
+    if (w.position.rowSpan > 6) {
+      errors.push({
+        kind: 'widget_out_of_bounds',
+        widgetId: w.id,
+        axis: 'rowSpan',
+        value: w.position.rowSpan,
+        archetype: dashboard.archetype,
+        message: `Widget "${w.id}" tiene rowSpan=${w.position.rowSpan} > 6 (máximo permitido).`,
+      });
+    }
+  }
+
   return {
     valid: errors.length === 0,
     errors,
     warnings,
   };
+}
+
+/**
+ * Detecta si dos posiciones se solapan en el grid 12-col.
+ * Dos widgets se solapan si sus rangos [col, col+colSpan) × [row, row+rowSpan)
+ * tienen intersección no-vacía.
+ *
+ * Helper exportado para tests.
+ */
+export function widgetsOverlap(
+  a: { col: number; row: number; colSpan: number; rowSpan: number },
+  b: { col: number; row: number; colSpan: number; rowSpan: number },
+): boolean {
+  const aEndCol = a.col + a.colSpan;
+  const aEndRow = a.row + a.rowSpan;
+  const bEndCol = b.col + b.colSpan;
+  const bEndRow = b.row + b.rowSpan;
+  return !(aEndCol <= b.col || bEndCol <= a.col || aEndRow <= b.row || bEndRow <= a.row);
 }
 
 export const ArchetypeEnum = z.enum([
