@@ -12,7 +12,17 @@ const PUBLIC_PATHS = [
   '/api/public/',
 ];
 
-const SESSION_COOKIE = 'dashbi.session';
+// better-auth session cookie name (configurable via advanced.cookiePrefix).
+// Sprint 1: better-auth genera cookies con prefijo 'dashbi.session_token' o similar.
+// Ver https://better-auth.com/docs/concepts/session#cookie-cache para el nombre exacto.
+const SESSION_COOKIE_NAMES = ['dashbi.session_token', 'dashbi.session'];
+
+function hasSessionCookie(req: NextRequest): boolean {
+  for (const name of SESSION_COOKIE_NAMES) {
+    if (req.cookies.get(name)?.value) return true;
+  }
+  return false;
+}
 
 function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some((p) => pathname.startsWith(p));
@@ -40,8 +50,11 @@ export function middleware(req: NextRequest) {
     return response;
   }
 
-  const session = req.cookies.get(SESSION_COOKIE)?.value;
-  if (!session) {
+  // Sprint 1 v0.2: placeholder check basado en cookie name. En Sprint 2+
+  // cambiar a `await auth.api.getSession({ headers: req.headers })` cuando
+  // queramos validación criptográfica del session token. Por ahora, presence
+  // del cookie es suficiente (better-auth hace la validación real en /api/auth/*).
+  if (!hasSessionCookie(req)) {
     const url = req.nextUrl.clone();
     url.pathname = '/login';
     url.searchParams.set('redirect', pathname);
