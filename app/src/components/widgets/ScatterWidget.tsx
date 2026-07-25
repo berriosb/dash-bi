@@ -3,27 +3,25 @@
 import React from 'react';
 import { ResponsiveContainer, ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
 import type { ScatterWidget as ScatterWidgetType } from '@/lib/widgets/types';
+import { WidgetSurface } from './WidgetSurface';
 
 export function ScatterWidget({ widget }: { widget: ScatterWidgetType }) {
   const { config, data } = widget;
   const items = Array.isArray(data) ? data : [];
 
   return (
-    <div className="p-4 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col h-full">
-      {config.title && (
-        <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-3">{config.title}</h4>
-      )}
-      <div className="flex-1 min-h-[220px]">
+    <WidgetSurface widgetId={widget.id} title={config.title} isEmpty={items.length === 0}>
+      <div className="widget-content" role="img" aria-label={`Gráfico de dispersión${config.title ? `: ${config.title}` : ''}`}>
         <ResponsiveContainer width="100%" height="100%">
           <ScatterChart>
-            <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-            <XAxis dataKey="x" name={config.xLabel || 'X'} stroke="#6B7280" fontSize={12} />
-            <YAxis dataKey="y" name={config.yLabel || 'Y'} stroke="#6B7280" fontSize={12} />
+            {config.showGrid !== false && <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--color-border))" />}
+            <XAxis dataKey="x" name={config.xLabel || 'Eje X'} stroke="hsl(var(--color-text-muted))" fontSize={12} />
+            <YAxis dataKey="y" name={config.yLabel || 'Eje Y'} stroke="hsl(var(--color-text-muted))" fontSize={12} />
             <Tooltip cursor={{ strokeDasharray: '3 3' }} />
-            <Scatter name="Puntos" data={items} fill="#6366F1" />
+            <Scatter name="Puntos" data={items} fill="hsl(var(--color-primary))" />
           </ScatterChart>
         </ResponsiveContainer>
       </div>
-    </div>
+    </WidgetSurface>
   );
 }

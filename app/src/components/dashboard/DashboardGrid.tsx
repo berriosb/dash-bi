@@ -1,17 +1,35 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   DndContext,
   PointerSensor,
   KeyboardSensor,
   useSensor,
   useSensors,
-  DragEndEvent,
+  type DragEndEvent,
   useDraggable,
 } from '@dnd-kit/core';
-import type { Dashboard, Widget } from '@/lib/widgets/types';
+import type { Dashboard, Density, Widget } from '@/lib/widgets/types';
 import { WidgetRenderer } from '../widgets/WidgetRenderer';
+
+const DENSITY_CLASS: Record<Density, string> = {
+  spacious: 'dashboard-grid--spacious',
+  balanced: 'dashboard-grid--balanced',
+  dense: 'dashboard-grid--dense',
+};
+
+const ARCHETYPE_LABELS: Record<NonNullable<Dashboard['archetype']>, string> = {
+  'kpi-grid': 'Vista general',
+  'hero-focus': 'Métrica destacada',
+  'cohort-matrix': 'Análisis de cohortes',
+  'sales-pipeline': 'Pipeline comercial',
+  'executive-summary': 'Resumen ejecutivo',
+  'operations-live': 'Monitoreo operativo',
+  'finance-report': 'Reporte financiero',
+  'growth-metrics': 'Métricas de crecimiento',
+  custom: 'Composición personalizada',
+};
 
 export function DashboardGrid({
   dashboard,
@@ -26,61 +44,115 @@ export function DashboardGrid({
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor)
   );
-
   const [widgets, setWidgets] = useState<Widget[]>(dashboard.widgets || []);
+
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => {
+    setWidgets(dashboard.widgets || []);
+  }, [dashboard.widgets]);
+
+  const density = dashboard.archetypeVariant?.density ?? 'balanced';
+  const archetype = dashboard.archetype ?? 'custom';
+  const descriptionId = dashboard.description ? 'dashboard-description' : undefined;
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, delta } = event;
     const id = String(active.id);
-    const colWidth = 80;
+    const columnWidth = 80;
     const rowHeight = 60;
-
-    const colDelta = Math.round(delta.x / colWidth);
+    const columnDelta = Math.round(delta.x / columnWidth);
     const rowDelta = Math.round(delta.y / rowHeight);
 
-    const updated = widgets.map((w) => {
-      if (w.id !== id) return w;
-      const newCol = Math.max(1, Math.min(12 - w.position.colSpan + 1, w.position.col + colDelta));
-      const newRow = Math.max(1, w.position.row + rowDelta);
+    const updated = widgets.map((widget) => {
+      if (widget.id !== id) return widget;
+
       return {
-        ...w,
+        ...widget,
         position: {
-          ...w.position,
-          col: newCol,
-          row: newRow,
+          ...widget.position,
+          col: Math.max(
+            1,
+            Math.min(12 - widget.position.colSpan + 1, widget.position.col + columnDelta)
+          ),
+          row: Math.max(1, widget.position.row + rowDelta),
         },
       };
     });
 
     setWidgets(updated);
-    if (onLayoutChange) {
-      onLayoutChange(updated);
-    }
+    onLayoutChange?.(updated);
   };
 
   return (
-    <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
-      <div
-        className="grid grid-cols-12 gap-4 p-6 min-h-[500px]"
-        data-dashboard-ready="true"
-        data-archetype={dashboard.archetype || 'kpi-grid'}
-      >
-        {widgets.map((widget) => {
-          const colSpanClass = `col-span-12 md:col-span-${widget.position.colSpan || 12}`;
-          return (
-            <div
-              key={widget.id}
-              className={`${colSpanClass} transition-all duration-150`}
-              style={{ gridColumn: `span ${widget.position.colSpan || 12} / span ${widget.position.colSpan || 12}` }}
-            >
-              <DraggableWidget id={widget.id} isEditing={isEditing}>
-                <WidgetRenderer widget={widget} />
-              </DraggableWidget>
+    <section
+      className="dashboard-surface"
+      data-theme={dashboard.theme}
+      data-density={density}
+      aria-labelledby="dashboard-title"
+      aria-describedby={descriptionId}
+    >
+      <header className="dashboard-header">
+        <div className="dashboard-heading">
+          <p className="dashboard-eyebrow">Panel de decisión</p>
+          <h2 id="dashboard-title" className="dashboard-title">
+            {dashboard.title}
+          </h2>
+          {dashboard.description && (
+            <p id={descriptionId} className="dashboard-description">
+              {dashboard.description}
+            </p>
+          )}
+        </div>
+        <dl className="dashboard-context" aria-label="Contexto del dashboard">
+          <div>
+            <dt>Vista</dt>
+            <dd>{ARCHETYPE_LABELS[archetype]}</dd>
+          </div>
+          <div>
+            <dt>Densidad</dt>
+            <dd>{density === 'spacious' ? 'Espaciosa' : density === 'dense' ? 'Compacta' : 'Equilibrada'}</dd>
+          </div>
+          {isEditing && (
+            <div className="dashboard-edit-status" role="status">
+              <dt>Estado</dt>
+              <dd>Edición activa</dd>
             </div>
-          );
-        })}
-      </div>
-    </DndContext>
+          )}
+        </dl>
+      </header>
+
+      {widgets.length === 0 ? (
+        <div className="dashboard-empty" role="status">
+          <strong>Este dashboard aún no tiene widgets.</strong>
+          <p>Agrega una visualización o genera una nueva propuesta para comenzar.</p>
+        </div>
+      ) : (
+        <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+          <div
+            className={`dashboard-grid ${DENSITY_CLASS[density]}`}
+            data-dashboard-ready="true"
+            data-archetype={archetype}
+          >
+            {widgets.map((widget) => (
+              <div
+                key={widget.id}
+                className="dashboard-grid-item"
+                style={{
+                  '--widget-column-start': widget.position.col,
+                  '--widget-column-span': widget.position.colSpan || 12,
+                  '--widget-row-start': widget.position.row,
+                  '--widget-row-span': widget.position.rowSpan,
+                } as React.CSSProperties}
+              >
+                <DraggableWidget id={widget.id} isEditing={isEditing}>
+                  <WidgetRenderer widget={widget} />
+                </DraggableWidget>
+              </div>
+            ))}
+          </div>
+        </DndContext>
+      )}
+    </section>
   );
 }
 
@@ -104,15 +176,19 @@ function DraggableWidget({
     <div
       ref={setNodeRef}
       style={style}
-      className={`relative h-full group ${isDragging ? 'z-50 opacity-75' : ''}`}
+      className="dashboard-editable-widget"
+      data-dragging={isDragging ? 'true' : 'false'}
     >
-      <div
+      <button
+        type="button"
         {...listeners}
         {...attributes}
-        className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 cursor-move bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-2 py-1 rounded text-xs shadow"
+        className="dashboard-drag-handle"
+        aria-label="Mover widget"
       >
-        ⠿ Drag
-      </div>
+        <span aria-hidden="true">⠿</span>
+        <span>Mover</span>
+      </button>
       {children}
     </div>
   );

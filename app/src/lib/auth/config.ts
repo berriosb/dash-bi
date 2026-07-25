@@ -3,8 +3,72 @@ import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { magicLink } from 'better-auth/plugins';
 import { db } from '@/db/client';
 import * as schema from '@/db/schema';
+import { orgs, orgMembers } from '@/db/schema';
+import { eq } from 'drizzle-orm';
 import { sendEmail } from '@/lib/email';
 import { MagicLinkEmail } from './messages';
+import { logger } from '@/lib/logger';
+import { audit } from '@/lib/audit/log';
+
+function slugify(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 64) || 'org';
+}
+
+async function uniqueSlug(base: string): Promise<string> {
+  let candidate = base;
+  let suffix = 0;
+  while (suffix < 50) {
+    const existing = await db.select({ id: orgs.id }).from(orgs).where(eq(orgs.slug, candidate)).limit(1);
+    if (existing.length === 0) return candidate;
+    suffix += 1;
+    candidate = `${base}-${suffix}`;
+  }
+  return `${base}-${Date.now()}`;
+}
+
+async function provisionOrgForUser(userId: string, email: string, displayName?: string | null): Promise<string> {
+  const seedName = displayName?.trim() || email.split('@')[0] || 'Mi organización';
+  const baseSlug = slugify(seedName);
+  const slug = await uniqueSlug(baseSlug);
+
+  const [org] = await db
+    .insert(orgs)
+    .values({
+      name: seedName,
+      slug,
+      plan: 'free',
+      defaultTheme: 'moderno-saas',
+      llmProvider: 'openai',
+      llmModel: 'gpt-4o',
+    })
+    .returning({ id: orgs.id });
+
+  if (!org) {
+    throw new Error('Failed to provision organization during signup');
+  }
+
+  await db.insert(orgMembers).values({
+    orgId: org.id,
+    userId,
+    role: 'admin',
+    joinedAt: new Date(),
+  });
+
+  await db
+    .update(schema.users)
+    .set({ activeOrgId: org.id })
+    .where(eq(schema.users.id, userId));
+
+  await audit(org.id, userId, 'org.created', `org:${org.id}`, { metadata: { source: 'signup' } });
+
+  return org.id;
+}
 
 /**
  * better-auth setup.
@@ -28,7 +92,8 @@ export const auth = betterAuth({
     schema: {
       user: schema.users,
       session: schema.sessions,
-      // account + verification usan tablas de better-auth, no necesitamos custom
+      account: schema.accounts,
+      verification: schema.verifications,
     },
   }),
 
@@ -56,6 +121,25 @@ export const auth = betterAuth({
         // Logged pero no propagado (T4)
         console.error('sendResetPassword failed:', error);
       }
+    },
+  },
+
+  databaseHooks: {
+    user: {
+      create: {
+        before: async (user) => {
+          return { data: user };
+        },
+        after: async (user) => {
+          try {
+            await provisionOrgForUser(user.id, user.email, user.name);
+            logger.info({ userId: user.id }, 'organization provisioned for new user');
+          } catch (error) {
+            logger.error({ err: error, userId: user.id }, 'failed to provision organization for new user');
+            throw error;
+          }
+        },
+      },
     },
   },
 

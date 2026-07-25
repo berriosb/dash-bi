@@ -5,11 +5,8 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   
-  // Experimental features
+  typedRoutes: true,
   experimental: {
-    // Enable typed routes (Next.js 16)
-    typedRoutes: true,
-    
     // Optimize package imports
     optimizePackageImports: ['lucide-react', '@tremor/react', 'recharts'],
   },

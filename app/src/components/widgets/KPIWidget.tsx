@@ -2,38 +2,48 @@
 
 import React from 'react';
 import type { KPIWidget as KPIWidgetType } from '@/lib/widgets/types';
+import { WidgetSurface } from './WidgetSurface';
 
 export function KPIWidget({ widget }: { widget: KPIWidgetType }) {
   const { config, data } = widget;
-  const value = data?.value ?? 0;
+  const hasValue = typeof data?.value === 'number' && Number.isFinite(data.value);
+  const value = hasValue ? data.value : 0;
   const delta = data?.delta;
 
   const formattedValue = React.useMemo(() => {
     if (config.format === 'currency') {
-      return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
+      return new Intl.NumberFormat('es-CL', {
+        style: 'currency',
+        currency: 'CLP',
+        maximumFractionDigits: 0,
+      }).format(value);
     }
     if (config.format === 'percent') {
-      return `${value.toFixed(1)}%`;
+      return new Intl.NumberFormat('es-CL', {
+        style: 'percent',
+        maximumFractionDigits: 1,
+      }).format(value / 100);
     }
-    return new Intl.NumberFormat('en-US').format(value);
+    return new Intl.NumberFormat('es-CL').format(value);
   }, [value, config.format]);
 
   return (
-    <div className="p-4 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between h-full">
-      <div>
-        {config.title && (
-          <h4 className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">{config.title}</h4>
-        )}
-        <div className="text-3xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">
-          {formattedValue}
-        </div>
-      </div>
-      {config.showDelta !== false && delta !== undefined && (
-        <div className={`mt-2 text-xs font-medium flex items-center gap-1 ${delta >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
-          <span>{delta >= 0 ? '↑' : '↓'}</span>
-          <span>{Math.abs(delta).toFixed(1)}% vs periodo anterior</span>
+    <WidgetSurface
+      widgetId={widget.id}
+      title={config.title}
+      isEmpty={!hasValue}
+      emptyMessage="La consulta no devolvió un valor para esta métrica."
+    >
+      <div className="widget-kpi-value">{formattedValue}</div>
+      {config.showDelta !== false && typeof delta === 'number' && Number.isFinite(delta) && (
+        <div
+          className="widget-kpi-delta"
+          data-direction={delta >= 0 ? 'positive' : 'negative'}
+        >
+          <span aria-hidden="true">{delta >= 0 ? '↑' : '↓'}</span>
+          <span>{Math.abs(delta).toFixed(1)}% vs período anterior</span>
         </div>
       )}
-    </div>
+    </WidgetSurface>
   );
 }

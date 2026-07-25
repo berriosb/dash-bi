@@ -30,8 +30,9 @@ export function WidgetRenderer({ widget }: { widget: Widget }) {
       return <TableWidget widget={widget} />;
     default:
       return (
-        <div className="p-4 bg-red-50 text-red-700 rounded-xl text-xs">
-          Tipo de widget no soportado: {(widget as any).type}
+        <div className="widget-unsupported" role="alert">
+          <strong>Este widget no está disponible</strong>
+          <p>Tipo recibido: {String((widget as { type: string }).type)}</p>
         </div>
       );
   }

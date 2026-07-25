@@ -9,7 +9,7 @@ export type EmailMessage = {
   metadata?: Record<string, unknown>;
 };
 
-export type EmailProviderType = 'resend' | 'postmark' | 'ses' | 'nodemailer';
+export type EmailProviderType = 'resend' | 'postmark' | 'ses' | 'nodemailer' | 'mock';
 
 export type EmailResult = {
   id: string;

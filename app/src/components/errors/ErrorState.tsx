@@ -1,6 +1,6 @@
 'use client';
 
-import type { AppError, WidgetErrorState } from '@/lib/errors/types';
+import type { AppError, WidgetErrorState as WidgetErrorStateType } from '@/lib/errors/types';
 
 interface ErrorStateProps {
   error: AppError;
@@ -82,7 +82,7 @@ export function ErrorState({ error, onRetry, onDismiss }: ErrorStateProps) {
 export function WidgetErrorState({
   error,
 }: {
-  error: WidgetErrorState;
+  error: WidgetErrorStateType;
 }) {
   return (
     <div className="widget-error" role="alert">

@@ -1,5 +1,6 @@
 import { Resend } from 'resend';
-import type { EmailProvider, EmailMessage, EmailResult } from './types';
+import type { EmailProvider, EmailMessage, EmailResult, EmailProviderType } from './types';
+import { MockEmailProvider } from './mock';
 
 export class ResendProvider implements EmailProvider {
   type = 'resend' as const;
@@ -35,8 +36,14 @@ let providerInstance: EmailProvider | null = null;
 export function getEmailProvider(): EmailProvider {
   if (providerInstance) return providerInstance;
 
-  const apiKey = process.env.RESEND_API_KEY || 're_mock_key';
-  providerInstance = new ResendProvider(apiKey);
+  const providerType = (process.env.EMAIL_PROVIDER as EmailProviderType) || 'resend';
+  const apiKey = process.env.RESEND_API_KEY;
+
+  if (providerType === 'resend' && apiKey && apiKey !== 're_mock_key') {
+    providerInstance = new ResendProvider(apiKey);
+  } else {
+    providerInstance = new MockEmailProvider();
+  }
   return providerInstance;
 }
 
@@ -44,3 +51,10 @@ export async function sendEmail(message: EmailMessage): Promise<EmailResult> {
   const provider = getEmailProvider();
   return provider.send(message);
 }
+
+/** Reset singleton — used by tests to swap providers between cases. */
+export function _resetEmailProvider(): void {
+  providerInstance = null;
+}
+
+export { MockEmailProvider };

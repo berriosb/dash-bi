@@ -42,7 +42,7 @@ export const orgs = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     name: text('name').notNull(),
-    slug: text('slug').notNull().unique(),
+    slug: text('slug').notNull(),
 
     // LLM config (BYOK cifrado)
     llmProvider: llmProviderEnum('llm_provider').notNull().default('openai'),
@@ -63,7 +63,7 @@ export const orgs = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
-    slugIdx: unique('orgs_slug_unique').on(t.slug),
+    slugIdx: unique('orgs_slug_idx').on(t.slug),
   }),
 );
 
@@ -75,7 +75,7 @@ export const users = pgTable(
   'users',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    email: text('email').notNull().unique(),
+    email: text('email').notNull(),
     name: text('name'),
     avatarUrl: text('avatar_url'),
 
@@ -87,7 +87,7 @@ export const users = pgTable(
     lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
   },
   (t) => ({
-    emailIdx: unique('users_email_unique').on(t.email),
+    emailIdx: unique('users_email_idx').on(t.email),
   }),
 );
 
@@ -103,7 +103,56 @@ export const sessions = pgTable('sessions', {
   ipAddress: text('ip_address'),
   userAgent: text('user_agent'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+// ─────────────────────────────────────────────────────────────────
+// Accounts (better-auth OAuth + credential linking)
+// ─────────────────────────────────────────────────────────────────
+
+export const accounts = pgTable(
+  'accounts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    accountId: text('account_id').notNull(),
+    providerId: text('provider_id').notNull(),
+    userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+
+    accessToken: text('access_token'),
+    refreshToken: text('refresh_token'),
+    idToken: text('id_token'),
+    accessTokenExpiresAt: timestamp('access_token_expires_at', { withTimezone: true }),
+    refreshTokenExpiresAt: timestamp('refresh_token_expires_at', { withTimezone: true }),
+    scope: text('scope'),
+    password: text('password'),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    providerAccountIdx: index('accounts_provider_account_idx').on(t.providerId, t.accountId),
+    userIdx: index('accounts_user_idx').on(t.userId),
+  }),
+);
+
+// ─────────────────────────────────────────────────────────────────
+// Verifications (better-auth magic link + email verification tokens)
+// ─────────────────────────────────────────────────────────────────
+
+export const verifications = pgTable(
+  'verifications',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    identifier: text('identifier').notNull(),
+    value: text('value').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    identifierIdx: index('verifications_identifier_idx').on(t.identifier),
+  }),
+);
 
 // ─────────────────────────────────────────────────────────────────
 // Org Members (many-to-many)
@@ -228,7 +277,7 @@ export const publicLinks = pgTable(
     orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
     dashboardId: uuid('dashboard_id').notNull().references(() => dashboards.id, { onDelete: 'cascade' }),
 
-    token: text('token').notNull().unique(),
+    token: text('token').notNull(),
     expiresAt: timestamp('expires_at', { withTimezone: true }),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
 
@@ -239,7 +288,7 @@ export const publicLinks = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
-    tokenIdx: unique('public_links_token_unique').on(t.token),
+    tokenIdx: unique('public_links_token_idx').on(t.token),
     orgIdx: index('public_links_org_idx').on(t.orgId),
   }),
 );

@@ -14,8 +14,10 @@ export async function enableRLS(): Promise<void> {
     'llm_usage',
     'audit_log',
     'org_members',
-    'sessions',
   ];
+  // NOTE: 'users', 'accounts', 'verifications' are GLOBAL (not tenant-scoped).
+  // Better-auth manages them; RLS not enabled because access is gated by better-auth session + JWT.
+  // 'sessions' is also managed by better-auth; org_members provides tenant binding.
 
   await withSystemContext(async () => {
     for (const table of tables) {

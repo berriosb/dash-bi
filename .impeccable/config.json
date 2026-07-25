@@ -1,0 +1,16 @@
+{
+  "hook": {
+    "enabled": false
+  },
+  "detector": {
+    "designSystem": {
+      "enabled": true
+    },
+    "ignoreRules": [],
+    "ignoreFiles": [
+      "**/node_modules/**",
+      "**/.next/**"
+    ],
+    "ignoreValues": {}
+  }
+}
