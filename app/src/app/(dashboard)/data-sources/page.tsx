@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Database, Plus, CheckCircle2, AlertCircle, RefreshCw, Key, FileSpreadsheet, Server, ExternalLink } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 
 interface DataSourceItem {
   id: string;
@@ -45,10 +46,12 @@ const initialDataSources: DataSourceItem[] = [
 ];
 
 export default function DataSourcesPage() {
+  const { toast } = useToast();
   const [dataSources, setDataSources] = useState<DataSourceItem[]>(initialDataSources);
   const [testingId, setTestingId] = useState<string | null>(null);
   const [showConnectModal, setShowConnectModal] = useState(false);
   const [selectedType, setSelectedType] = useState<'postgres' | 'stripe' | 'sheets'>('postgres');
+  const [submitting, setSubmitting] = useState(false);
 
   // Form State
   const [name, setName] = useState('');
@@ -57,37 +60,117 @@ export default function DataSourcesPage() {
   const [user, setUser] = useState('');
   const [password, setPassword] = useState('');
   const [stripeKey, setStripeKey] = useState('');
+  const [spreadsheetId, setSpreadsheetId] = useState('');
 
   const handleTestConnection = async (id: string) => {
     setTestingId(id);
     try {
-      await fetch(`/api/data-sources/${id}/test`, { method: 'POST' });
-      setDataSources((prev) =>
-        prev.map((ds) => (ds.id === id ? { ...ds, lastTestedAt: 'Justo ahora', status: 'ok' } : ds)),
-      );
-    } catch {
-      // Mock ok
-      setDataSources((prev) =>
-        prev.map((ds) => (ds.id === id ? { ...ds, lastTestedAt: 'Justo ahora', status: 'ok' } : ds)),
-      );
+      const res = await fetch(`/api/data-sources/${id}/test`, {
+        method: 'POST',
+        headers: { 'x-org-id': 'demo', 'x-user-id': 'demo' },
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.ok) {
+        setDataSources((prev) =>
+          prev.map((ds) => (ds.id === id ? { ...ds, lastTestedAt: 'Justo ahora', status: 'ok' } : ds)),
+        );
+        toast({ title: 'Conexión exitosa', description: `${id} responde correctamente.` });
+      } else {
+        setDataSources((prev) =>
+          prev.map((ds) => (ds.id === id ? { ...ds, lastTestedAt: 'Justo ahora', status: 'error' } : ds)),
+        );
+        toast({
+          variant: 'destructive',
+          title: 'No pudimos conectar',
+          description: data?.error || 'Verificá las credenciales y volvé a intentar.',
+        });
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Error de red';
+      toast({ variant: 'destructive', title: 'Error al probar conexión', description: message });
     } finally {
       setTestingId(null);
     }
   };
 
-  const handleCreateSource = (e: React.FormEvent) => {
-    e.preventDefault();
-    const newDs: DataSourceItem = {
-      id: `ds_${Date.now()}`,
-      name: name || `Nueva Fuente ${selectedType.toUpperCase()}`,
-      type: selectedType,
-      lastTestedAt: 'Recién añadida',
-      status: 'ok',
-      details: selectedType === 'postgres' ? `${host || 'localhost'}:5432 / ${database || 'main'}` : 'Configurada correctamente',
-    };
-    setDataSources([...dataSources, newDs]);
-    setShowConnectModal(false);
+  const resetForm = () => {
     setName('');
+    setHost('');
+    setDatabase('');
+    setUser('');
+    setPassword('');
+    setStripeKey('');
+    setSpreadsheetId('');
+  };
+
+  const handleCreateSource = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitting(true);
+
+    try {
+      const config: Record<string, unknown> = {};
+      if (selectedType === 'postgres') {
+        config.host = host;
+        config.port = 5432;
+        config.database = database;
+        config.username = user;
+        config.password = password;
+      } else if (selectedType === 'stripe') {
+        config.apiKey = stripeKey;
+      } else if (selectedType === 'sheets') {
+        config.spreadsheetId = spreadsheetId;
+        config.refreshTokenEncrypted = '';
+        config.sheetNames = [];
+      }
+
+      const res = await fetch('/api/data-sources', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-org-id': 'demo',
+          'x-user-id': 'demo',
+        },
+        body: JSON.stringify({ name: name || `Nueva Fuente ${selectedType.toUpperCase()}`, type: selectedType, config }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        toast({
+          variant: 'destructive',
+          title: 'No pudimos guardar la fuente',
+          description: data?.error || 'Verificá los datos ingresados.',
+        });
+        return;
+      }
+
+      const newDs: DataSourceItem = {
+        id: data.dataSource?.id ?? `ds_${Date.now()}`,
+        name: name || `Nueva Fuente ${selectedType.toUpperCase()}`,
+        type: selectedType,
+        lastTestedAt: 'Recién añadida',
+        status: 'ok',
+        details:
+          selectedType === 'postgres'
+            ? `${host || 'localhost'}:5432 / ${database || 'main'}`
+            : selectedType === 'stripe'
+              ? `sk_live_••••••••${(stripeKey || '').slice(-4)}`
+              : `Spreadsheet: ${spreadsheetId || 'oauth'}`,
+      };
+
+      setDataSources((prev) => [newDs, ...prev]);
+      setShowConnectModal(false);
+      resetForm();
+      toast({
+        title: 'Fuente conectada',
+        description: 'Probá la conexión para confirmar que todo funciona.',
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Error de red';
+      toast({ variant: 'destructive', title: 'Error al guardar', description: message });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -246,17 +329,31 @@ export default function DataSourcesPage() {
                 )}
 
                 {selectedType === 'sheets' && (
-                  <p className="text-xs text-slate-400 bg-slate-950 p-3 rounded-lg border border-slate-800">
-                    Al guardar, serás redirigido al flujo OAuth oficial de Google para otorgar acceso de lectura a tus planillas de cálculo.
-                  </p>
+                  <>
+                    <div className="space-y-1">
+                      <Label className="text-xs text-slate-300">Spreadsheet ID</Label>
+                      <Input
+                        placeholder="1BxiMVs0XRAb4NcF4..."
+                        value={spreadsheetId}
+                        onChange={(e) => setSpreadsheetId(e.target.value)}
+                        className="bg-slate-950 border-slate-800 text-xs font-mono"
+                      />
+                      <p className="text-[10px] text-slate-500 leading-relaxed">
+                        Lo encontrás en la URL de Google Sheets entre <code>/d/</code> y <code>/edit</code>.
+                      </p>
+                    </div>
+                    <p className="text-xs text-slate-400 bg-slate-950 p-3 rounded-lg border border-slate-800">
+                      Al guardar, serás redirigido al flujo OAuth oficial de Google para otorgar acceso de lectura a tus planillas de cálculo.
+                    </p>
+                  </>
                 )}
 
                 <div className="flex justify-end gap-2 pt-2">
                   <Button type="button" variant="ghost" size="sm" onClick={() => setShowConnectModal(false)} className="text-xs text-slate-400">
                     Cancelar
                   </Button>
-                  <Button type="submit" size="sm" className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium">
-                    Guardar Conexión
+                  <Button type="submit" size="sm" disabled={submitting} className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium">
+                    {submitting ? 'Guardando…' : 'Guardar Conexión'}
                   </Button>
                 </div>
               </form>

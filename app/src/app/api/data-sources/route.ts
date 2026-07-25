@@ -1,12 +1,39 @@
 import { NextResponse } from 'next/server';
 import { eq } from 'drizzle-orm';
+import { z } from 'zod';
 import { db, withOrgContext } from '@/db/client';
-import { dataSources } from '@/db/schema';
+import { dataSources, auditLog } from '@/db/schema';
 import { requirePermission } from '@/lib/auth/context';
 import { encryptApiKey } from '@/lib/security/encryption';
-import type { ConnectorType } from '@/lib/connectors/types';
+import { validatePostgresHost } from '@/lib/security/validate-connection';
+import { audit } from '@/lib/audit/log';
 
 export const dynamic = 'force-dynamic';
+
+const PostgresConfigSchema = z.object({
+  host: z.string().min(1).max(253),
+  port: z.number().int().positive().max(65535).default(5432),
+  database: z.string().min(1).max(63),
+  username: z.string().min(1).max(63),
+  password: z.string().min(1).max(256),
+  ssl: z.boolean().optional(),
+});
+
+const StripeConfigSchema = z.object({
+  apiKey: z.string().regex(/^sk_(live|test)_[a-zA-Z0-9]{20,}$/, 'Formato de Stripe API key inválido'),
+});
+
+const SheetsConfigSchema = z.object({
+  spreadsheetId: z.string().min(10).max(128),
+  refreshTokenEncrypted: z.string().optional(),
+  sheetNames: z.array(z.string()).optional(),
+});
+
+const CreateDataSourceSchema = z.object({
+  name: z.string().min(1).max(200),
+  type: z.enum(['postgres', 'stripe', 'sheets']),
+  config: z.unknown(),
+});
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -37,8 +64,10 @@ export async function GET(req: Request) {
     });
 
     return NextResponse.json({ dataSources: sources });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: error.name === 'ForbiddenError' ? 403 : 500 });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Internal error';
+    const status = error instanceof Error && error.name === 'ForbiddenError' ? 403 : 500;
+    return NextResponse.json({ error: message }, { status });
   }
 }
 
@@ -53,20 +82,69 @@ export async function POST(req: Request) {
 
   try {
     await requirePermission(userId, orgId, 'datasource.create');
-    const body = await req.json();
-    const { name, type, config } = body;
 
-    if (!name || !type || !config) {
-      return NextResponse.json({ error: 'name, type, and config are required' }, { status: 400 });
+    const rawBody = await req.json();
+    const parsed = CreateDataSourceSchema.safeParse(rawBody);
+    if (!parsed.success) {
+      const fieldErrors: Record<string, string> = {};
+      for (const issue of parsed.error.issues) {
+        const path = issue.path.join('.') || 'root';
+        if (!fieldErrors[path]) fieldErrors[path] = issue.message;
+      }
+      return NextResponse.json(
+        { error: 'validation.invalid_format', message: 'Revisá los campos marcados.', fieldErrors },
+        { status: 400 },
+      );
     }
 
-    const configEncrypted = encryptApiKey(JSON.stringify(config));
-    const dsType = (type === 'shopify' ? 'postgres' : type) as 'postgres' | 'stripe' | 'sheets';
+    const { name, type, config } = parsed.data;
+
+    let validatedConfig: Record<string, unknown>;
+    if (type === 'postgres') {
+      const result = PostgresConfigSchema.safeParse(config);
+      if (!result.success) {
+        return NextResponse.json(
+          { error: 'validation.invalid_format', fieldErrors: flattenZod(result.error) },
+          { status: 400 },
+        );
+      }
+      try {
+        validatePostgresHost(result.data.host);
+      } catch (ssrfErr) {
+        return NextResponse.json(
+          { error: 'connector.ssrf_blocked', message: ssrfErr instanceof Error ? ssrfErr.message : 'Host bloqueado' },
+          { status: 400 },
+        );
+      }
+      validatedConfig = result.data as Record<string, unknown>;
+    } else if (type === 'stripe') {
+      const result = StripeConfigSchema.safeParse(config);
+      if (!result.success) {
+        return NextResponse.json(
+          { error: 'validation.invalid_format', fieldErrors: flattenZod(result.error) },
+          { status: 400 },
+        );
+      }
+      validatedConfig = result.data as Record<string, unknown>;
+    } else if (type === 'sheets') {
+      const result = SheetsConfigSchema.safeParse(config);
+      if (!result.success) {
+        return NextResponse.json(
+          { error: 'validation.invalid_format', fieldErrors: flattenZod(result.error) },
+          { status: 400 },
+        );
+      }
+      validatedConfig = result.data as Record<string, unknown>;
+    } else {
+      return NextResponse.json({ error: 'connector.unsupported_format' }, { status: 400 });
+    }
+
+    const configEncrypted = encryptApiKey(JSON.stringify(validatedConfig));
 
     const [created] = await withOrgContext(orgId, userId, async () => {
       return db.insert(dataSources).values({
         orgId,
-        type: dsType,
+        type,
         name,
         configEncrypted,
       }).returning({
@@ -77,8 +155,27 @@ export async function POST(req: Request) {
       });
     });
 
+    if (!created) {
+      return NextResponse.json({ error: 'Failed to create data source' }, { status: 500 });
+    }
+
+    await audit(orgId, userId, 'datasource.created', `datasource:${created.id}`, {
+      metadata: { name, type },
+    });
+
     return NextResponse.json({ dataSource: created }, { status: 201 });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: error.name === 'ForbiddenError' ? 403 : 500 });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Internal error';
+    const status = error instanceof Error && error.name === 'ForbiddenError' ? 403 : 500;
+    return NextResponse.json({ error: message }, { status });
   }
+}
+
+function flattenZod(err: z.ZodError): Record<string, string> {
+  const fieldErrors: Record<string, string> = {};
+  for (const issue of err.issues) {
+    const path = issue.path.join('.') || 'root';
+    if (!fieldErrors[path]) fieldErrors[path] = issue.message;
+  }
+  return fieldErrors;
 }

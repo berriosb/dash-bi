@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* CSS variables (default theme: moderno-saas) */
+/* CSS variables (default theme: moderno-saas, light mode) */
 :root {
   --color-primary: 239 84% 67%;        /* indigo-500 */
   --color-secondary: 258 90% 66%;      /* violet-500 */
@@ -31,7 +31,43 @@
   --shadow-card: 0 1px 3px 0 rgb(0 0 0 / 0.08), 0 1px 2px -1px rgb(0 0 0 / 0.06);
 }
 
-/* Corporate theme */
+/* Dark mode override: opt-in via [data-mode="dark"] o media query */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-mode="light"]) {
+    --color-primary: 234 89% 74%;        /* indigo-400 — más claro para contraste */
+    --color-secondary: 258 90% 76%;      /* violet-400 */
+    --color-success: 160 84% 55%;        /* emerald-400 */
+    --color-warning: 38 92% 60%;         /* amber-400 */
+    --color-danger: 0 84% 70%;           /* red-400 */
+    --color-muted: 220 9% 64%;           /* gray-400 */
+    --color-accent: 330 81% 70%;         /* pink-400 */
+    --color-background: 222 47% 7%;      /* slate-950 */
+    --color-surface: 222 40% 12%;        /* slate-900 */
+    --color-border: 215 25% 22%;         /* slate-800 */
+    --color-text: 210 20% 98%;           /* slate-50 — AAA sobre bg */
+    --color-text-muted: 215 16% 75%;     /* slate-300 — AA sobre bg */
+    --shadow-card: 0 1px 3px 0 rgb(0 0 0 / 0.4), 0 1px 2px -1px rgb(0 0 0 / 0.3);
+  }
+}
+
+/* Override via JS — fuerza dark o light ignorando media query */
+[data-mode="dark"] {
+  --color-primary: 234 89% 74%;
+  --color-secondary: 258 90% 76%;
+  --color-success: 160 84% 55%;
+  --color-warning: 38 92% 60%;
+  --color-danger: 0 84% 70%;
+  --color-muted: 220 9% 64%;
+  --color-accent: 330 81% 70%;
+  --color-background: 222 47% 7%;
+  --color-surface: 222 40% 12%;
+  --color-border: 215 25% 22%;
+  --color-text: 210 20% 98%;
+  --color-text-muted: 215 16% 75%;
+  --shadow-card: 0 1px 3px 0 rgb(0 0 0 / 0.4), 0 1px 2px -1px rgb(0 0 0 / 0.3);
+}
+
+/* Corporate theme (light) */
 [data-theme="corporate"] {
   --color-primary: 224 76% 40%;       /* blue-800 */
   --color-secondary: 215 19% 35%;     /* slate-600 */
@@ -50,6 +86,42 @@
   --spacing-card-padding: 16px;
   --spacing-card-gap: 12px;
   --spacing-border-radius: 4px;
+  --shadow-card: none;
+}
+
+/* Corporate theme (dark) */
+[data-theme="corporate"][data-mode="dark"],
+[data-theme="corporate"]:not([data-mode="light"]) {
+  @media (prefers-color-scheme: dark) {
+    --color-primary: 224 76% 60%;       /* blue-400 */
+    --color-secondary: 215 19% 65%;     /* slate-400 */
+    --color-success: 142 71% 50%;       /* green-400 */
+    --color-warning: 32 81% 56%;        /* amber-400 */
+    --color-danger: 0 70% 65%;          /* red-400 */
+    --color-muted: 215 16% 60%;         /* slate-400 */
+    --color-accent: 192 91% 50%;        /* cyan-400 */
+    --color-background: 222 47% 7%;
+    --color-surface: 215 35% 14%;
+    --color-border: 215 20% 30%;
+    --color-text: 210 20% 98%;
+    --color-text-muted: 215 16% 75%;
+    --shadow-card: none;
+  }
+}
+
+[data-theme="corporate"][data-mode="dark"] {
+  --color-primary: 224 76% 60%;
+  --color-secondary: 215 19% 65%;
+  --color-success: 142 71% 50%;
+  --color-warning: 32 81% 56%;
+  --color-danger: 0 70% 65%;
+  --color-muted: 215 16% 60%;
+  --color-accent: 192 91% 50%;
+  --color-background: 222 47% 7%;
+  --color-surface: 215 35% 14%;
+  --color-border: 215 20% 30%;
+  --color-text: 210 20% 98%;
+  --color-text-muted: 215 16% 75%;
   --shadow-card: none;
 }
 

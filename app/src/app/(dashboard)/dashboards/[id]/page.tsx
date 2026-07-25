@@ -6,6 +6,7 @@ import { DashboardGrid } from '@/components/dashboard/DashboardGrid';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useUIStore } from '@/stores/uiStore';
+import { useToast } from '@/hooks/use-toast';
 import { Dashboard, DEFAULT_VARIANT } from '@/lib/widgets/types';
 import {
   ArrowLeft,
@@ -90,6 +91,7 @@ export default function DashboardDetailPage() {
   const router = useRouter();
   const params = useParams();
   const { isEditing, setEditMode, activeTheme, setActiveTheme } = useUIStore();
+  const { toast } = useToast();
 
   const [dashboard, setDashboard] = useState<Dashboard>(mockDashboard);
   const [copiedShare, setCopiedShare] = useState(false);
@@ -97,12 +99,22 @@ export default function DashboardDetailPage() {
 
   const handleToggleEdit = () => {
     setEditMode(!isEditing);
+    toast({
+      title: isEditing ? 'Edición finalizada' : 'Modo edición activo',
+      description: isEditing
+        ? 'Volviste al modo lectura.'
+        : 'Mové widgets y editá configuración. Los cambios se guardan automáticamente.',
+    });
   };
 
   const handleThemeChange = () => {
     const nextTheme = activeTheme === 'moderno-saas' ? 'corporate' : 'moderno-saas';
     setActiveTheme(nextTheme);
     setDashboard((prev) => ({ ...prev, theme: nextTheme }));
+    toast({
+      title: `Tema ${nextTheme === 'moderno-saas' ? 'Moderno SaaS' : 'Corporate'}`,
+      description: 'El cambio se ve de inmediato en todos los widgets.',
+    });
   };
 
   const handleShareLink = async () => {
@@ -110,9 +122,14 @@ export default function DashboardDetailPage() {
       const shareUrl = `${window.location.origin}/share/pub_${params.id || 'demo'}`;
       await navigator.clipboard.writeText(shareUrl);
       setCopiedShare(true);
+      toast({
+        title: 'Enlace copiado',
+        description: shareUrl,
+      });
       setTimeout(() => setCopiedShare(false), 2500);
-    } catch {
-      alert('Enlace copiado al portapapeles');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Error al copiar';
+      toast({ variant: 'destructive', title: 'No pudimos copiar', description: message });
     }
   };
 
@@ -129,11 +146,23 @@ export default function DashboardDetailPage() {
         a.href = url;
         a.download = `${dashboard.title}.pdf`;
         a.click();
+        toast({
+          title: 'PDF generado',
+          description: 'La descarga empezó automáticamente.',
+        });
       } else {
-        alert('Generación de PDF solicitada a worker.');
+        toast({
+          title: 'Generación de PDF encolada',
+          description: 'Te avisamos cuando esté lista (Sprint 5).',
+        });
       }
-    } catch {
-      alert('Generación de PDF solicitada a worker.');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Error al exportar';
+      toast({
+        variant: 'destructive',
+        title: 'No pudimos exportar',
+        description: message,
+      });
     } finally {
       setIsExporting(false);
     }

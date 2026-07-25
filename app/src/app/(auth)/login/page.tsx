@@ -8,11 +8,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { useToast } from '@/hooks/use-toast';
 
 export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirect = searchParams.get('redirect') || '/dashboards';
+  const { toast } = useToast();
 
   const [mode, setMode] = useState<'password' | 'magic-link'>('password');
   const [email, setEmail] = useState('');
@@ -36,10 +38,14 @@ export default function LoginPage() {
         });
 
         if (res.error) {
-          setError(res.error.message || 'Error al iniciar sesión. Verifica tus credenciales.');
-        } else {
-          router.push(redirect);
+          const msg = res.error.message || 'Error al iniciar sesión. Verifica tus credenciales.';
+          setError(msg);
+          toast({ variant: 'destructive', title: 'No pudimos iniciar sesión', description: msg });
+          return;
         }
+
+        toast({ title: 'Sesión iniciada', description: 'Redirigiendo al dashboard…' });
+        router.push(redirect);
       } else {
         const res = await signIn.magicLink({
           email,
@@ -47,13 +53,21 @@ export default function LoginPage() {
         });
 
         if (res.error) {
-          setError(res.error.message || 'No se pudo enviar el enlace mágico.');
-        } else {
-          setSuccessMsg('Enlace de acceso enviado a tu correo. Revisa tu bandeja de entrada.');
+          const msg = res.error.message || 'No se pudo enviar el enlace mágico.';
+          setError(msg);
+          toast({ variant: 'destructive', title: 'Error al enviar magic link', description: msg });
+          return;
         }
+        setSuccessMsg('Enlace de acceso enviado a tu correo. Revisa tu bandeja de entrada.');
+        toast({
+          title: 'Magic link enviado',
+          description: 'Revisá tu correo para iniciar sesión sin contraseña.',
+        });
       }
-    } catch (err: any) {
-      setError(err?.message || 'Ocurrió un error inesperado');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Ocurrió un error inesperado';
+      setError(message);
+      toast({ variant: 'destructive', title: 'Error inesperado', description: message });
     } finally {
       setLoading(false);
     }
@@ -66,8 +80,10 @@ export default function LoginPage() {
         provider: 'google',
         callbackURL: redirect,
       });
-    } catch (err: any) {
-      setError(err?.message || 'Error al conectar con Google.');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Error al conectar con Google.';
+      setError(message);
+      toast({ variant: 'destructive', title: 'Error con Google', description: message });
       setLoading(false);
     }
   };

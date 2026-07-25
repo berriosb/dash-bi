@@ -8,9 +8,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { useToast } from '@/hooks/use-toast';
 
 export default function SignupPage() {
   const router = useRouter();
+  const { toast } = useToast();
   const [orgName, setOrgName] = useState('');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -28,17 +30,26 @@ export default function SignupPage() {
         email,
         password,
         name,
-        // orgId/org creation metadata handle via backend post-signup hook or initial onboarding
+        // orgId/org creation metadata handled via post-signup hook (lib/auth/config.ts)
         callbackURL: '/onboarding',
       });
 
       if (res.error) {
-        setError(res.error.message || 'Error al registrar la cuenta.');
-      } else {
-        router.push('/onboarding');
+        const msg = res.error.message || 'Error al registrar la cuenta.';
+        setError(msg);
+        toast({ variant: 'destructive', title: 'No pudimos crear tu cuenta', description: msg });
+        return;
       }
-    } catch (err: any) {
-      setError(err?.message || 'Error al procesar el registro');
+
+      toast({
+        title: 'Cuenta creada',
+        description: 'Revisá tu email para verificar la cuenta antes de continuar.',
+      });
+      router.push('/onboarding');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Error al procesar el registro';
+      setError(message);
+      toast({ variant: 'destructive', title: 'Error inesperado', description: message });
     } finally {
       setLoading(false);
     }
