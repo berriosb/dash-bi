@@ -1,104 +1,112 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { useQuery } from '@tanstack/react-query';
 import { DashboardGrid } from '@/components/dashboard/DashboardGrid';
+import { DashboardControls } from '@/components/dashboard/DashboardControls';
+import { DashboardStatusBar } from '@/components/dashboard/DashboardStatusBar';
+import { PropertyPanel } from '@/components/properties/PropertyPanel';
+import { AddWidgetDialog } from '@/components/widgets/dialogs/AddWidgetDialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useUIStore } from '@/stores/uiStore';
+import { useDashboardStore } from '@/stores/dashboardStore';
+import { useAutoSave } from '@/hooks/use-auto-save';
+import { useUndoRedo, useDashboardKeyboardShortcuts } from '@/hooks/use-undo-redo';
 import { useToast } from '@/hooks/use-toast';
-import { Dashboard, DEFAULT_VARIANT } from '@/lib/widgets/types';
+import type { Dashboard, ArchetypeId } from '@/lib/widgets/types';
 import {
   ArrowLeft,
   Edit3,
   Eye,
   Download,
   Share2,
-  Palette,
-  Check,
+  Undo2,
+  Redo2,
 } from 'lucide-react';
 
-const mockDashboard: Dashboard = {
-  title: 'Ventas & KPI Ejecutivos 2026',
-  description: 'Resumen en tiempo real de ingresos recurrentes, conversión de pasarelas y retención por cohorte',
-  theme: 'moderno-saas',
-  archetype: 'executive-summary',
-  archetypeVariant: DEFAULT_VARIANT,
-  widgets: [
-    {
-      id: 'w_kpi_mrr',
-      type: 'kpi',
-      position: { col: 1, colSpan: 3, row: 1, rowSpan: 2 },
-      config: { title: 'MRR Total (Ingreso Mensual)', format: 'currency', showDelta: true },
-      data: { value: 124500, previousValue: 108400, delta: 14.8 },
-      source: { kind: 'query', dataSourceId: 'ds_postgres_prod', query: { kind: 'sql', sql: 'SELECT SUM(amount) FROM subs' } },
-    },
-    {
-      id: 'w_kpi_churn',
-      type: 'kpi',
-      position: { col: 4, colSpan: 3, row: 1, rowSpan: 2 },
-      config: { title: 'Tasa de Cancelación (Churn)', format: 'percent', showDelta: true },
-      data: { value: 2.1, previousValue: 2.7, delta: -0.6 },
-      source: { kind: 'query', dataSourceId: 'ds_postgres_prod', query: { kind: 'sql', sql: 'SELECT churn FROM metrics' } },
-    },
-    {
-      id: 'w_kpi_customers',
-      type: 'kpi',
-      position: { col: 7, colSpan: 3, row: 1, rowSpan: 2 },
-      config: { title: 'Clientes Activos', format: 'number', showDelta: true },
-      data: { value: 1540, previousValue: 1420, delta: 8.4 },
-      source: { kind: 'query', dataSourceId: 'ds_postgres_prod', query: { kind: 'sql', sql: 'SELECT COUNT(*) FROM users' } },
-    },
-    {
-      id: 'w_kpi_arpu',
-      type: 'kpi',
-      position: { col: 10, colSpan: 3, row: 1, rowSpan: 2 },
-      config: { title: 'ARPU Promedio', format: 'currency' },
-      data: { value: 80.8, previousValue: 78.3, delta: 3.1 },
-      source: { kind: 'query', dataSourceId: 'ds_postgres_prod', query: { kind: 'sql', sql: 'SELECT arpu FROM metrics' } },
-    },
-    {
-      id: 'w_chart_mrr_trend',
-      type: 'area-chart',
-      position: { col: 1, colSpan: 8, row: 3, rowSpan: 5 },
-      config: { title: 'Evolución de Ingresos Recurrentes (MRR)', showGrid: true, smooth: true },
-      data: [
-        { label: 'Ene', value: 85000 },
-        { label: 'Feb', value: 92000 },
-        { label: 'Mar', value: 98000 },
-        { label: 'Abr', value: 105000 },
-        { label: 'May', value: 114000 },
-        { label: 'Jun', value: 124500 },
-      ],
-      source: { kind: 'query', dataSourceId: 'ds_postgres_prod', query: { kind: 'sql', sql: 'SELECT month, mrr FROM mrr_history' } },
-    },
-    {
-      id: 'w_chart_pie_plans',
-      type: 'pie-chart',
-      position: { col: 9, colSpan: 4, row: 3, rowSpan: 5 },
-      config: { title: 'Distribución por Plan', variant: 'donut' },
-      data: [
-        { label: 'Starter', value: 450 },
-        { label: 'Pro', value: 820 },
-        { label: 'Enterprise', value: 270 },
-      ],
-      source: { kind: 'query', dataSourceId: 'ds_postgres_prod', query: { kind: 'sql', sql: 'SELECT plan, count FROM plan_dist' } },
-    },
-  ],
-};
+async function fetchDashboard(id: string): Promise<Dashboard> {
+  const res = await fetch(`/api/dashboards/${id}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw Object.assign(new Error(err?.error ?? `HTTP ${res.status}`), { status: res.status });
+  }
+  const data = await res.json();
+  return data.dashboard as Dashboard;
+}
 
 export default function DashboardDetailPage() {
   const router = useRouter();
   const params = useParams();
-  const { isEditing, setEditMode, activeTheme, setActiveTheme } = useUIStore();
+  const dashboardId = (params?.id as string) ?? 'demo';
+  const { isEditing, setEditMode, activeTheme, setActiveTheme, selectedWidgetId, setSelectedWidgetId } = useUIStore();
   const { toast } = useToast();
 
-  const [dashboard, setDashboard] = useState<Dashboard>(mockDashboard);
+  const setDashboard = useDashboardStore((s) => s.setDashboard);
+  const storeState = useDashboardStore((s) => ({
+    id: s.id,
+    title: s.title,
+    description: s.description,
+    theme: s.theme,
+    widgets: s.widgets,
+  }));
+  const dashboard: Dashboard = useMemo(
+    () => ({
+      title: storeState.title,
+      description: storeState.description,
+      theme: storeState.theme,
+      widgets: storeState.widgets,
+      archetype: 'custom',
+    }),
+    [storeState.title, storeState.description, storeState.theme, storeState.widgets],
+  );
+
   const [copiedShare, setCopiedShare] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
 
+  const { data: remoteDashboard, isLoading, error } = useQuery({
+    queryKey: ['dashboard', dashboardId],
+    queryFn: () => fetchDashboard(dashboardId),
+    enabled: dashboardId !== 'demo',
+    retry: 1,
+  });
+
+  useEffect(() => {
+    if (remoteDashboard) {
+      setDashboard({
+        id: dashboardId,
+        title: remoteDashboard.title,
+        description: remoteDashboard.description ?? '',
+        theme: remoteDashboard.theme,
+        widgets: remoteDashboard.widgets,
+      });
+      setActiveTheme(remoteDashboard.theme);
+    }
+  }, [remoteDashboard, dashboardId, setDashboard, setActiveTheme]);
+
+  const { trigger, status, flush } = useAutoSave(dashboardId);
+  const { undo, redo, canUndo, canRedo } = useUndoRedo();
+  useDashboardKeyboardShortcuts();
+
+  useEffect(() => {
+    if (!isEditing) return;
+    const serialized: Dashboard = {
+      title: dashboard.title,
+      description: dashboard.description,
+      theme: dashboard.theme,
+      widgets: dashboard.widgets,
+      archetype: 'custom',
+    };
+    trigger(serialized);
+  }, [isEditing, dashboard.title, dashboard.description, dashboard.theme, dashboard.widgets, trigger]);
+
+  const archetype: ArchetypeId = 'custom';
+
   const handleToggleEdit = () => {
+    if (isEditing) flush();
     setEditMode(!isEditing);
+    if (isEditing) setSelectedWidgetId(null);
     toast({
       title: isEditing ? 'Edición finalizada' : 'Modo edición activo',
       description: isEditing
@@ -107,25 +115,21 @@ export default function DashboardDetailPage() {
     });
   };
 
-  const handleThemeChange = () => {
-    const nextTheme = activeTheme === 'moderno-saas' ? 'corporate' : 'moderno-saas';
-    setActiveTheme(nextTheme);
-    setDashboard((prev) => ({ ...prev, theme: nextTheme }));
+  const handleThemeChange = (next: typeof activeTheme) => {
+    setActiveTheme(next);
+    setDashboard({ id: storeState.id ?? undefined, title: dashboard.title, description: dashboard.description, theme: next, widgets: dashboard.widgets });
     toast({
-      title: `Tema ${nextTheme === 'moderno-saas' ? 'Moderno SaaS' : 'Corporate'}`,
+      title: `Tema ${next === 'moderno-saas' ? 'Moderno SaaS' : 'Corporate'}`,
       description: 'El cambio se ve de inmediato en todos los widgets.',
     });
   };
 
   const handleShareLink = async () => {
     try {
-      const shareUrl = `${window.location.origin}/share/pub_${params.id || 'demo'}`;
+      const shareUrl = `${window.location.origin}/share/pub_${dashboardId}`;
       await navigator.clipboard.writeText(shareUrl);
       setCopiedShare(true);
-      toast({
-        title: 'Enlace copiado',
-        description: shareUrl,
-      });
+      toast({ title: 'Enlace copiado', description: shareUrl });
       setTimeout(() => setCopiedShare(false), 2500);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Error al copiar';
@@ -136,9 +140,7 @@ export default function DashboardDetailPage() {
   const handleExportPdf = async () => {
     setIsExporting(true);
     try {
-      const res = await fetch(`/api/dashboards/${params.id}/export/pdf`, {
-        method: 'POST',
-      });
+      const res = await fetch(`/api/dashboards/${dashboardId}/export/pdf`, { method: 'POST' });
       if (res.ok) {
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);
@@ -146,31 +148,26 @@ export default function DashboardDetailPage() {
         a.href = url;
         a.download = `${dashboard.title}.pdf`;
         a.click();
-        toast({
-          title: 'PDF generado',
-          description: 'La descarga empezó automáticamente.',
-        });
+        toast({ title: 'PDF generado', description: 'La descarga empezó automáticamente.' });
       } else {
-        toast({
-          title: 'Generación de PDF encolada',
-          description: 'Te avisamos cuando esté lista (Sprint 5).',
-        });
+        toast({ title: 'Generación de PDF encolada', description: 'Te avisamos cuando esté lista (Sprint 5).' });
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Error al exportar';
-      toast({
-        variant: 'destructive',
-        title: 'No pudimos exportar',
-        description: message,
-      });
+      toast({ variant: 'destructive', title: 'No pudimos exportar', description: message });
     } finally {
       setIsExporting(false);
     }
   };
 
+  const showPropertyPanel = isEditing && selectedWidgetId !== null;
+  const layoutClass = useMemo(
+    () => `space-y-6 ${showPropertyPanel ? 'dashboard-detail-layout-wrapper' : ''}`,
+    [showPropertyPanel],
+  );
+
   return (
-    <div className="space-y-6">
-      {/* Navigation Toolbar Header */}
+    <div className={layoutClass}>
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-800/80 pb-4">
         <div className="flex items-center gap-3">
           <Button
@@ -178,32 +175,65 @@ export default function DashboardDetailPage() {
             size="icon"
             onClick={() => router.push('/dashboards')}
             className="text-slate-400 hover:text-white hover:bg-slate-800"
+            aria-label="Volver al listado"
           >
             <ArrowLeft className="w-5 h-5" />
           </Button>
 
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-xl font-extrabold tracking-tight text-white">{dashboard.title}</h1>
               <Badge variant="outline" className="text-[10px] border-slate-700 text-indigo-400">
                 {activeTheme === 'moderno-saas' ? 'Tema Moderno' : 'Tema Corporate'}
               </Badge>
+              <DashboardStatusBar status={status} isEditing={isEditing} />
             </div>
             <p className="text-xs text-slate-400 mt-0.5 max-w-2xl">{dashboard.description}</p>
           </div>
         </div>
 
-        {/* Action Controls */}
         <div className="flex items-center gap-2 flex-wrap">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleThemeChange}
-            className="bg-slate-900 border-slate-800 hover:bg-slate-800 text-slate-300 text-xs gap-1.5"
-          >
-            <Palette className="w-3.5 h-3.5 text-purple-400" />
-            <span>Alternar Tema</span>
-          </Button>
+          {isEditing && (
+            <>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={undo}
+                disabled={!canUndo}
+                aria-label="Deshacer (Ctrl+Z)"
+                title="Deshacer (Ctrl+Z)"
+                className="bg-slate-900 border-slate-800 hover:bg-slate-800 text-slate-300"
+              >
+                <Undo2 className="w-3.5 h-3.5" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={redo}
+                disabled={!canRedo}
+                aria-label="Rehacer (Ctrl+Shift+Z)"
+                title="Rehacer (Ctrl+Shift+Z)"
+                className="bg-slate-900 border-slate-800 hover:bg-slate-800 text-slate-300"
+              >
+                <Redo2 className="w-3.5 h-3.5" />
+              </Button>
+              <AddWidgetDialog dashboardId={dashboardId} />
+            </>
+          )}
+
+          {isEditing && (
+            <DashboardControls
+              theme={activeTheme}
+              archetype={archetype}
+              onThemeChange={handleThemeChange}
+              onArchetypeChange={() => {
+                toast({
+                  title: 'Cambio de archetype',
+                  description: 'Reorganización automática en Sprint 3.',
+                });
+              }}
+            />
+          )}
 
           <Button
             variant="outline"
@@ -211,8 +241,7 @@ export default function DashboardDetailPage() {
             onClick={handleShareLink}
             className="bg-slate-900 border-slate-800 hover:bg-slate-800 text-slate-300 text-xs gap-1.5"
           >
-            {copiedShare ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Share2 className="w-3.5 h-3.5 text-indigo-400" />}
-            <span>{copiedShare ? '¡Enlace Copiado!' : 'Compartir'}</span>
+            {copiedShare ? <span>¡Enlace copiado!</span> : <><Share2 className="w-3.5 h-3.5" /> Compartir</>}
           </Button>
 
           <Button
@@ -222,8 +251,8 @@ export default function DashboardDetailPage() {
             disabled={isExporting}
             className="bg-slate-900 border-slate-800 hover:bg-slate-800 text-slate-300 text-xs gap-1.5"
           >
-            <Download className="w-3.5 h-3.5 text-pink-400" />
-            <span>{isExporting ? 'Exportando...' : 'Exportar PDF'}</span>
+            <Download className="w-3.5 h-3.5" />
+            {isExporting ? 'Exportando...' : 'Exportar PDF'}
           </Button>
 
           <Button
@@ -250,14 +279,19 @@ export default function DashboardDetailPage() {
         </div>
       </div>
 
-      {/* Main Grid Surface */}
-      <DashboardGrid
-        dashboard={{ ...dashboard, theme: activeTheme }}
-        isEditing={isEditing}
-        onLayoutChange={(newWidgets) => {
-          setDashboard((prev) => ({ ...prev, widgets: newWidgets }));
-        }}
-      />
+      {error && !isLoading && (
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+          No pudimos cargar este dashboard desde el servidor. Estás viendo datos de demo locales.
+        </div>
+      )}
+
+      <div className="dashboard-detail-layout">
+        <DashboardGrid
+          dashboard={{ ...dashboard, theme: activeTheme }}
+          isEditing={isEditing}
+        />
+        {showPropertyPanel && <PropertyPanel dashboardId={dashboardId} />}
+      </div>
     </div>
   );
 }

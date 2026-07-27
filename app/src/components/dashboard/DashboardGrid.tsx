@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import {
   DndContext,
   PointerSensor,
@@ -10,8 +10,10 @@ import {
   type DragEndEvent,
   useDraggable,
 } from '@dnd-kit/core';
-import type { Dashboard, Density, Widget } from '@/lib/widgets/types';
+import type { Dashboard, Density } from '@/lib/widgets/types';
 import { WidgetRenderer } from '../widgets/WidgetRenderer';
+import { useUIStore } from '@/stores/uiStore';
+import { useDashboardStore } from '@/stores/dashboardStore';
 
 const DENSITY_CLASS: Record<Density, string> = {
   spacious: 'dashboard-grid--spacious',
@@ -34,22 +36,16 @@ const ARCHETYPE_LABELS: Record<NonNullable<Dashboard['archetype']>, string> = {
 export function DashboardGrid({
   dashboard,
   isEditing = false,
-  onLayoutChange,
 }: {
   dashboard: Dashboard;
   isEditing?: boolean;
-  onLayoutChange?: (widgets: Widget[]) => void;
 }) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor)
   );
-  const [widgets, setWidgets] = useState<Widget[]>(dashboard.widgets || []);
-
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => {
-    setWidgets(dashboard.widgets || []);
-  }, [dashboard.widgets]);
+  const widgets = useDashboardStore((s) => s.widgets);
+  const reorderWidgets = useDashboardStore((s) => s.reorderWidgets);
 
   const density = dashboard.archetypeVariant?.density ?? 'balanced';
   const archetype = dashboard.archetype ?? 'custom';
@@ -79,8 +75,7 @@ export function DashboardGrid({
       };
     });
 
-    setWidgets(updated);
-    onLayoutChange?.(updated);
+    reorderWidgets(updated);
   };
 
   return (
@@ -134,20 +129,9 @@ export function DashboardGrid({
             data-archetype={archetype}
           >
             {widgets.map((widget) => (
-              <div
-                key={widget.id}
-                className="dashboard-grid-item"
-                style={{
-                  '--widget-column-start': widget.position.col,
-                  '--widget-column-span': widget.position.colSpan || 12,
-                  '--widget-row-start': widget.position.row,
-                  '--widget-row-span': widget.position.rowSpan,
-                } as React.CSSProperties}
-              >
-                <DraggableWidget id={widget.id} isEditing={isEditing}>
-                  <WidgetRenderer widget={widget} />
-                </DraggableWidget>
-              </div>
+              <DraggableWidget key={widget.id} id={widget.id} isEditing={isEditing}>
+                <WidgetRenderer widget={widget} />
+              </DraggableWidget>
             ))}
           </div>
         </DndContext>
@@ -166,18 +150,52 @@ function DraggableWidget({
   children: React.ReactNode;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id });
-  const style = transform
-    ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` }
-    : undefined;
+  const selectedWidgetId = useUIStore((s) => s.selectedWidgetId);
+  const setSelectedWidgetId = useUIStore((s) => s.setSelectedWidgetId);
+  const widgets = useDashboardStore((s) => s.widgets);
+  const widget = widgets.find((w) => w.id === id);
+  const position = widget?.position;
+  const isSelected = selectedWidgetId === id;
 
-  if (!isEditing) return <div className="h-full">{children}</div>;
+  const style: React.CSSProperties = {
+    ...(position
+      ? {
+          '--widget-column-start': position.col,
+          '--widget-column-span': position.colSpan || 12,
+          '--widget-row-start': position.row,
+          '--widget-row-span': position.rowSpan,
+        }
+      : {}),
+    ...(transform
+      ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` }
+      : {}),
+  } as React.CSSProperties;
+
+  if (!isEditing) {
+    return (
+      <div className="dashboard-grid-item" style={style}>
+        {children}
+      </div>
+    );
+  }
 
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className="dashboard-editable-widget"
+      className={`dashboard-grid-item ${isSelected ? 'dashboard-grid-item--selected' : ''}`}
       data-dragging={isDragging ? 'true' : 'false'}
+      role="button"
+      tabIndex={0}
+      aria-label={`Widget ${widget?.config.title ?? widget?.id ?? id}`}
+      aria-pressed={isSelected}
+      onClick={() => setSelectedWidgetId(id)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          setSelectedWidgetId(id);
+        }
+      }}
     >
       <button
         type="button"
@@ -185,6 +203,7 @@ function DraggableWidget({
         {...attributes}
         className="dashboard-drag-handle"
         aria-label="Mover widget"
+        onClick={(e) => e.stopPropagation()}
       >
         <span aria-hidden="true">⠿</span>
         <span>Mover</span>
