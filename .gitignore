@@ -110,3 +110,11 @@ tmp/
 # future user-level skills and must not duplicate them.
 # ─────────────────────────────────────────────────────────────
 .agents/skills/
+
+# ─────────────────────────────────────────────────────────────
+# Local dev tooling — per-developer, NOT committed
+# Per project policy: the repo stores the application, not
+# the developer's working setup. Each dev regenerates these.
+# ─────────────────────────────────────────────────────────────
+AGENTS.md
+skills-lock.json
