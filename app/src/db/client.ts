@@ -76,28 +76,33 @@ export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
  */
 export async function withOrgContext<T>(
   orgId: string,
-  userId: string,
+  userId: string | null,
   fn: (tx: Tx) => Promise<T>,
 ): Promise<T>;
 export async function withOrgContext<T>(
   orgId: string,
-  userId: string,
+  userId: string | null,
   role: OrgRole,
   fn: (tx: Tx) => Promise<T>,
 ): Promise<T>;
 export async function withOrgContext<T>(
   orgId: string,
-  userId: string,
+  userId: string | null,
   roleOrFn: OrgRole | ((tx: Tx) => Promise<T>),
   fnMaybe?: (tx: Tx) => Promise<T>,
 ): Promise<T> {
   const role: OrgRole = typeof roleOrFn === 'function' ? 'editor' : roleOrFn;
   const fn = (typeof roleOrFn === 'function' ? roleOrFn : fnMaybe)!;
+  // Anonymous callers (e.g., public share links) pass userId=null. The session
+  // variable must be a string for SET LOCAL; use the empty string. RLS policies
+  // that key off `current_user_id` will return no rows, which is the intended
+  // isolation behavior for unauthenticated contexts.
+  const userIdForSession = userId ?? '';
 
   return await db.transaction(async (tx) => {
     // Setear variables de sesión que las RLS policies leen
     await tx.execute(sql`SET LOCAL app.current_org_id = ${orgId}`);
-    await tx.execute(sql`SET LOCAL app.current_user_id = ${userId}`);
+    await tx.execute(sql`SET LOCAL app.current_user_id = ${userIdForSession}`);
     await tx.execute(sql`SET LOCAL app.current_user_role = ${role}`);
 
     const start = Date.now();

@@ -3,6 +3,7 @@ import { eq, and } from 'drizzle-orm';
 import { db, withOrgContext } from '@/db/client';
 import { publicLinks } from '@/db/schema';
 import { requirePermission } from '@/lib/auth/context';
+import { audit } from '@/lib/audit/log';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,8 +25,14 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
         .where(and(eq(publicLinks.id, id), eq(publicLinks.orgId, orgId)));
     });
 
+    await audit(orgId, userId, 'export.link_revoked', `public_link:${id}`);
+
     return NextResponse.json({ ok: true });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: error.name === 'ForbiddenError' ? 403 : 500 });
+  } catch (error) {
+    const e = error as { message?: string; name?: string };
+    return NextResponse.json(
+      { error: e.message ?? 'Internal error' },
+      { status: e.name === 'ForbiddenError' ? 403 : 500 }
+    );
   }
 }
