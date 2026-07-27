@@ -8,6 +8,11 @@
 .DS_Store
 Thumbs.db
 desktop.ini
+ehthumbs.db
+ehthumbs_vista.db
+$RECYCLE.BIN/
+.Trash-*
+.fseventsd/
 *.swp
 *.swo
 *~
@@ -15,6 +20,7 @@ desktop.ini
 *.tmp
 *.orig
 *.rej
+Session.vim
 
 # IDE / editor
 .idea/
@@ -23,6 +29,12 @@ desktop.ini
 .cursor/
 .aider*
 *.code-workspace
+.claude/
+.continue/
+.codeium/
+.windsurf/
+.kiro/
+.mcp_config*
 
 # Environment & secrets (NEVER commit)
 .env
@@ -46,8 +58,16 @@ coverage/
 .nyc_output/
 .cache/
 .turbo/
-.tsbuildinfo
 *.tsbuildinfo
+
+# Linter / formatter / bundler caches
+.eslintcache
+.stylelintcache
+.prettiercache
+.parcel-cache/
+.swc/
+htmlcov/
+coverage-final.json
 
 # Node / package managers (top-level)
 node_modules/
@@ -71,6 +91,17 @@ junit.xml
 # Docker / local infra overrides
 docker-compose.override.yml
 Dockerfile.local
+
+# Vercel deployments
+.vercel
+
+# Database dumps (defensive)
+*.dump
+*.sql.gz
+
+# Tmp roots
+tmp/
+.tmp/
 
 # ─────────────────────────────────────────────────────────────
 # Agent skills — keep ONE canonical location

@@ -7,7 +7,7 @@
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Stack: Next.js 16](https://img.shields.io/badge/Next.js-16-black)](https://nextjs.org)
 [![TypeScript: strict](https://img.shields.io/badge/TypeScript-strict-blue)](https://www.typescriptlang.org)
-[![Tests: 208+](https://img.shields.io/badge/tests-208%2B%20passing-brightgreen)](./app/tests)
+[![Tests: 252+](https://img.shields.io/badge/tests-252%2B%20passing-brightgreen)](./app/tests)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](./CONTRIBUTING.md)
 
 > **NOTA:** Este es el directorio de trabajo local del proyecto. El código de la aplicación vive en `./app/`.
@@ -17,6 +17,7 @@
 ```
 dash-bi/
 ├── README.md                       ← este archivo (índice del workspace)
+├── .gitignore                      ← ignores raíz (OS, editor, secrets, .agents/)
 ├── SPEC.md                         ← spec master del producto
 ├── PRODUCT.md                      ← contexto durable del producto
 ├── DESIGN.md                       ← design system (Impeccable)
@@ -64,8 +65,8 @@ dash-bi/
 │
 ├── .hermes/                        ← planes de trabajo
 ├── .impeccable/                    ← config Impeccable
-├── .opencode/                      ← skills OpenCode
-├── .agents/                        ← skills agents
+├── .opencode/                      ← skills OpenCode (source of truth)
+├── .agents/                        ← gitignored — mirror runtime, NO se commitea
 │
 └── app/                            ← CÓDIGO DE LA APLICACIÓN (ver app/README.md)
     ├── src/                        ← Next.js App Router + componentes
