@@ -34,6 +34,8 @@
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
     "docker:logs": "docker compose logs -f",
+    "worker:pdf": "tsx src/worker/index.ts",
+    "worker:pdf:build": "tsc --project tsconfig.worker.json",
     "audit": "pnpm audit --audit-level=high",
     "audit:fix": "pnpm audit --fix",
     "prepare": "husky"
@@ -72,6 +74,7 @@
     "pino": "^9.6.0",
     "pino-pretty": "^13.0.0",
     "postgres": "^3.4.5",
+    "puppeteer": "^24.43.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-hook-form": "^7.54.0",
