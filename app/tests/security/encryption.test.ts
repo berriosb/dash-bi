@@ -5,7 +5,7 @@ import { encryptApiKey, decryptApiKey } from '@/lib/security/encryption';
 const TEST_KEY = 'a'.repeat(64); // 32 bytes hex
 
 const FAKE_OPENAI_KEY = 'sk_FAKE_KEY_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-const FAKE_ANTHROPIC_KEY = 'sk-ant-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const FAKE_ANTHROPIC_KEY = 'sk_FAKE_ANT_aAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 const FAKE_GOOGLE_KEY = 'AIza_FAKE_KEY_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 
 describe('AES-256-GCM encryption (T4 BYOK security)', () => {

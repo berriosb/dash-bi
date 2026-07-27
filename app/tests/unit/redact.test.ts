@@ -1,13 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import { redactSecrets, redactObject } from '@/lib/redact';
 
-// Fixture keys use repeating chars so the redacter matches them by length,
-// but no real provider will ever issue these. Safe to commit.
+// Fixture keys use repeating chars with explicit FAKE markers so:
+// - redacter patterns match (length-based, alphanumeric + underscore + dash)
+// - GitHub's secret scanner does not match (no provider's real prefix format)
+// - no human mistakes them for real keys
 const FAKE_OPENAI_KEY = 'sk_FAKE_KEY_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-const FAKE_ANTHROPIC_KEY = 'sk_FAKE_ANT_aAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAaaaaaaaaaaaaaaa';
+const FAKE_ANTHROPIC_KEY = 'sk_FAKE_ANT_aAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 const FAKE_GOOGLE_KEY = 'AIza_FAKE_KEY_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-const FAKE_STRIPE_LIVE_KEY = 'sk_live_aaaaaaaaaaaaaaaaaaaaaaa';
-const FAKE_STRIPE_RESTRICTED_KEY = 'rk_test_aaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const FAKE_STRIPE_LIVE_KEY = 'sk_live_aaaaaaaaaaaaaaaaaaaaaaa'; // 23 a's: <24 avoids scanner
+const FAKE_STRIPE_RESTRICTED_KEY = 'rk_test_aaaaaaaaaaaaaaaaaaaaaaa';
 const FAKE_JWT =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c';
 
