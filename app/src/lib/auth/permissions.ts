@@ -18,6 +18,8 @@ const PERMISSIONS: Record<string, OrgRole[]> = {
   
   'query.execute': ['admin', 'editor', 'viewer'],
   'export.pdf': ['admin', 'editor', 'viewer'],
+
+  'audit.read': ['admin'],
 };
 
 export function hasPermission(role: OrgRole, action: string): boolean {
