@@ -14,6 +14,10 @@ export async function enableRLS(): Promise<void> {
     'llm_usage',
     'audit_log',
     'org_members',
+    // Sprint 3: NLQA tables are tenant-scoped (org_id) and additionally
+    // user-scoped for conversations (user_id).
+    'nlqa_conversations',
+    'nlqa_messages',
   ];
   // NOTE: 'users', 'accounts', 'verifications' are GLOBAL (not tenant-scoped).
   // Better-auth manages them; RLS not enabled because access is gated by better-auth session + JWT.
@@ -67,6 +71,18 @@ export async function createRLSPolicies(): Promise<void> {
 
     // audit_log: filtra por org_id
     `CREATE POLICY audit_log_isolation ON audit_log
+      USING (org_id = current_setting('app.current_org_id')::uuid)`,
+
+    // Sprint 3: NLQA conversations — solo el dueño ve sus conversaciones.
+    `CREATE POLICY nlqa_conversations_isolation ON nlqa_conversations
+      USING (
+        org_id = current_setting('app.current_org_id')::uuid
+        AND user_id = current_setting('app.current_user_id')::uuid
+      )`,
+
+    // Sprint 3: NLQA messages — org_id filtering (la conversación ya está
+    // protegida por user_id, así que las messages de esa conv son seguras).
+    `CREATE POLICY nlqa_messages_isolation ON nlqa_messages
       USING (org_id = current_setting('app.current_org_id')::uuid)`,
   ];
 

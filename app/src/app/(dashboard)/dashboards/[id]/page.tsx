@@ -8,6 +8,7 @@ import { DashboardControls } from '@/components/dashboard/DashboardControls';
 import { DashboardStatusBar } from '@/components/dashboard/DashboardStatusBar';
 import { PropertyPanel } from '@/components/properties/PropertyPanel';
 import { AddWidgetDialog } from '@/components/widgets/dialogs/AddWidgetDialog';
+import { NlqaPanel } from '@/components/nlqa/NlqaPanel';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useUIStore } from '@/stores/uiStore';
@@ -24,6 +25,7 @@ import {
   Share2,
   Undo2,
   Redo2,
+  MessageSquare,
 } from 'lucide-react';
 
 async function fetchDashboard(id: string): Promise<Dashboard> {
@@ -40,7 +42,7 @@ export default function DashboardDetailPage() {
   const router = useRouter();
   const params = useParams();
   const dashboardId = (params?.id as string) ?? 'demo';
-  const { isEditing, setEditMode, activeTheme, setActiveTheme, selectedWidgetId, setSelectedWidgetId } = useUIStore();
+  const { isEditing, setEditMode, activeTheme, setActiveTheme, selectedWidgetId, setSelectedWidgetId, isNlqaOpen, toggleNlqa } = useUIStore();
   const { toast } = useToast();
 
   const setDashboard = useDashboardStore((s) => s.setDashboard);
@@ -102,6 +104,12 @@ export default function DashboardDetailPage() {
   }, [isEditing, dashboard.title, dashboard.description, dashboard.theme, dashboard.widgets, trigger]);
 
   const archetype: ArchetypeId = 'custom';
+
+// Derive the primary data source from the first widget (dashboards have
+// at most a few data sources; for MVP we use the first one). Better: fetch
+// the full dataSource list separately in a future Sprint.
+const primaryDataSourceId =
+  storeState.widgets.find((w) => w.source?.dataSourceId)?.source?.dataSourceId ?? undefined;
 
   const handleToggleEdit = () => {
     if (isEditing) flush();
@@ -247,6 +255,18 @@ export default function DashboardDetailPage() {
           <Button
             variant="outline"
             size="sm"
+            onClick={toggleNlqa}
+            aria-pressed={isNlqaOpen}
+            aria-label="Abrir chat con datos"
+            className="bg-slate-900 border-slate-800 hover:bg-slate-800 text-slate-300 text-xs gap-1.5"
+          >
+            <MessageSquare className="w-3.5 h-3.5 text-violet-400" />
+            Preguntar
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
             onClick={handleExportPdf}
             disabled={isExporting}
             className="bg-slate-900 border-slate-800 hover:bg-slate-800 text-slate-300 text-xs gap-1.5"
@@ -292,6 +312,13 @@ export default function DashboardDetailPage() {
         />
         {showPropertyPanel && <PropertyPanel dashboardId={dashboardId} />}
       </div>
+
+      <NlqaPanel
+        dashboardId={dashboardId}
+        dataSourceId={primaryDataSourceId}
+        open={isNlqaOpen}
+        onClose={() => toggleNlqa()}
+      />
     </div>
   );
 }

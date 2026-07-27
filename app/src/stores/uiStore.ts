@@ -8,6 +8,7 @@ interface UIState {
   activeOrgId: string | null;
   sidebarOpen: boolean;
   isEditing: boolean;
+  isNlqaOpen: boolean;
   activeTheme: AppTheme;
   activeMode: AppMode;
   selectedWidgetId: string | null;
@@ -16,6 +17,8 @@ interface UIState {
   toggleSidebar: () => void;
   setSidebarOpen: (open: boolean) => void;
   setEditMode: (editing: boolean) => void;
+  setNlqaOpen: (open: boolean) => void;
+  toggleNlqa: () => void;
   setActiveTheme: (theme: AppTheme) => void;
   setActiveMode: (mode: AppMode) => void;
   toggleMode: () => void;
@@ -28,6 +31,7 @@ export const useUIStore = create<UIState>()(
       activeOrgId: null,
       sidebarOpen: true,
       isEditing: false,
+      isNlqaOpen: false,
       activeTheme: 'moderno-saas',
       activeMode: 'system',
       selectedWidgetId: null,
@@ -36,6 +40,8 @@ export const useUIStore = create<UIState>()(
       toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
       setSidebarOpen: (open) => set({ sidebarOpen: open }),
       setEditMode: (editing) => set({ isEditing: editing }),
+      setNlqaOpen: (open) => set({ isNlqaOpen: open }),
+      toggleNlqa: () => set((state) => ({ isNlqaOpen: !state.isNlqaOpen })),
       setActiveTheme: (theme) => set({ activeTheme: theme }),
       setActiveMode: (mode) => set({ activeMode: mode }),
       toggleMode: () =>

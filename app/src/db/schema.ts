@@ -348,3 +348,65 @@ export const auditLog = pgTable(
     createdAtIdx: index('audit_log_created_at_idx').on(t.createdAt),
   }),
 );
+
+// ─────────────────────────────────────────────────────────────────
+// NLQA — conversaciones y mensajes (Sprint 3)
+// ─────────────────────────────────────────────────────────────────
+//
+// Una conversación agrupa N mensajes user/assistant sobre el mismo
+// data source. Permite "memory" dentro de la sesión: "ahora filtrá
+// por Q3" funciona si los turnos anteriores ya filtraron Q3.
+//
+// Para MVP: 1 conversación = 1 data source + 1 usuario. No se
+// comparte entre usuarios. En Fase 2 podemos extender.
+
+export const nlqaConversations = pgTable(
+  'nlqa_conversations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    dataSourceId: uuid('data_source_id').notNull().references(() => dataSources.id, { onDelete: 'cascade' }),
+
+    title: text('title').notNull().default('Nueva conversación'),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    orgIdx: index('nlqa_conversations_org_idx').on(t.orgId),
+    userIdx: index('nlqa_conversations_user_idx').on(t.userId),
+    dataSourceIdx: index('nlqa_conversations_data_source_idx').on(t.dataSourceId),
+  }),
+);
+
+export const nlqaRoleEnum = pgEnum('nlqa_role', ['user', 'assistant', 'system']);
+
+export const nlqaMessages = pgTable(
+  'nlqa_messages',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+    conversationId: uuid('conversation_id').notNull().references(() => nlqaConversations.id, { onDelete: 'cascade' }),
+
+    role: nlqaRoleEnum('role').notNull(),
+
+    // user: question text
+    // assistant: answer text + optional sql + chart suggestion
+    // system: opcional, reservado para futuras prompts internas
+    content: text('content').notNull(),
+
+    // Solo assistant. SQL que la IA generó + ejecutó (para mostrar al user).
+    generatedSql: text('generated_sql'),
+    generatedChartType: text('generated_chart_type'),
+    generatedChartConfig: jsonb('generated_chart_config'),
+    rowCount: integer('row_count'),
+    executionMs: integer('execution_ms'),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    conversationIdx: index('nlqa_messages_conversation_idx').on(t.conversationId),
+    createdAtIdx: index('nlqa_messages_created_at_idx').on(t.createdAt),
+  }),
+);

@@ -50,6 +50,81 @@ const generatedDashboardSchema = z.object({
   widgets: z.array(generatedWidgetSchema).min(1).max(12),
 });
 
+// ─────────────────────────────────────────────────────────────────
+// NLQA — Natural Language Q&A (Sprint 3)
+// ─────────────────────────────────────────────────────────────────
+//
+// Pipeline de 2 llamadas LLM orquestadas:
+//   1. SQL agent: pregunta → SQL (con reasoning opcional).
+//   2. Answer agent: pregunta + SQL + resultado → texto + chart suggestion.
+//
+// Esta separación da:
+// - Streaming más granular (podemos emitir `sql_generated` antes de ejecutar)
+// - Mejor debugging (reasoning visible)
+// - Mayor reliability (re-validamos SQL contra validateQuery antes de ejecutar)
+
+const nlqaSqlSchema = z.object({
+  reasoning: z.string().max(500).optional(),
+  sql: z.string().nullable(),
+  params: z.array(z.unknown()).optional(),
+  fallbackAnswer: z.string().max(500).optional(),
+});
+
+const nlqaAnswerSchema = z.object({
+  answer: z.string().min(1).max(500),
+  chartSuggestion: z
+    .object({
+      type: z.enum(['kpi', 'line-chart', 'bar-chart', 'pie-chart', 'area-chart', 'scatter', 'table']),
+      rationale: z.string().max(200),
+      config: z.record(z.unknown()).optional(),
+    })
+    .nullable(),
+});
+
+export type NLQASqlResult = z.infer<typeof nlqaSqlSchema>;
+export type NLQAAnswerResult = z.infer<typeof nlqaAnswerSchema>;
+
+export interface NLQAHistoryTurn {
+  role: 'user' | 'assistant';
+  content: string;
+  sql?: string | null;
+}
+
+export interface NLQAGenerateSqlInput {
+  question: string;
+  schemaInfo: string;
+  dataSourceType: 'postgres' | 'stripe' | 'sheets';
+  history?: NLQAHistoryTurn[];
+}
+
+export interface NLQAGenerateAnswerInput {
+  question: string;
+  sql: string;
+  result: {
+    rows: unknown[];
+    rowCount: number;
+  };
+  history?: NLQAHistoryTurn[];
+}
+
+export interface NLQAGenerateEditInput {
+  prompt: string;
+  existingDashboard: {
+    title: string;
+    description?: string;
+    widgets: Widget[];
+  };
+  schemaInfo: string;
+  dataSourceType: 'postgres' | 'stripe' | 'sheets';
+}
+
+export interface NLQAEditResult {
+  action: 'add' | 'modify' | 'remove' | 'noop';
+  reasoning: string;
+  widgets?: Widget[];
+  modifyWidgetId?: string;
+}
+
 export class AiGateway {
   constructor(
     private provider: LLMProvider = 'openai',
@@ -125,6 +200,159 @@ Reglas estrictas:
     }
 
     return dashboard;
+  }
+
+  // ─── NLQA: paso 1 — pregunta → SQL ──────────────────────────────
+
+  async generateNLQASql(input: NLQAGenerateSqlInput): Promise<NLQASqlResult> {
+    const model = getLanguageModel(this.provider, this.modelName, this.encryptedApiKey);
+
+    const systemPrompt = `
+# ROLE
+Sos un agente SQL. Tu única tarea: convertir preguntas en lenguaje natural a SQL válido para responder la pregunta sobre la fuente de datos del usuario.
+
+# DATA SOURCE (${input.dataSourceType})
+${input.schemaInfo}
+
+# RULES (estrictas)
+1. SIEMPRE devuelve JSON con este shape: { "reasoning": "...", "sql": "SELECT ...", "params": [] }
+2. Solo SELECT/WITH. NUNCA INSERT/UPDATE/DELETE/DROP/ALTER/TRUNCATE.
+3. SIEMPRE incluí LIMIT 10000 si no hay LIMIT explícito.
+4. Si la pregunta es ambigua, hacé la interpretación MÁS COMÚN y mencionala en "reasoning".
+5. Si NO podés contestar con SQL (pregunta conceptual, sin datos), devolvé:
+   { "reasoning": "...", "sql": null, "fallbackAnswer": "..." }
+
+${input.history?.length ? `# CONVERSATION HISTORY\n${input.history.map((h) => `${h.role.toUpperCase()}: ${h.content}${h.sql ? `\nSQL usado: ${h.sql}` : ''}`).join('\n\n')}\n\n` : ''}# QUESTION
+${input.question}
+
+# OUTPUT (solo JSON válido, sin texto extra)
+`;
+
+    const result = await generateObject({
+      model,
+      schema: nlqaSqlSchema,
+      prompt: systemPrompt,
+      temperature: 0.1,
+    });
+
+    return result.object;
+  }
+
+  // ─── NLQA: paso 2 — pregunta + SQL + resultado → texto + chart ──
+
+  async generateNLQAAnswer(input: NLQAGenerateAnswerInput): Promise<NLQAAnswerResult> {
+    const model = getLanguageModel(this.provider, this.modelName, this.encryptedApiKey);
+    const sample = input.result.rows.slice(0, 50);
+
+    const systemPrompt = `
+# ROLE
+Sos un agente de respuesta. Convertís resultados SQL en respuestas cortas en español + sugerencia de chart.
+
+# QUESTION ORIGINAL
+${input.question}
+
+# SQL EJECUTADO
+${input.sql}
+
+# RESULTADOS (max 50 filas)
+${JSON.stringify(sample, null, 2)}
+
+# TAREA
+Devolvé JSON con:
+{
+  "answer": "Respuesta corta en español, máximo 2 frases, con números concretos.",
+  "chartSuggestion": {
+    "type": "kpi" | "line-chart" | "bar-chart" | "pie-chart" | "table" | null,
+    "rationale": "Por qué este chart (1 frase)",
+    "config": { ... }   // config específico del chart type
+  } | null
+}
+
+# REGLAS
+- "answer" SIEMPRE en español, conciso (<300 chars), con números reales del result.
+- "chartSuggestion" SOLO si el result tiene sentido visual (>= 1 row con dato numérico).
+- Si solo hay 1 valor (KPIs), sugerir type "kpi".
+- Si hay time series (columna label tipo fecha), sugerir "line-chart".
+- Si hay categorías discretas, sugerir "bar-chart".
+- Si hay distribución partes/total, sugerir "pie-chart".
+- Si hay >10 filas sin estructura clara, sugerir "table".
+- Si el result tiene 0 filas, chartSuggestion = null.
+
+${input.history?.length ? `# HISTORIAL (contexto)\n${input.history.map((h) => `${h.role.toUpperCase()}: ${h.content}`).join('\n')}\n\n` : ''}`;
+
+    const result = await generateObject({
+      model,
+      schema: nlqaAnswerSchema,
+      prompt: systemPrompt,
+      temperature: 0.3,
+    });
+
+    return result.object;
+  }
+
+  // ─── Edit iterativo — modifica dashboard existente ─────────────
+
+  async generateNLQAEdit(input: NLQAGenerateEditInput): Promise<NLQAEditResult> {
+    const model = getLanguageModel(this.provider, this.modelName, this.encryptedApiKey);
+
+    const widgetIds = input.existingDashboard.widgets.map((w) => w.id);
+    const widgetsSummary = input.existingDashboard.widgets.map((w) => ({
+      id: w.id,
+      type: w.type,
+      title: w.config.title ?? '(sin título)',
+      position: w.position,
+    }));
+
+    const systemPrompt = `
+# ROLE
+Sos un agente de edición de dashboards. El usuario quiere MODIFICAR un dashboard existente.
+
+# DASHBOARD ACTUAL
+Título: ${input.existingDashboard.title}
+Descripción: ${input.existingDashboard.description ?? '(sin descripción)'}
+Widgets actuales (${widgetIds.length}):
+${JSON.stringify(widgetsSummary, null, 2)}
+
+IDs de widgets disponibles para "modify" o "remove": ${JSON.stringify(widgetIds)}
+
+# DATA SOURCE (${input.dataSourceType})
+${input.schemaInfo}
+
+# SOLICITUD DEL USUARIO
+${input.prompt}
+
+# OUTPUT — JSON estricto
+{
+  "action": "add" | "modify" | "remove" | "noop",
+  "reasoning": "Por qué esta acción (1-2 frases)",
+  "widgets": [...],   // Solo si action="add" o "modify"
+  "modifyWidgetId": "..."  // Solo si action="modify"
+}
+
+# REGLAS
+1. Si el usuario pide "agregá un KPI de X", action="add" y devolvé un widget NUEVO en "widgets".
+2. Si el usuario pide "cambiá el título de Y", action="modify" + modifyWidgetId=ID de Y + widgets=[Y modificado].
+3. Si el usuario pide "eliminá el chart de Z", action="remove" + modifyWidgetId=ID de Z (sin widgets).
+4. Si no está claro, action="noop" + reasoning explicando.
+5. Solo SELECT queries.
+6. Para nuevos widgets, position debe ser válida (1<=col<=12, row>=1).
+`;
+
+    const editResultSchema = z.object({
+      action: z.enum(['add', 'modify', 'remove', 'noop']),
+      reasoning: z.string().max(500),
+      widgets: z.array(z.unknown()).optional(),
+      modifyWidgetId: z.string().optional(),
+    });
+
+    const result = await generateObject({
+      model,
+      schema: editResultSchema,
+      prompt: systemPrompt,
+      temperature: 0.2,
+    });
+
+    return result.object as NLQAEditResult;
   }
 }
 
