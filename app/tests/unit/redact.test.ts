@@ -1,31 +1,40 @@
 import { describe, it, expect } from 'vitest';
 import { redactSecrets, redactObject } from '@/lib/redact';
 
+// Fixture keys use repeating chars so the redacter matches them by length,
+// but no real provider will ever issue these. Safe to commit.
+const FAKE_OPENAI_KEY = 'sk_FAKE_KEY_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const FAKE_ANTHROPIC_KEY = 'sk_FAKE_ANT_aAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAaaaaaaaaaaaaaaa';
+const FAKE_GOOGLE_KEY = 'AIza_FAKE_KEY_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const FAKE_STRIPE_LIVE_KEY = 'sk_live_aaaaaaaaaaaaaaaaaaaaaaa';
+const FAKE_STRIPE_RESTRICTED_KEY = 'rk_test_aaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const FAKE_JWT =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c';
+
 describe('redactSecrets', () => {
   it('redacts OpenAI API keys', () => {
-    const input = 'Using key sk_FAKE_KEY_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    const input = `Using key ${FAKE_OPENAI_KEY}`;
     expect(redactSecrets(input)).toContain('[REDACTED]');
-    expect(redactSecrets(input)).not.toContain('sk_FAKE_KEY_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+    expect(redactSecrets(input)).not.toContain(FAKE_OPENAI_KEY);
   });
 
   it('redacts Anthropic API keys', () => {
-    const input = 'Bearer sk_FAKE_ANT_aAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+    const input = `Bearer ${FAKE_ANTHROPIC_KEY}`;
     expect(redactSecrets(input)).toContain('[REDACTED]');
   });
 
   it('redacts Google API keys', () => {
-    const input = 'AIza_FAKE_KEY_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    const input = FAKE_GOOGLE_KEY;
     expect(redactSecrets(input)).toContain('[REDACTED]');
   });
 
   it('redacts Stripe API keys', () => {
-    expect(redactSecrets('sk_live_aaaaaaaaaaaaaaaaaaaaaaa')).toContain('[REDACTED]');
-    expect(redactSecrets('rk_test_aaaaaaaaaaaaaaaaaaaaaaaaaaaa')).toContain('[REDACTED]');
+    expect(redactSecrets(FAKE_STRIPE_LIVE_KEY)).toContain('[REDACTED]');
+    expect(redactSecrets(FAKE_STRIPE_RESTRICTED_KEY)).toContain('[REDACTED]');
   });
 
   it('redacts JWT tokens', () => {
-    const jwt = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c';
-    expect(redactSecrets(`token: ${jwt}`)).toContain('[REDACTED]');
+    expect(redactSecrets(`token: ${FAKE_JWT}`)).toContain('[REDACTED]');
   });
 
   it('preserves non-secret strings', () => {
@@ -43,9 +52,9 @@ describe('redactObject', () => {
   it('redacts secrets in nested objects', () => {
     const obj = {
       user: 'john',
-      apiKey: 'sk_FAKE_KEY_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      apiKey: FAKE_OPENAI_KEY,
       nested: {
-        token: 'sk_FAKE_ANT_aAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        token: FAKE_ANTHROPIC_KEY,
       },
     };
 
