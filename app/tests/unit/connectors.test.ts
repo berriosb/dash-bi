@@ -14,7 +14,7 @@ describe('Connectors System', () => {
       name: 'Test DB',
       configEncrypted: encryptApiKey(
         JSON.stringify({
-          host: 'localhost',
+          host: 'db.example.com',
           port: 5432,
           database: 'test',
           username: 'user',
@@ -59,5 +59,49 @@ describe('Connectors System', () => {
     };
 
     expect(() => createConnector(config)).toThrow('Unsupported or un-implemented connector type');
+  });
+
+  // T6: SSRF defense in depth — connector must validate host on instantiation,
+  // not just on POST /api/data-sources.
+  it('rejects PostgresConnector pointing at private IP (SSRF)', () => {
+    const config: ConnectorConfig = {
+      id: 'ds-ssrf-1',
+      orgId: 'org-1',
+      type: 'postgres',
+      name: 'SSRF Attempt',
+      configEncrypted: encryptApiKey(
+        JSON.stringify({
+          host: '169.254.169.254', // AWS metadata
+          port: 5432,
+          database: 'test',
+          username: 'user',
+          password: 'pass',
+        }),
+        TEST_KEY,
+      ),
+    };
+
+    expect(() => createConnector(config)).toThrow(/not allowed/i);
+  });
+
+  it('rejects PostgresConnector pointing at localhost (SSRF)', () => {
+    const config: ConnectorConfig = {
+      id: 'ds-ssrf-2',
+      orgId: 'org-1',
+      type: 'postgres',
+      name: 'SSRF Localhost',
+      configEncrypted: encryptApiKey(
+        JSON.stringify({
+          host: 'localhost',
+          port: 5432,
+          database: 'test',
+          username: 'user',
+          password: 'pass',
+        }),
+        TEST_KEY,
+      ),
+    };
+
+    expect(() => createConnector(config)).toThrow(/not allowed/i);
   });
 });

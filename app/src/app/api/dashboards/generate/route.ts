@@ -8,17 +8,45 @@ import { resolveConnector } from '@/lib/query-engine/resolve';
 import { hydrateDashboard } from '@/lib/query-engine/dashboard';
 import { pruneSchemaForPrompt } from '@/lib/connectors/types';
 import { AiGateway } from '@/lib/ai/gateway';
+import { checkRateLimit } from '@/lib/rate-limit';
 import type { ThemeId } from '@/lib/widgets/types';
 
 export const dynamic = 'force-dynamic';
+
+// T9: AI generation is the most expensive operation. Limit per org to
+// prevent runaway costs and per IP to prevent abuse across orgs.
+const AI_GENERATE_PER_ORG = { capacity: 5, refillPerSecond: 5 / 60 }; // 5 burst, 1/min sustained
+const AI_GENERATE_PER_IP = { capacity: 20, refillPerSecond: 20 / 60 }; // 20 burst, 1/3s sustained
+
+function getClientIp(req: Request): string {
+  return req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
+}
 
 export async function POST(req: Request) {
   const url = new URL(req.url);
   const orgId = req.headers.get('x-org-id') || url.searchParams.get('orgId');
   const userId = req.headers.get('x-user-id');
+  const ip = getClientIp(req);
 
   if (!orgId || !userId) {
     return NextResponse.json({ error: 'x-org-id and x-user-id headers required' }, { status: 400 });
+  }
+
+  // Rate limit BEFORE auth — cheapest gate first.
+  const orgLimit = checkRateLimit({ ...AI_GENERATE_PER_ORG, key: `ai-generate:org:${orgId}` });
+  if (!orgLimit.allowed) {
+    return NextResponse.json(
+      { error: 'rate_limited', scope: 'org', retryAfterSeconds: orgLimit.retryAfterSeconds },
+      { status: 429, headers: { 'Retry-After': String(orgLimit.retryAfterSeconds) } },
+    );
+  }
+
+  const ipLimit = checkRateLimit({ ...AI_GENERATE_PER_IP, key: `ai-generate:ip:${ip}` });
+  if (!ipLimit.allowed) {
+    return NextResponse.json(
+      { error: 'rate_limited', scope: 'ip', retryAfterSeconds: ipLimit.retryAfterSeconds },
+      { status: 429, headers: { 'Retry-After': String(ipLimit.retryAfterSeconds) } },
+    );
   }
 
   try {

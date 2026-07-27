@@ -21,6 +21,33 @@ const mainClient = postgres(connectionString, {
 
 export const db = drizzle(mainClient, { schema });
 
+// ─────────────────────────────────────────────────────────────────
+// T7 — Read-only DB client (defense in depth)
+// ─────────────────────────────────────────────────────────────────
+//
+// Conexión que usa el rol Postgres `dashbi_readonly`, que solo tiene
+// permisos SELECT. Si una query generada por IA logra escapar la
+// validación de `validateQuery()` (T3) y se cuela un INSERT/UPDATE/
+// DROP, la DB rechaza la operación a nivel de rol.
+//
+// Caso de uso actual: queries que la IA hace sobre tablas internas
+// de dash-bi (NLQA, "cuántos dashboards tenemos?", etc. — Sprint 3+).
+// Las queries de hidratación sobre data sources del usuario siguen
+// yendo por los connectors (que usan las credenciales que el usuario
+// proveyó, fuera de nuestro control de DB).
+
+const readonlyConnectionString =
+  process.env.DATABASE_READONLY_URL || 'postgresql://localhost:5432/dashbi';
+
+const readonlyClient = postgres(readonlyConnectionString, {
+  max: 10,
+  idle_timeout: 20,
+  connect_timeout: 10,
+  prepare: false,
+});
+
+export const readonlyDb = drizzle(readonlyClient, { schema });
+
 export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 // ─────────────────────────────────────────────────────────────────
@@ -97,4 +124,65 @@ export async function withOrgContext<T>(
  */
 export async function withSystemContext<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
   return await db.transaction(fn);
+}
+
+/**
+ * T7 — Read-only org context para queries ejecutadas por IA.
+ *
+ * Misma semántica que `withOrgContext` (SET LOCAL de org_id/user_id/role
+ * para que las RLS policies filtren), pero usa el rol Postgres
+ * `dashbi_readonly` que solo tiene permisos SELECT.
+ *
+ * Defense in depth: aunque `validateQuery()` falle, la DB rechaza
+ * cualquier INSERT/UPDATE/DELETE/DROP a nivel de rol.
+ *
+ * Úsalo en:
+ * - Endpoints NLQA que ejecutan SQL generado por IA contra tablas internas
+ * - Cualquier futuro flow donde la IA necesite leer estado de la app
+ *
+ * NO lo uses para escrituras legítimas (dashboard create/update, etc.).
+ */
+export async function withOrgContextReadOnly<T>(
+  orgId: string,
+  userId: string,
+  fn: (tx: Parameters<Parameters<typeof readonlyDb.transaction>[0]>[0]) => Promise<T>,
+): Promise<T>;
+export async function withOrgContextReadOnly<T>(
+  orgId: string,
+  userId: string,
+  role: OrgRole,
+  fn: (tx: Parameters<Parameters<typeof readonlyDb.transaction>[0]>[0]) => Promise<T>,
+): Promise<T>;
+export async function withOrgContextReadOnly<T>(
+  orgId: string,
+  userId: string,
+  roleOrFn:
+    | OrgRole
+    | ((tx: Parameters<Parameters<typeof readonlyDb.transaction>[0]>[0]) => Promise<T>),
+  fnMaybe?: (tx: Parameters<Parameters<typeof readonlyDb.transaction>[0]>[0]) => Promise<T>,
+): Promise<T> {
+  const role: OrgRole = typeof roleOrFn === 'function' ? 'editor' : roleOrFn;
+  const fn = (typeof roleOrFn === 'function' ? roleOrFn : fnMaybe)!;
+
+  return await readonlyDb.transaction(async (tx) => {
+    await tx.execute(sql`SET LOCAL app.current_org_id = ${orgId}`);
+    await tx.execute(sql`SET LOCAL app.current_user_id = ${userId}`);
+    await tx.execute(sql`SET LOCAL app.current_user_role = ${role}`);
+
+    const start = Date.now();
+    try {
+      const result = await fn(tx);
+      logger.debug(
+        { orgId, userId, role, durationMs: Date.now() - start, mode: 'readonly' },
+        'withOrgContextReadOnly completed',
+      );
+      return result;
+    } catch (error) {
+      logger.error(
+        { orgId, userId, role, durationMs: Date.now() - start, error, mode: 'readonly' },
+        'withOrgContextReadOnly failed',
+      );
+      throw error;
+    }
+  });
 }

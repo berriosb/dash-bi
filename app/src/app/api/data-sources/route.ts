@@ -6,6 +6,7 @@ import { dataSources, auditLog } from '@/db/schema';
 import { requirePermission } from '@/lib/auth/context';
 import { encryptApiKey } from '@/lib/security/encryption';
 import { validatePostgresHost } from '@/lib/security/validate-connection';
+import { checkRateLimit } from '@/lib/rate-limit';
 import { audit } from '@/lib/audit/log';
 
 export const dynamic = 'force-dynamic';
@@ -75,9 +76,24 @@ export async function POST(req: Request) {
   const url = new URL(req.url);
   const orgId = req.headers.get('x-org-id') || url.searchParams.get('orgId');
   const userId = req.headers.get('x-user-id');
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
 
   if (!orgId || !userId) {
     return NextResponse.json({ error: 'x-org-id and x-user-id headers required' }, { status: 400 });
+  }
+
+  // T9: rate limit data source creation. Encryption + DB writes son
+  // costosas y pueden revelar secrets si se abuse. 30 burst, 1 cada 2s.
+  const dsLimit = checkRateLimit({
+    capacity: 30,
+    refillPerSecond: 0.5,
+    key: `ds-create:org:${orgId}:ip:${ip}`,
+  });
+  if (!dsLimit.allowed) {
+    return NextResponse.json(
+      { error: 'rate_limited', retryAfterSeconds: dsLimit.retryAfterSeconds },
+      { status: 429, headers: { 'Retry-After': String(dsLimit.retryAfterSeconds) } },
+    );
   }
 
   try {

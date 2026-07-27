@@ -65,10 +65,10 @@ describe('useAutoSave', () => {
     await new Promise((r) => setTimeout(r, 1100));
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchMock.mock.calls[0];
+    const [url, init] = fetchMock.mock.calls[0] ?? [];
     expect(url).toBe('/api/dashboards/dash-1');
-    expect(init.method).toBe('PATCH');
-    const body = JSON.parse(init.body);
+    expect(init?.method).toBe('PATCH');
+    const body = JSON.parse(init?.body);
     expect(body.title).toBe('Updated');
   });
 

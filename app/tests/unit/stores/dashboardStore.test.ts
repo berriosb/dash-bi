@@ -30,7 +30,7 @@ describe('useDashboardStore', () => {
       useDashboardStore.getState().addWidget(widget);
     });
     expect(useDashboardStore.getState().widgets).toHaveLength(1);
-    expect(useDashboardStore.getState().widgets[0].id).toBe('w1');
+    expect(useDashboardStore.getState().widgets[0]?.id).toBe('w1');
   });
 
   it('updates a widget config', () => {
@@ -42,7 +42,7 @@ describe('useDashboardStore', () => {
         config: { title: 'Updated' },
       } as Partial<Widget>);
     });
-    expect(useDashboardStore.getState().widgets[0].config.title).toBe('Updated');
+    expect(useDashboardStore.getState().widgets[0]?.config.title).toBe('Updated');
   });
 
   it('removes a widget', () => {
@@ -54,7 +54,7 @@ describe('useDashboardStore', () => {
       useDashboardStore.getState().removeWidget('w1');
     });
     expect(useDashboardStore.getState().widgets).toHaveLength(1);
-    expect(useDashboardStore.getState().widgets[0].id).toBe('w2');
+    expect(useDashboardStore.getState().widgets[0]?.id).toBe('w2');
   });
 
   it('reorders widgets', () => {
@@ -66,7 +66,7 @@ describe('useDashboardStore', () => {
     act(() => {
       useDashboardStore.getState().reorderWidgets(reordered);
     });
-    expect(useDashboardStore.getState().widgets[0].id).toBe('w2');
+    expect(useDashboardStore.getState().widgets[0]?.id).toBe('w2');
   });
 
   it('exposes undo/redo via zundo temporal store', () => {

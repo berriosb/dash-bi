@@ -1,6 +1,7 @@
 import postgres from 'postgres';
 import { decryptApiKey } from '@/lib/security/encryption';
 import { validateQuery } from '@/lib/security/validate-query';
+import { validatePostgresHost, SSRFError } from '@/lib/security/validate-connection';
 import type { Connector, ConnectorConfig, ConnectorSchema, Query, QueryResult } from '../types';
 
 export type PostgresConfig = {
@@ -21,6 +22,21 @@ export class PostgresConnector implements Connector {
   constructor(connectorConfig: ConnectorConfig) {
     const rawConfig = decryptApiKey(connectorConfig.configEncrypted);
     this.config = JSON.parse(rawConfig);
+
+    // T6: defense in depth — even though POST /api/data-sources validates
+    // the host on creation, the connector itself must validate again on
+    // every instantiation. A future code path that bypasses the API
+    // route (cron job, seed script, internal rebuild) would otherwise
+    // be able to point us at 169.254.169.254 or localhost.
+    try {
+      validatePostgresHost(this.config.host);
+    } catch (err) {
+      if (err instanceof SSRFError) {
+        throw err;
+      }
+      throw new SSRFError(`Invalid Postgres host: ${(err as Error).message}`);
+    }
+
     this.client = postgres({
       host: this.config.host,
       port: this.config.port,
