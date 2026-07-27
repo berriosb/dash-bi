@@ -7,6 +7,7 @@
 1. **Lee las specs.** La carpeta [`specs/`](./specs) describe features en detalle. Empezá por [`SPEC.md`](./SPEC.md) y [`PRODUCT.md`](./PRODUCT.md).
 2. **Mirá la arquitectura.** [`docs/IMPLEMENTATION-PLAN-v1.0.md`](./docs/IMPLEMENTATION-PLAN-v1.0.md) tiene el plan completo y decisiones congeladas.
 3. **Buscá un issue abierto** o abrí uno nuevo describiendo el cambio propuesto.
+4. **Setup de AI agent skills** (opcional, solo si vas a usar opencode/Claude): ver [`docs/agent-skills.md`](./docs/agent-skills.md).
 
 ## Workflow
 
@@ -25,6 +26,10 @@ docker compose up -d postgres redis
 pnpm install
 pnpm db:migrate
 pnpm db:setup-rls
+
+# 3b. (Opcional) Setup de AI agent skills
+npx impeccable install --providers=codex,opencode --scope=project --no-hooks
+npx skills sync    # regenera .agents/skills/ desde skills-lock.json (gitignored)
 
 # 4. Hacer cambios + tests
 pnpm test            # unit + security

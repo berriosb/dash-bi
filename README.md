@@ -17,14 +17,15 @@
 ```
 dash-bi/
 ├── README.md                       ← este archivo (índice del workspace)
-├── .gitignore                      ← ignores raíz (OS, editor, secrets, .agents/)
+├── .gitignore                      ← ignores raíz (OS, editor, secrets, AI tooling)
 ├── SPEC.md                         ← spec master del producto
 ├── PRODUCT.md                      ← contexto durable del producto
 ├── DESIGN.md                       ← design system (Impeccable)
 │
-├── docs/                           ← docs de diseño + auditorías
+├── docs/                           ← docs de diseño + auditorías + agent skills
 │   ├── IMPLEMENTATION-PLAN-v1.0.md ← plan de implementación 6 semanas
 │   ├── architecture.md             ← arquitectura técnica
+│   ├── agent-skills.md             ← política + setup de AI agent skills
 │   ├── security/
 │   │   └── threat-model.md         ← amenazas + controles
 │   ├── audits/
@@ -32,7 +33,8 @@ dash-bi/
 │   │       ├── REPORTE.md          ← auditoría arquitectura
 │   │       └── STACK-AUDIT.md      ← auditoría stack
 │   └── design/
-│       └── dashboard-surface-brief.md
+│       ├── dashboard-surface-brief.md
+│       └── impeccable-adoption-plan.md ← plan archivado de adopción Impeccable
 │
 ├── specs/                          ← specs por feature (22 archivos)
 │   ├── widget-system.md
@@ -63,10 +65,13 @@ dash-bi/
 │
 ├── diagrams/                       ← (vacío por ahora)
 │
-├── .hermes/                        ← planes de trabajo
-├── .impeccable/                    ← config Impeccable
-├── .opencode/                      ← skills OpenCode (source of truth)
-├── .agents/                        ← gitignored — mirror runtime, NO se commitea
+├── .impeccable/                    ← tracked — config Impeccable (design contract)
+├── .opencode/skills/               ← tracked solo project-authored (ej. security-audit)
+├── .agents/skills/                 ← gitignored — mirror local de skills de terceros
+├── .claude/                        ← gitignored — config + skills Claude
+├── .hermes/                        ← gitignored — planes efímeros del planner
+├── AGENTS.md                       ← gitignored — contexto AI per-developer
+├── skills-lock.json                ← gitignored — hashes de skills de terceros
 │
 └── app/                            ← CÓDIGO DE LA APLICACIÓN (ver app/README.md)
     ├── src/                        ← Next.js App Router + componentes
