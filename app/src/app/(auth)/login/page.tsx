@@ -45,6 +45,20 @@ export default function LoginPage() {
         }
 
         toast({ title: 'Sesión iniciada', description: 'Redirigiendo al dashboard…' });
+
+        // Drop-off recovery: if onboarding incomplete, route there first.
+        try {
+          const resumeRes = await fetch('/api/onboarding/resume');
+          if (resumeRes.ok) {
+            const body = (await resumeRes.json()) as { resumePath: string | null };
+            if (body.resumePath) {
+              router.push(body.resumePath);
+              return;
+            }
+          }
+        } catch {
+          // ignore — fall through to default redirect
+        }
         router.push(redirect);
       } else {
         const res = await signIn.magicLink({

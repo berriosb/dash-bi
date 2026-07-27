@@ -23,9 +23,9 @@ export function ChooseSourceStep() {
   const goToStep = useOnboardingStore((s) => s.goToStep);
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 p-6">
+    <div className="mx-auto max-w-3xl space-y-6 p-4 sm:p-6">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">¿Qué querés conectar?</h1>
+        <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">¿Qué querés conectar?</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Elegí una fuente para empezar. Podés conectar otras después desde Settings.
         </p>

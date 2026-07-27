@@ -28,10 +28,10 @@ export function WelcomeStep() {
   const goToStep = useOnboardingStore((s) => s.goToStep);
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6 p-6">
+    <div className="mx-auto max-w-2xl space-y-6 p-4 sm:p-6">
       <header className="text-center">
-        <h1 className="text-3xl font-semibold tracking-tight">👋 ¡Bienvenido a dash-bi!</h1>
-        <p className="mt-3 text-muted-foreground">
+        <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">👋 ¡Bienvenido a dash-bi!</h1>
+        <p className="mt-3 text-sm text-muted-foreground sm:text-base">
           Vamos a crear tu primer dashboard en 3 pasos. Tardarás menos de 3 minutos.
         </p>
       </header>

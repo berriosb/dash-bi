@@ -15,13 +15,23 @@ const VALID_STEPS: ReadonlyArray<OnboardingStep> = [
   'success',
 ];
 
-export default async function OnboardingPage() {
+export default async function OnboardingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ resume?: string }>;
+}) {
   const hdrs = await headers();
   const userId = hdrs.get('x-user-id');
+  const params = await searchParams;
 
-  let initialStep: OnboardingStep = 'welcome';
+  // 1. ?resume=<step> wins (explicit drop-off link)
+  let initialStep: OnboardingStep | null =
+    params.resume && VALID_STEPS.includes(params.resume as OnboardingStep)
+      ? (params.resume as OnboardingStep)
+      : null;
 
-  if (userId) {
+  // 2. Otherwise load persisted step from DB
+  if (!initialStep && userId) {
     try {
       const user = await db.query.users.findFirst({
         where: eq(users.id, userId),
@@ -36,5 +46,5 @@ export default async function OnboardingPage() {
     }
   }
 
-  return <OnboardingFlow initialStep={initialStep} />;
+  return <OnboardingFlow initialStep={initialStep ?? 'welcome'} />;
 }

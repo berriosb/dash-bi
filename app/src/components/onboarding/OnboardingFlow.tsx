@@ -1,19 +1,23 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useOnboardingStore } from '@/stores/onboardingStore';
 import { WelcomeStep } from './WelcomeStep';
 import { ChooseSourceStep } from './ChooseSourceStep';
 import { PromptStep } from './PromptStep';
+import { GeneratingStep } from './GeneratingStep';
 import { SuccessStep } from './SuccessStep';
+import { trackOnboardingEvent } from '@/lib/onboarding/track';
 
 const STEP_COMPONENTS = {
   welcome: WelcomeStep,
   choose_source: ChooseSourceStep,
   prompt: PromptStep,
-  generating: PromptStep, // Same UI while AI generates — SuccessStep replaces on completion
+  generating: GeneratingStep,
   success: SuccessStep,
 } as const;
+
+const STEP_START_TIMES: Partial<Record<keyof typeof STEP_COMPONENTS, number>> = {};
 
 interface OnboardingFlowProps {
   /** Optional initial step from server (e.g., drop-off recovery). */
@@ -22,14 +26,44 @@ interface OnboardingFlowProps {
 
 export function OnboardingFlow({ initialStep }: OnboardingFlowProps) {
   const step = useOnboardingStore((s) => s.step);
+  const selectedSourceType = useOnboardingStore((s) => s.selectedSourceType);
+  const dashboardId = useOnboardingStore((s) => s.dashboardId);
   const goToStep = useOnboardingStore((s) => s.goToStep);
+  const initialApplied = useRef(false);
 
   useEffect(() => {
-    if (initialStep && initialStep !== step) {
+    if (!initialApplied.current && initialStep && initialStep !== step) {
       goToStep(initialStep);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    initialApplied.current = true;
+  }, [initialStep, step, goToStep]);
+
+  // Track step transitions for analytics (per onboarding.md §10)
+  const startedAtRef = useRef<number>(Date.now());
+  useEffect(() => {
+    if (step === 'success') {
+      trackOnboardingEvent('completed', {
+        totalDurationMs: Date.now() - startedAtRef.current,
+        dashboardGenerated: Boolean(dashboardId),
+      });
+      return;
+    }
+    const enteredAt = Date.now();
+    STEP_START_TIMES[step] = enteredAt;
+
+    // On transition AWAY from a previous step, fire step_completed
+    return () => {
+      const previousStep = step;
+      const durationMs = Date.now() - enteredAt;
+      if (previousStep === 'welcome' || previousStep === 'choose_source' || previousStep === 'prompt') {
+        trackOnboardingEvent('step_completed', {
+          step: previousStep,
+          sourceType: selectedSourceType ?? undefined,
+          durationMs,
+        });
+      }
+    };
+  }, [step, selectedSourceType, dashboardId]);
 
   const StepComponent = STEP_COMPONENTS[step];
 

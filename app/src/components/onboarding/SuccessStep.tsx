@@ -12,15 +12,15 @@ export function SuccessStep() {
   const dashboardHref = dashboardId ? `/dashboards/${dashboardId}` : '/dashboards';
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6 p-6 text-center">
+    <div className="mx-auto max-w-2xl space-y-6 p-4 text-center sm:p-6">
       <PartyPopper className="mx-auto h-12 w-12 text-primary" />
       <header>
-        <h1 className="text-3xl font-semibold tracking-tight">
+        <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
           🎉 ¡Tu primer dashboard está listo!
         </h1>
       </header>
 
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Link href={`${dashboardHref}?openNlqa=1`}>
           <Button variant="outline" className="w-full">
             <MessageSquare className="mr-2 h-4 w-4" /> Ajustar con chat
