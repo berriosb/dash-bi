@@ -83,6 +83,11 @@ export const users = pgTable(
 
     activeOrgId: uuid('active_org_id'),
 
+    // Onboarding state (per onboarding.md §6)
+    onboardingCompletedAt: timestamp('onboarding_completed_at', { withTimezone: true }),
+    currentOnboardingStep: text('current_onboarding_step'),
+    onboardingDataSourceId: uuid('onboarding_data_source_id'),
+
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
   },
