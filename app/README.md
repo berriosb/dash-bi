@@ -193,3 +193,7 @@ pnpm db:setup-rls     # habilita RLS en DB
 ## Decisiones congeladas
 
 Ver `../docs/IMPLEMENTATION-PLAN-v1.0.md` para el plan consolidado.
+
+## License
+
+AGPL v3 — ver [`../LICENSE`](../LICENSE).

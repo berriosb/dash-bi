@@ -1,4 +1,14 @@
-# dash-bi — Local Workspace
+# dash-bi
+
+> **Open source + self-hosted BI con IA que compone dashboards completos con datos reales y elección de proveedor LLM.**
+>
+> Como Metabase, Superset, Lightdash y Wren AI — pero con AI generativa + multi-LLM como citizens first-class.
+
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
+[![Stack: Next.js 16](https://img.shields.io/badge/Next.js-16-black)](https://nextjs.org)
+[![TypeScript: strict](https://img.shields.io/badge/TypeScript-strict-blue)](https://www.typescriptlang.org)
+[![Tests: 208+](https://img.shields.io/badge/tests-208%2B%20passing-brightgreen)](./app/tests)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](./CONTRIBUTING.md)
 
 > **NOTA:** Este es el directorio de trabajo local del proyecto. El código de la aplicación vive en `./app/`.
 
@@ -131,4 +141,21 @@ Ver `docs/IMPLEMENTATION-PLAN-v1.0.md` para el plan consolidado.
 - 3 LLM providers (no 5)
 - Puppeteer en container separado
 
-**Sin GitHub todavía (per usuario).** Repo local listo para subir cuando el usuario dé OK.
+## License
+
+AGPL v3 — ver [`LICENSE`](./LICENSE).
+
+Elegida por la misma razón que Metabase, Wren AI, Briefer y Grafana: el código es libre para self-host, pero si alguien ofrece dash-bi como servicio en la nube debe publicar sus modificaciones. Esto protege que un proveedor cloud forkee el código sin contribuir.
+
+## Contributing
+
+Ver [`CONTRIBUTING.md`](./CONTRIBUTING.md). Resumen:
+
+- **Issues:** bugs, features, preguntas — todo welcome.
+- **PRs:** abrir PR contra `main`. CI corre lint + typecheck + unit + e2e + audit.
+- **Branches:** `feat/*`, `fix/*`, `chore/*`, `docs/*`.
+- **Commits:** conventional commits (`feat:`, `fix:`, `chore:`, `docs:`).
+
+## Code of Conduct
+
+[`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md) — basado en Contributor Covenant 2.1.
