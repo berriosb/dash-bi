@@ -149,7 +149,7 @@ Ver specs completos:
 
 **Cuadrante único:** OSS + AI que compone dashboards + multi-LLM + self-hosted + look SaaS moderno.
 
-Ver [research/competitors.md](./research/competitors.md) para análisis completo.
+Análisis de competidores OSS (Metabase, Superset, Lightdash, Grafana, OpenBB, Briefer, Wren AI, Evidence) y SaaS con free tier (Looker Studio) vivido durante el planning phase. Conclusión: nadie combina OSS + self-host + AI generativa de dashboards completos + multi-LLM + look SaaS moderno.
 
 ## 9. Riesgos identificados
 

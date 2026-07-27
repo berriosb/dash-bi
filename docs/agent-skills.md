@@ -34,6 +34,7 @@ dash-bi distingue **3 categorías** de skills. Esta separación reduce el repo e
 
 **Untracked pero en disco (regenerables):**
 - `.opencode/skills/impeccable/` — paquete `impeccable` npm vendorizado (123 archivos, 2.9 MB)
+- `.impeccable/` — config local + design contract JSON derivado (regenerable via Impeccable CLI)
 - `.agents/skills/*` — mirror de skills de terceros para runtime opencode
 - `.claude/skills/*` — mirror de skills de terceros para runtime Claude
 
@@ -45,7 +46,7 @@ dash-bi distingue **3 categorías** de skills. Esta separación reduce el repo e
 
 ### Repos OSS BI competidores
 
-Ver `research/competitors.md` y `research/critical-competitors.md`. Los 5 OSS BI principales (Metabase, Superset, Lightdash, Wren AI, Briefer) commitean:
+Los 5 OSS BI principales (Metabase, Superset, Lightdash, Wren AI, Briefer) commitean:
 - ✅ Código de la app, tests, docs, CI/CD, licencia
 - ✅ `CONTRIBUTING.md` con instrucciones para humanos
 
@@ -77,7 +78,7 @@ npx impeccable install --providers=codex,opencode --scope=project --no-hooks
 
 - `--providers=codex,opencode`: solo instala para los runtimes que usamos
 - `--scope=project`: instala en `.opencode/skills/` y `.claude/skills/` (no user-level)
-- `--no-hooks`: desactiva hooks automáticos (configurados via `.impeccable/config.json`)
+- `--no-hooks`: desactiva hooks automáticos (Impeccable los activa por defecto; este flag los desactiva)
 
 Verifica que no creó un hook manifest:
 
@@ -105,7 +106,12 @@ npx skills add obra/superpowers --skill skills/dispatching-parallel-agents
 
 ### Contrato de diseño
 
-`.impeccable/config.json` y `.impeccable/design.json` están **tracked** porque son la fuente de verdad del design system. Impeccable los lee para detectar issues y aplicar tokens. Si querés regenerar el detector:
+El design system canónico vive en:
+- `DESIGN.md` (root) — documentación humana
+- `app/src/app/globals.css` — tokens CSS
+- `app/tailwind.config.*` — tokens Tailwind
+
+`.impeccable/` (gitignored) es un derivado JSON que Impeccable genera a partir de esas fuentes. Si querés regenerar el detector:
 
 ```bash
 npx impeccable detect
@@ -176,8 +182,7 @@ Probablemente corriste `npx skills add` ad-hoc. Limpiá con `npx skills sync --c
 
 ## Referencias
 
-- `.gitignore` (L107-130): las reglas que aplican esta política
+- `.gitignore`: las reglas que aplican esta política
 - `AGENTS.md` (gitignored, per-developer): contexto auto-inyectado al agente
 - `docs/design/impeccable-adoption-plan.md`: plan archivado de adopción inicial
 - `docs/security/threat-model.md`: origen del skill `security-audit`
-- `research/critical-competitors.md`: análisis de competidores OSS BI

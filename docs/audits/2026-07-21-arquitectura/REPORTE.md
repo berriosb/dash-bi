@@ -2,7 +2,7 @@
 
 **Fecha:** 2026-07-21
 **Auditor:** codehak (con contexto del subagente `spec-audit-remediation`)
-**Alcance:** 10 specs en `/home/bastian-berrios/Proyectos/dash-bi/specs/` + SPEC.md + docs/architecture.md + research/
+**Alcance:** 10 specs en `/home/bastian-berrios/Proyectos/dash-bi/specs/` + SPEC.md + docs/architecture.md
 **Método:** Lectura completa de cada spec + búsqueda de referencias cruzadas + web research de competidores + comparación con alternativas OSS (Wren AI 16.5k stars, Metabase Metabot AI, Briefer, Omni/ThoughtSpot)
 
 ---
@@ -513,9 +513,8 @@ Estimado: reducción a ~1,000 tokens = 3x más barato.
 **Descripción:** Algunos specs dicen `minimax`, otros `MiniMax`, otros `minimax-chat`.
 
 **Evidencia:**
-- `multi-llm-router.md` línea 44: "minimax" 
+- `multi-llm-router.md` línea 44: "minimax"
 - Línea 70: `minimax('M2.7')`
-- research/critical-competitors.md: "minimax-M2.7"
 - SPEC.md: "minimax"
 
 **Recomendación:** Estandarizar. `minimax` (todo minúscula) en código, "MiniMax" en marketing.

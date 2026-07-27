@@ -59,17 +59,14 @@ dash-bi/
 │   ├── demo-mode.md
 │   └── README.md
 │
-├── research/                       ← research de competidores
-│   ├── competitors.md              ← 18 competidores mapeados
-│   └── critical-competitors.md     ← deep dive Metabase/Wren/Briefer
-│
 ├── diagrams/                       ← (vacío por ahora)
 │
-├── .impeccable/                    ← tracked — config Impeccable (design contract)
 ├── .opencode/skills/               ← tracked solo project-authored (ej. security-audit)
 ├── .agents/skills/                 ← gitignored — mirror local de skills de terceros
 ├── .claude/                        ← gitignored — config + skills Claude
 ├── .hermes/                        ← gitignored — planes efímeros del planner
+├── .impeccable/                    ← gitignored — config local Impeccable (regenerable)
+├── research/                       ← gitignored — investigación local (strategic conclusions en SPEC.md)
 ├── AGENTS.md                       ← gitignored — contexto AI per-developer
 ├── skills-lock.json                ← gitignored — hashes de skills de terceros
 │
