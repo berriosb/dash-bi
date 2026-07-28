@@ -192,7 +192,11 @@ jobs:
 
       - run: pnpm db:migrate
 
-      - run: pnpm playwright install --with-deps chromium
+      # Install every browser the Playwright config projects reference
+      # (chromium, firefox, webkit). Default would be one but config defines
+      # three projects so install all three, otherwise ~2/3 of the suite
+      # fails with "browserType.launch: Executable doesn't exist".
+      - run: pnpm playwright install --with-deps chromium firefox webkit
       - run: pnpm test:e2e
         env:
           CI: true
