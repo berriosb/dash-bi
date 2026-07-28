@@ -163,15 +163,28 @@ export const auditLog = pgTable('audit_log', {
 
 ## 3. Row Level Security (RLS)
 
-### 3.1 Activar RLS en cada tabla
+### 3.0 Por qué `FORCE ROW LEVEL SECURITY`
+
+Postgres por defecto **no** aplica RLS al **owner** de la tabla (usualmente el rol con el que la app bootea). Sin `FORCE ROW LEVEL SECURITY`, los queries que corren como `postgres` o el rol `dashbi` dueño de la tabla **ven todas las filas de todas las orgs**.
+
+**Regla:** toda tabla tenant-scoped debe llevar `FORCE ROW LEVEL SECURITY` además de `ENABLE ROW LEVEL SECURITY`. Esto obliga a las policies a aplicar también al owner, cerrando el bypass.
+
+Implementado en `app/drizzle/migrations/0001_rls_policies.sql`.
+
+### 3.1 Activar RLS en cada tabla (con FORCE ROW LEVEL SECURITY)
 
 ```sql
 -- Ejecutar en migrations después de crear tablas
 ALTER TABLE data_sources ENABLE ROW LEVEL SECURITY;
+ALTER TABLE data_sources FORCE ROW LEVEL SECURITY;
 ALTER TABLE dashboards ENABLE ROW LEVEL SECURITY;
+ALTER TABLE dashboards FORCE ROW LEVEL SECURITY;
 ALTER TABLE queries ENABLE ROW LEVEL SECURITY;
+ALTER TABLE queries FORCE ROW LEVEL SECURITY;
 ALTER TABLE llm_usage ENABLE ROW LEVEL SECURITY;
+ALTER TABLE llm_usage FORCE ROW LEVEL SECURITY;
 ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY;
+ALTER TABLE audit_log FORCE ROW LEVEL SECURITY;
 ```
 
 ### 3.2 Policies

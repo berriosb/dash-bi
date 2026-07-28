@@ -17,7 +17,7 @@
 
 ## 1. Objetivo
 
-Garantizar que dash-bi funcione correctamente **sin依赖于 confianza manual**:
+Garantizar que dash-bi funcione correctamente **sin depender de confianza manual**:
 
 1. **Tests automatizados** que se corren en cada PR
 2. **Coverage mínimo** en código crítico (security, multi-tenant, query engine)

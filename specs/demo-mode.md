@@ -276,7 +276,7 @@ POST /api/demo/seed { persona: 'saas-startup' }
     - Inserts en batch de 5k rows/transaction
     - Progress % via SSE para UI
 [4] Cuando termina → notifica al cliente (revalidate)
-[5] Auto-navega a /dashboards/demo-{persona}-mrr-overview
+[5] Auto-navega a `/demo/dashboard` (ruta pública de showcase; ver `app/src/app/demo/dashboard/page.tsx`)
 ```
 
 ### 7.2 Background worker

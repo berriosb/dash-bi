@@ -523,7 +523,7 @@ export class StripeConnector implements Connector {
   constructor(connectorConfig: ConnectorConfig) {
     const config = JSON.parse(decryptApiKey(connectorConfig.configEncrypted)) as StripeConfig;
     this.client = new Stripe(config.apiKey, {
-      apiVersion: '2025-09-30.clover',
+      apiVersion: '2024-12-18.acacia',
     });
   }
   

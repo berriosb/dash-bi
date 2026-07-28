@@ -318,17 +318,18 @@ type TableWidget = {
 ### 3.3 Union type del widget system
 
 ```typescript
-type Widget = 
-  // 3. UNION type de los 7 widgets soportados
-    | KPIWidget 
-    | LineChartWidget 
-    | BarChartWidget 
-    | PieChartWidget 
-    | AreaChartWidget
-    | ScatterWidget
-    | TableWidget;
-    // ❌ ELIMINADOS v0.2 (auditoría 2026-07-21): HeatmapWidget, FunnelWidget, StackedBarWidget
-    // Razones: caso de uso nicho + +2-3 semanas de render PDF sin beneficio proporcional.
+// 3. UNION type de los 7 widgets soportados
+// ❌ ELIMINADOS v0.2 (auditoría 2026-07-21): HeatmapWidget, FunnelWidget, StackedBarWidget
+// Razones: caso de uso nicho + +2-3 semanas de render PDF sin beneficio proporcional.
+type Widget =
+  | KPIWidget
+  | LineChartWidget
+  | BarChartWidget
+  | PieChartWidget
+  | AreaChartWidget
+  | ScatterWidget
+  | TableWidget;
+```
 
 ## 4. Renderer architecture
 
