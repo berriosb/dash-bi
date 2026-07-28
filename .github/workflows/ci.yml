@@ -160,6 +160,30 @@ jobs:
             echo "NEXT_PUBLIC_APP_URL=http://localhost:3000"
           } >> "$GITHUB_ENV"
 
+      # Migrations reference the dashbi_readonly role (GRANT statements
+      # in 0002_nlqa.sql), so the role must exist before db:migrate runs.
+      # The local init-readonly.sql creates it NOLOGIN; we need LOGIN for
+      # DATABASE_READONLY_URL. Set the password and grant privileges in
+      # one shot.
+      - name: Provision dashbi_readonly role
+        env:
+          PGPASSWORD: changeme
+        run: |
+          psql -h localhost -U dashbi -d dashbi -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'dashbi_readonly') THEN
+              CREATE ROLE dashbi_readonly LOGIN PASSWORD 'changeme';
+            ELSE
+              ALTER ROLE dashbi_readonly WITH LOGIN PASSWORD 'changeme';
+            END IF;
+          END
+          $$;
+          GRANT USAGE ON SCHEMA public TO dashbi_readonly;
+          GRANT SELECT ON ALL TABLES IN SCHEMA public TO dashbi_readonly;
+          ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO dashbi_readonly;
+          SQL
+
       - run: pnpm db:migrate
 
       - run: pnpm playwright install --with-deps chromium
