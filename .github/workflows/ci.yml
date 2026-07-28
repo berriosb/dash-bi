@@ -142,23 +142,27 @@ jobs:
           cache-dependency-path: app/pnpm-lock.yaml
 
       - run: pnpm install --frozen-lockfile
+
+      # Generate CI-only placeholder secrets at runtime. Never hardcode
+      # anything that looks like a real secret in this YAML — secret
+      # scanners would flag it. These values are scoped to this job and
+      # discarded at teardown.
+      - name: Generate CI placeholder secrets
+        run: |
+          {
+            echo "BETTER_AUTH_SECRET=$(openssl rand -hex 32)"
+            echo "LLM_KEY_ENCRYPTION_KEY=$(openssl rand -hex 32)"
+            echo "PDF_WORKER_SECRET=$(openssl rand -hex 16)"
+            echo "DATABASE_URL=postgresql://dashbi:changeme@localhost:5432/dashbi"
+            echo "DATABASE_READONLY_URL=postgresql://dashbi_readonly:changeme@localhost:5432/dashbi"
+            echo "REDIS_URL=redis://localhost:6379"
+            echo "BETTER_AUTH_URL=http://localhost:3000"
+            echo "NEXT_PUBLIC_APP_URL=http://localhost:3000"
+          } >> "$GITHUB_ENV"
+
       - run: pnpm db:migrate
-        env:
-          DATABASE_URL: postgresql://dashbi:changeme@localhost:5432/dashbi
-          DATABASE_READONLY_URL: postgresql://dashbi_readonly:changeme@localhost:5432/dashbi
-          REDIS_URL: redis://localhost:6379
-          BETTER_AUTH_SECRET: e2e_secret_at_least_32_characters_long_placeholder_xx
-          BETTER_AUTH_URL: http://localhost:3000
-          LLM_KEY_ENCRYPTION_KEY: e2e_encryption_key_at_least_32_chars_placeholder_xxx
-          NEXT_PUBLIC_APP_URL: http://localhost:3000
+
       - run: pnpm playwright install --with-deps chromium
       - run: pnpm test:e2e
         env:
           CI: true
-          DATABASE_URL: postgresql://dashbi:changeme@localhost:5432/dashbi
-          DATABASE_READONLY_URL: postgresql://dashbi_readonly:changeme@localhost:5432/dashbi
-          REDIS_URL: redis://localhost:6379
-          BETTER_AUTH_SECRET: e2e_secret_at_least_32_characters_long_placeholder_xx
-          BETTER_AUTH_URL: http://localhost:3000
-          LLM_KEY_ENCRYPTION_KEY: e2e_encryption_key_at_least_32_chars_placeholder_xxx
-          NEXT_PUBLIC_APP_URL: http://localhost:3000
