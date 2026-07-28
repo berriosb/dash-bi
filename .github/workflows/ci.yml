@@ -47,7 +47,7 @@ jobs:
       # For now we allow up to 100 so the gate doesn't fail on
       # pre-existing tech debt while still catching new errors and
       # flagging significant regressions (>100 warnings).
-      - name: Lint (errors gate; warnings baseline: 100)
+      - name: 'Lint (errors gate; warnings baseline: 100)'
         run: pnpm lint --max-warnings 100
         env:
           NODE_ENV: production
