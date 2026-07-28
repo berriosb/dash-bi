@@ -18,17 +18,6 @@ jobs:
     defaults:
       run:
         working-directory: app
-    env:
-      # Build-time placeholders. Production secrets come from
-      # GitHub Actions secrets at deploy time, NOT here.
-      BETTER_AUTH_SECRET: ci_placeholder_secret_at_least_32_characters_long_xxxxx
-      BETTER_AUTH_URL: http://localhost:3000
-      DATABASE_URL: postgresql://dashbi:changeme@localhost:5432/dashbi
-      DATABASE_READONLY_URL: postgresql://dashbi_readonly:changeme@localhost:5432/dashbi
-      REDIS_URL: redis://localhost:6379
-      LLM_KEY_ENCRYPTION_KEY: ci_placeholder_encryption_key_at_least_32_chars_xxxxxxx
-      NEXT_PUBLIC_APP_URL: http://localhost:3000
-      NODE_ENV: production
 
     steps:
       - uses: actions/checkout@v4
@@ -45,22 +34,59 @@ jobs:
           cache: pnpm
           cache-dependency-path: app/pnpm-lock.yaml
 
-      - name: Install dependencies
+      # devDependencies are required for lint, typecheck, test, and the
+      # 'husky' prepare hook. Do NOT set NODE_ENV=production here or
+      # pnpm will skip them.
+      - name: Install dependencies (dev + prod)
         run: pnpm install --frozen-lockfile
 
       - name: Lint (0-warnings gate)
         run: pnpm lint:strict
+        env:
+          NODE_ENV: production
+          BETTER_AUTH_SECRET: ci_placeholder_secret_at_least_32_characters_long_xxxxx
+          BETTER_AUTH_URL: http://localhost:3000
+          DATABASE_URL: postgresql://dashbi:changeme@localhost:5432/dashbi
+          DATABASE_READONLY_URL: postgresql://dashbi_readonly:changeme@localhost:5432/dashbi
+          REDIS_URL: redis://localhost:6379
+          LLM_KEY_ENCRYPTION_KEY: ci_placeholder_encryption_key_at_least_32_chars_xxxxxxx
+          NEXT_PUBLIC_APP_URL: http://localhost:3000
 
       - name: Typecheck
         run: pnpm typecheck
+        env:
+          NODE_ENV: production
+          BETTER_AUTH_SECRET: ci_placeholder_secret_at_least_32_characters_long_xxxxx
+          BETTER_AUTH_URL: http://localhost:3000
+          DATABASE_URL: postgresql://dashbi:changeme@localhost:5432/dashbi
+          DATABASE_READONLY_URL: postgresql://dashbi_readonly:changeme@localhost:5432/dashbi
+          REDIS_URL: redis://localhost:6379
+          LLM_KEY_ENCRYPTION_KEY: ci_placeholder_encryption_key_at_least_32_chars_xxxxxxx
+          NEXT_PUBLIC_APP_URL: http://localhost:3000
 
       - name: Unit + security tests
         run: pnpm test
         env:
           NODE_ENV: test
+          BETTER_AUTH_SECRET: ci_placeholder_secret_at_least_32_characters_long_xxxxx
+          BETTER_AUTH_URL: http://localhost:3000
+          DATABASE_URL: postgresql://dashbi:changeme@localhost:5432/dashbi
+          DATABASE_READONLY_URL: postgresql://dashbi_readonly:changeme@localhost:5432/dashbi
+          REDIS_URL: redis://localhost:6379
+          LLM_KEY_ENCRYPTION_KEY: ci_placeholder_encryption_key_at_least_32_chars_xxxxxxx
+          NEXT_PUBLIC_APP_URL: http://localhost:3000
 
       - name: Build (catches route collisions, RSC/server-only leaks, Suspense boundary issues)
         run: pnpm build
+        env:
+          NODE_ENV: production
+          BETTER_AUTH_SECRET: ci_placeholder_secret_at_least_32_characters_long_xxxxx
+          BETTER_AUTH_URL: http://localhost:3000
+          DATABASE_URL: postgresql://dashbi:changeme@localhost:5432/dashbi
+          DATABASE_READONLY_URL: postgresql://dashbi_readonly:changeme@localhost:5432/dashbi
+          REDIS_URL: redis://localhost:6379
+          LLM_KEY_ENCRYPTION_KEY: ci_placeholder_encryption_key_at_least_32_chars_xxxxxxx
+          NEXT_PUBLIC_APP_URL: http://localhost:3000
 
   e2e:
     name: Playwright E2E
@@ -96,14 +122,6 @@ jobs:
     defaults:
       run:
         working-directory: app
-    env:
-      BETTER_AUTH_SECRET: e2e_secret_at_least_32_characters_long_placeholder_xx
-      BETTER_AUTH_URL: http://localhost:3000
-      DATABASE_URL: postgresql://dashbi:changeme@localhost:5432/dashbi
-      DATABASE_READONLY_URL: postgresql://dashbi_readonly:changeme@localhost:5432/dashbi
-      REDIS_URL: redis://localhost:6379
-      LLM_KEY_ENCRYPTION_KEY: e2e_encryption_key_at_least_32_chars_placeholder_xxx
-      NEXT_PUBLIC_APP_URL: http://localhost:3000
 
     steps:
       - uses: actions/checkout@v4
@@ -118,7 +136,22 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm db:migrate
+        env:
+          DATABASE_URL: postgresql://dashbi:changeme@localhost:5432/dashbi
+          DATABASE_READONLY_URL: postgresql://dashbi_readonly:changeme@localhost:5432/dashbi
+          REDIS_URL: redis://localhost:6379
+          BETTER_AUTH_SECRET: e2e_secret_at_least_32_characters_long_placeholder_xx
+          BETTER_AUTH_URL: http://localhost:3000
+          LLM_KEY_ENCRYPTION_KEY: e2e_encryption_key_at_least_32_chars_placeholder_xxx
+          NEXT_PUBLIC_APP_URL: http://localhost:3000
       - run: pnpm playwright install --with-deps chromium
       - run: pnpm test:e2e
         env:
           CI: true
+          DATABASE_URL: postgresql://dashbi:changeme@localhost:5432/dashbi
+          DATABASE_READONLY_URL: postgresql://dashbi_readonly:changeme@localhost:5432/dashbi
+          REDIS_URL: redis://localhost:6379
+          BETTER_AUTH_SECRET: e2e_secret_at_least_32_characters_long_placeholder_xx
+          BETTER_AUTH_URL: http://localhost:3000
+          LLM_KEY_ENCRYPTION_KEY: e2e_encryption_key_at_least_32_chars_placeholder_xxx
+          NEXT_PUBLIC_APP_URL: http://localhost:3000
