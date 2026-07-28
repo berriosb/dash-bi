@@ -31,7 +31,14 @@ export default defineConfig({
   ],
   
   webServer: process.env.CI
-    ? undefined  // CI runs against deployed preview
+    ? {
+        command: 'pnpm dev',
+        url: 'http://localhost:3000',
+        reuseExistingServer: false,
+        timeout: 180_000,
+        stdout: 'pipe',
+        stderr: 'pipe',
+      }
     : {
         command: 'pnpm dev',
         url: 'http://localhost:3000',
