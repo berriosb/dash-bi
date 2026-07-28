@@ -2,7 +2,7 @@
 
 > Análisis de amenazas antes de codear dash-bi. Define los controles de seguridad obligatorios antes de implementar SQL execution, BYOK, multi-tenant y AI integration.
 
-**Status:** Draft v0.1 (semana 0, pre-código)
+**Status:** v0.2 (sync 2026-07-27, controles marcados según implementación real)
 **Prioridad:** P0 — bloquea implementación
 **Responsable:** codehak
 
@@ -15,12 +15,12 @@
 **Amenaza:** Usuario de Org A lee data de Org B via query directa o SQL injection.
 
 **Controles obligatorios:**
-- [ ] Postgres RLS policies activas en TODAS las tablas tenant-scoped
-- [ ] `withOrgContext(orgId, userId, fn)` wrapper obligatorio
-- [ ] ESLint rule custom que rechaza `db.select()` directo en `/app/api/`
-- [ ] DB user con permisos SELECT-only (sin DML/DDL)
-- [ ] Tests Vitest de aislamiento (cross-tenant queries devuelven `[]`)
-- [ ] Audit log de cada query ejecutada (con `org_id` y user_id)
+- [x] Postgres RLS policies activas en TODAS las tablas tenant-scoped
+- [x] `withOrgContext(orgId, userId, fn)` wrapper obligatorio
+- [x] ESLint rule custom que rechaza `db.select()` directo en `/app/api/`
+- [x] DB user con permisos SELECT-only (sin DML/DDL)
+- [x] Tests Vitest de aislamiento (cross-tenant queries devuelven `[]`)
+- [x] Audit log de cada query ejecutada (con `org_id` y user_id)
 
 **Tests críticos:**
 ```typescript
@@ -46,12 +46,12 @@ describe('Tenant Isolation', () => {
 **Amenaza:** La IA genera SQL malicioso (DROP TABLE, exfiltración de data, etc.).
 
 **Controles obligatorios:**
-- [ ] `validateQuery()` bloquea DML/DDL (INSERT, UPDATE, DELETE, DROP, ALTER, CREATE)
-- [ ] Regex check: solo `SELECT`, `WITH`, `EXPLAIN`
-- [ ] Auto-inject `LIMIT 10000` si no tiene
-- [ ] DB user read-only (defense in depth)
-- [ ] AI nunca recibe prompts de SQL previos del usuario (no aprende a saltarse validación)
-- [ ] Policy engine en `AiGateway` que valida ANTES de ejecutar
+- [x] `validateQuery()` bloquea DML/DDL (INSERT, UPDATE, DELETE, DROP, ALTER, CREATE)
+- [x] Regex check: solo `SELECT`, `WITH`, `EXPLAIN`
+- [x] Auto-inject `LIMIT 10000` si no tiene
+- [x] DB user read-only (defense in depth)
+- [x] AI nunca recibe prompts de SQL previos del usuario (no aprende a saltarse validación)
+- [x] Policy engine en `AiGateway` que valida ANTES de ejecutar
 
 ```typescript
 // lib/security/validate-query.ts
@@ -85,22 +85,28 @@ export function validateQuery(query: Query, type: ConnectorType): void {
 **Amenaza:** Usuario malicioso configura un data source apuntando a un Postgres interno (e.g., RDS metadata endpoint, internal services).
 
 **Controles obligatorios:**
-- [ ] Allowlist de hosts permitidos para Postgres connection (no se puede conectar a localhost, 169.254.169.254, RFC1918)
-- [ ] Validación de connection string al guardar
-- [ ] Test connection antes de guardar
-- [ ] DB user de dash-bi (no del usuario) con permisos limitados
+- [x] Allowlist de hosts permitidos para Postgres connection (no se puede conectar a localhost, 169.254.169.254, RFC1918)
+- [x] Validación de connection string al guardar
+- [x] Test connection antes de guardar
+- [x] DB user de dash-bi (no del usuario) con permisos limitados
 
 ```typescript
 // lib/security/validate-connection.ts
 const FORBIDDEN_HOSTS = [
   'localhost',
   '127.0.0.1',
-  '169.254.169.254',     // AWS metadata
+  '::1',                      // IPv6 loopback
+  '169.254.169.254',          // AWS metadata (IPv4)
+  'fd00:ec2::254',            // AWS metadata (IPv6)
   'metadata.google.internal',
-  // RFC1918
+  // RFC1918 (IPv4)
   /^10\./,
   /^172\.(1[6-9]|2\d|3[01])\./,
   /^192\.168\./,
+  // RFC4193 (IPv6 ULA)
+  /^fc[0-9a-f]{2}:/i,
+  // Link-local IPv6
+  /^fe[89ab][0-9a-f]:/i,
 ];
 
 export function validatePostgresHost(host: string): void {
@@ -115,12 +121,12 @@ export function validatePostgresHost(host: string): void {
 **Amenaza:** API key de OpenAI/Anthropic del usuario queda en logs, responses, o DB sin cifrar.
 
 **Controles obligatorios:**
-- [ ] AES-256-GCM con master key de env variable (NO commit)
-- [ ] Master key rotable (sin downtime)
-- [ ] Regex redaction en logs: `/(sk-|sk_)[a-zA-Z0-9-]{20,}/g` → `'[REDACTED]'`
-- [ ] Field-level encryption en DB (no plaintext en ningún campo)
-- [ ] API keys NUNCA en responses (select whitelist explícito)
-- [ ] Audit log de cada lectura de key
+- [x] AES-256-GCM con master key de env variable (NO commit)
+- [x] Master key rotable (sin downtime)
+- [x] Regex redaction en logs: `/(sk-|sk_)[a-zA-Z0-9-]{20,}/g` → `'[REDACTED]'`
+- [x] Field-level encryption en DB (no plaintext en ningún campo)
+- [x] API keys NUNCA en responses (select whitelist explícito)
+- [x] Audit log de cada lectura de key
 
 ```typescript
 // lib/security/redact.ts
@@ -151,11 +157,11 @@ const logger = pino({
 **Amenaza:** Usuario con API key genera miles de dashboards → costo $1000+ en un día.
 
 **Controles obligatorios:**
-- [ ] Rate limit por org (20/200/ilimitado por plan)
-- [ ] Token budget diario por org
-- [ ] Circuit breaker: si costo/hora > umbral, desactivar IA
-- [ ] Alerta en UI si se acerca al límite
-- [ ] Revoke de API key si se detecta abuso
+- [x] Rate limit por org (20/200/ilimitado por plan)
+- [x] Token budget diario por org
+- [x] Circuit breaker: si costo/hora > umbral, desactivar IA
+- [x] Alerta en UI si se acerca al límite
+- [x] Revoke de API key si se detecta abuso
 
 ```typescript
 // lib/ai/rate-limit.ts
@@ -178,34 +184,34 @@ export async function checkRateLimit(orgId: string): Promise<void> {
 **Amenaza:** Link público compartido se vuelve viral, alguien scrapea data sensible.
 
 **Controles obligatorios:**
-- [ ] Link público con token random 32+ chars (`2^192` combinaciones, brute force no factible)
-- [ ] Rate limit por IP en links públicos (100 requests/hora)
-- [ ] View counter + alerta si views > 1000/día
-- [ ] robots.txt: `Disallow: /share/`
-- [ ] Optional: expiration date (default 30 días)
+- [x] Link público con token random 32+ chars (`2^192` combinaciones, brute force no factible)
+- [x] Rate limit por IP en links públicos (100 requests/hora)
+- [x] View counter + alerta si views > 1000/día
+- [x] robots.txt: `Disallow: /share/`
+- [x] Optional: expiration date (default 30 días)
 
 ### T7 — Dashboard JSON injection
 
 **Amenaza:** Widget JSON malformado (campos faltantes, types incorrectos) rompe el render.
 
 **Controles obligatorios:**
-- [ ] Zod validation en TODA escritura a `dashboards.widgets`
-- [ ] Client-side también valida (no confiar en server)
-- [ ] Si falla validación en client, revierte el cambio
-- [ ] Try/catch en render de cada widget (1 widget roto no rompe el dashboard)
+- [x] Zod validation en TODA escritura a `dashboards.widgets`
+- [x] Client-side también valida (no confiar en server)
+- [x] Si falla validación en client, revierte el cambio
+- [x] Try/catch en render de cada widget (1 widget roto no rompe el dashboard)
 
 ### T8 — Puppeteer RCE
 
 **Amenaza:** URL maliciosa en public link ejecuta JS en el contexto de Puppeteer cuando se exporta a PDF.
 
 **Controles obligatorios:**
-- [ ] Puppeteer corre en **worker service separado** (no comparte DB con app principal)
-- [ ] `--no-sandbox` solo si es necesario (con `--disable-setuid-sandbox`)
-- [ ] Timeout en cada navegación (30s max)
-- [ ] Block de dominios internos (mismas allowlists que T3)
-- [ ] Cleanup garantizado (try/finally + `browser.close()`)
-- [ ] Memoria limitada (max 2GB por export)
-- [ ] Queue con concurrencia limitada (max 3 exports simultáneos)
+- [x] Puppeteer corre en **worker service separado** (no comparte DB con app principal)
+- [x] `--no-sandbox` solo si es necesario (con `--disable-setuid-sandbox`)
+- [x] Timeout en cada navegación (30s max)
+- [x] Block de dominios internos (mismas allowlists que T3, incluyendo IPv6)
+- [x] Cleanup garantizado (try/finally + `browser.close()`)
+- [x] Memoria limitada (max 2GB por export)
+- [x] Queue con concurrencia limitada (max 3 exports simultáneos)
 
 ---
 
@@ -302,15 +308,26 @@ describe('Rate limiting', () => {
 
 Antes de escribir la primera línea de código de SQL execution:
 
-- [ ] RLS policies creadas en todas las tablas
-- [ ] `withOrgContext()` implementado + tests
-- [ ] `validateQuery()` implementado + tests
-- [ ] `validatePostgresHost()` implementado + tests
-- [ ] AES-256-GCM encryption implementado + tests
-- [ ] Pino con redactor implementado + tests
-- [ ] Rate limit por org implementado + tests
-- [ ] ESLint rule custom instalada
-- [ ] Audit log funcionando
-- [ ] DB user read-only creado en docker-compose
+- [x] RLS policies creadas en todas las tablas
+- [x] `withOrgContext()` implementado + tests
+- [x] `validateQuery()` implementado + tests
+- [x] `validatePostgresHost()` implementado + tests
+- [x] AES-256-GCM encryption implementado + tests
+- [x] Pino con redactor implementado + tests
+- [x] Rate limit por org implementado + tests
+- [x] ESLint rule custom instalada
+- [x] Audit log funcionando
+- [x] DB user read-only creado en docker-compose
 
-**Sin estos 10 puntos, NO empezar a implementar el feature estrella.**
+- [x] RLS policies creadas en todas las tablas
+- [x] `withOrgContext()` implementado + tests
+- [x] `validateQuery()` implementado + tests
+- [x] `validatePostgresHost()` implementado + tests
+- [x] AES-256-GCM encryption implementado + tests
+- [x] Pino con redactor implementado + tests
+- [x] Rate limit por org implementado + tests
+- [x] ESLint rule custom instalada
+- [x] Audit log funcionando
+- [x] DB user read-only creado en docker-compose
+
+**Los 10 controles pre-implementación están ✅ ver Sprint 1 (ver `README.md` §Status).**
