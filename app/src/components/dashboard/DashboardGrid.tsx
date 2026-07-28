@@ -10,7 +10,7 @@ import {
   type DragEndEvent,
   useDraggable,
 } from '@dnd-kit/core';
-import type { Dashboard, Density } from '@/lib/widgets/types';
+import type { Dashboard, Density, Widget } from '@/lib/widgets/types';
 import { WidgetRenderer } from '../widgets/WidgetRenderer';
 import { useUIStore } from '@/stores/uiStore';
 import { useDashboardStore } from '@/stores/dashboardStore';
@@ -44,8 +44,20 @@ export function DashboardGrid({
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor)
   );
-  const widgets = useDashboardStore((s) => s.widgets);
+  const storeWidgets = useDashboardStore((s) => s.widgets);
   const reorderWidgets = useDashboardStore((s) => s.reorderWidgets);
+
+  // Source of truth for the rendered widgets:
+  //   - In edit mode: the Zustand store (seeded by the editor page; user
+  //     drag/undo/redo flows mutate it).
+  //   - In read-only mode (public share, /demo/dashboard, etc.): the
+  //     dashboard prop. The previous implementation always read the
+  //     store, so read-only callers like /demo/dashboard rendered nothing
+  //     because nobody seeded the store. The prop is the caller's source
+  //     of truth and never lies.
+  const widgets = isEditing
+    ? storeWidgets
+    : (dashboard.widgets ?? storeWidgets);
 
   const density = dashboard.archetypeVariant?.density ?? 'balanced';
   const archetype = dashboard.archetype ?? 'custom';
@@ -129,7 +141,11 @@ export function DashboardGrid({
             data-archetype={archetype}
           >
             {widgets.map((widget) => (
-              <DraggableWidget key={widget.id} id={widget.id} isEditing={isEditing}>
+              <DraggableWidget
+                key={widget.id}
+                widget={widget}
+                isEditing={isEditing}
+              >
                 <WidgetRenderer widget={widget} />
               </DraggableWidget>
             ))}
@@ -141,21 +157,19 @@ export function DashboardGrid({
 }
 
 function DraggableWidget({
-  id,
+  widget,
   isEditing,
   children,
 }: {
-  id: string;
+  widget: Widget;
   isEditing: boolean;
   children: React.ReactNode;
 }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id });
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: widget.id });
   const selectedWidgetId = useUIStore((s) => s.selectedWidgetId);
   const setSelectedWidgetId = useUIStore((s) => s.setSelectedWidgetId);
-  const widgets = useDashboardStore((s) => s.widgets);
-  const widget = widgets.find((w) => w.id === id);
-  const position = widget?.position;
-  const isSelected = selectedWidgetId === id;
+  const position = widget.position;
+  const isSelected = selectedWidgetId === widget.id;
 
   const style: React.CSSProperties = {
     ...(position
@@ -187,13 +201,13 @@ function DraggableWidget({
       data-dragging={isDragging ? 'true' : 'false'}
       role="button"
       tabIndex={0}
-      aria-label={`Widget ${widget?.config.title ?? widget?.id ?? id}`}
+      aria-label={`Widget ${widget.config.title ?? widget.id}`}
       aria-pressed={isSelected}
-      onClick={() => setSelectedWidgetId(id)}
+      onClick={() => setSelectedWidgetId(widget.id)}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          setSelectedWidgetId(id);
+          setSelectedWidgetId(widget.id);
         }
       }}
     >
