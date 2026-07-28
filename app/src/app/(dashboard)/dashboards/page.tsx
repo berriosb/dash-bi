@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
@@ -48,7 +48,7 @@ const mockDashboards: DashboardItem[] = [
   },
 ];
 
-export default function DashboardsPage() {
+function DashboardsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -272,5 +272,13 @@ export default function DashboardsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function DashboardsPage() {
+  return (
+    <Suspense fallback={<div className="text-slate-400 text-sm">Cargando…</div>}>
+      <DashboardsContent />
+    </Suspense>
   );
 }

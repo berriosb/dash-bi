@@ -41,7 +41,9 @@ describe('print-token', () => {
       const token = await generatePrintToken('dash-1', 'org-1');
 
       expect(mockRedisSet).toHaveBeenCalledTimes(1);
-      const [key, value, mode, ttl] = mockRedisSet.mock.calls[0];
+      const firstCall = mockRedisSet.mock.calls[0];
+      expect(firstCall).toBeDefined();
+      const [key, value, mode, ttl] = firstCall!;
       expect(key).toBe(`print:${token}`);
       const payload = JSON.parse(value);
       expect(payload).toMatchObject({ dashboardId: 'dash-1', orgId: 'org-1' });

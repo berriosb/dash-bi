@@ -2,10 +2,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 
-vi.mock('@/lib/logger', () => ({
-  logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },
-}));
-
 const mockFetch = vi.fn();
 
 vi.mock('@/stores/onboardingStore', async (importOriginal) => {
@@ -99,6 +95,34 @@ describe('GeneratingStep', () => {
       expect(screen.getByText(/AI provider rate limited/i)).toBeDefined();
     });
     expect(screen.getByRole('button', { name: /reintentar/i })).toBeDefined();
+  });
+
+  it('fires generation_failed tracking event when fetch rejects with a network error', async () => {
+    useOnboardingStore.getState().setSelectedSourceType('stripe');
+    useOnboardingStore.getState().setDataSourceId('550e8400-e29b-41d4-a716-446655440000');
+    useOnboardingStore.getState().setPrompt('Mostrame revenue');
+    useOnboardingStore.getState().goToStep('generating');
+
+    // First call: generate endpoint rejects (network error)
+    mockFetch.mockRejectedValueOnce(new Error('Network down'));
+
+    render(<GeneratingStep />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Network down/i)).toBeDefined();
+    });
+
+    // Second call: the analytics tracking fetch to /api/onboarding/track
+    const trackCall = mockFetch.mock.calls.find((c) => c[0] === '/api/onboarding/track');
+    expect(trackCall).toBeDefined();
+    const init = trackCall![1] as RequestInit;
+    expect(init.method).toBe('POST');
+    expect(init.keepalive).toBe(true);
+    expect(JSON.parse(init.body as string)).toEqual({
+      type: 'generation_failed',
+      error: 'Network down',
+      attempt: 0,
+    });
   });
 
   it('clicking Reintentar after an error calls fetch again', async () => {

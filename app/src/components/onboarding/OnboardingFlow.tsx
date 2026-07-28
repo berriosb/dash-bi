@@ -42,7 +42,8 @@ export function OnboardingFlow({ initialStep }: OnboardingFlowProps) {
   const startedAtRef = useRef<number>(Date.now());
   useEffect(() => {
     if (step === 'success') {
-      trackOnboardingEvent('completed', {
+      trackOnboardingEvent({
+        type: 'completed',
         totalDurationMs: Date.now() - startedAtRef.current,
         dashboardGenerated: Boolean(dashboardId),
       });
@@ -56,9 +57,10 @@ export function OnboardingFlow({ initialStep }: OnboardingFlowProps) {
       const previousStep = step;
       const durationMs = Date.now() - enteredAt;
       if (previousStep === 'welcome' || previousStep === 'choose_source' || previousStep === 'prompt') {
-        trackOnboardingEvent('step_completed', {
+        trackOnboardingEvent({
+          type: 'step_completed',
           step: previousStep,
-          sourceType: selectedSourceType ?? undefined,
+          ...(selectedSourceType ? { sourceType: selectedSourceType } : {}),
           durationMs,
         });
       }

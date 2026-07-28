@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Loader2, AlertTriangle, ArrowLeft } from 'lucide-react';
 import { useOnboardingStore } from '@/stores/onboardingStore';
-import { logger } from '@/lib/logger';
+import { trackOnboardingEvent } from '@/lib/onboarding/track';
 
 /**
  * GeneratingStep — fires POST /api/dashboards/generate on mount,
@@ -52,7 +52,7 @@ export function GeneratingStep() {
       } catch (err) {
         if (cancelled) return;
         const message = err instanceof Error ? err.message : 'Unknown error';
-        logger.error({ err, attempt }, 'onboarding: generate failed');
+        trackOnboardingEvent({ type: 'generation_failed', error: message, attempt });
         setError(message);
       }
     }

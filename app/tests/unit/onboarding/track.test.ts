@@ -1,66 +1,125 @@
+// @vitest-environment happy-dom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-vi.mock('@/lib/logger', () => ({
-  logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },
-}));
+const mockFetch = vi.fn();
 
-import { trackOnboardingEvent, type OnboardingEvent } from '@/lib/onboarding/track';
-import { logger } from '@/lib/logger';
-
-describe('trackOnboardingEvent', () => {
+describe('trackOnboardingEvent (client-side fetcher)', () => {
   beforeEach(() => {
-    vi.mocked(logger.info).mockClear();
+    vi.stubGlobal('fetch', mockFetch);
+    mockFetch.mockReset();
+    mockFetch.mockResolvedValue({ ok: true });
   });
 
   afterEach(() => {
-    vi.clearAllMocks();
+    vi.unstubAllGlobals();
   });
 
-  it('logs step_completed events with step + sourceType + durationMs', () => {
-    const start = Date.now() - 65000;
-    trackOnboardingEvent('step_completed', {
+  it('fires POST to /api/onboarding/track with the full event in the body', async () => {
+    const { trackOnboardingEvent } = await import('@/lib/onboarding/track');
+
+    trackOnboardingEvent({
+      type: 'step_completed',
       step: 'choose_source',
       sourceType: 'stripe',
-      durationMs: Date.now() - start,
+      durationMs: 1234,
     });
 
-    expect(logger.info).toHaveBeenCalledTimes(1);
-    const calls = vi.mocked(logger.info).mock.calls;
-    const payload = calls[0]?.[0] as Record<string, unknown>;
-    expect(payload).toMatchObject({
-      event: 'onboarding:step_completed',
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('/api/onboarding/track');
+    expect(init.method).toBe('POST');
+    expect(init.keepalive).toBe(true);
+    expect(JSON.parse(init.body as string)).toEqual({
+      type: 'step_completed',
       step: 'choose_source',
       sourceType: 'stripe',
-      durationMs: expect.any(Number),
+      durationMs: 1234,
     });
   });
 
-  it('logs onboarding.completed with totalDurationMs + dashboardGenerated flag', () => {
-    trackOnboardingEvent('completed', {
+  it('serialises completed events with totalDurationMs + dashboardGenerated', async () => {
+    const { trackOnboardingEvent } = await import('@/lib/onboarding/track');
+
+    trackOnboardingEvent({
+      type: 'completed',
       totalDurationMs: 175000,
       dashboardGenerated: true,
     });
 
-    expect(logger.info).toHaveBeenCalledTimes(1);
-    const calls = vi.mocked(logger.info).mock.calls;
-    const payload = calls[0]?.[0] as Record<string, unknown>;
-    expect(payload).toMatchObject({
-      event: 'onboarding:completed',
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const init = mockFetch.mock.calls[0]?.[1] as RequestInit;
+    expect(JSON.parse(init.body as string)).toEqual({
+      type: 'completed',
       totalDurationMs: 175000,
       dashboardGenerated: true,
     });
   });
 
-  it('accepts the full event union without type errors', () => {
-    const events: OnboardingEvent[] = [
-      { type: 'step_completed', step: 'welcome', durationMs: 1000 },
-      { type: 'step_completed', step: 'choose_source', sourceType: 'postgres', durationMs: 60000 },
-      { type: 'completed', totalDurationMs: 175000, dashboardGenerated: true },
-      { type: 'skipped', fromStep: 'choose_source' },
-    ];
-    for (const e of events) {
-      expect(() => trackOnboardingEvent(e.type, e)).not.toThrow();
-    }
-    expect(logger.info).toHaveBeenCalledTimes(events.length);
+  it('serialises skipped events with fromStep', async () => {
+    const { trackOnboardingEvent } = await import('@/lib/onboarding/track');
+
+    trackOnboardingEvent({ type: 'skipped', fromStep: 'choose_source' });
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const init = mockFetch.mock.calls[0]?.[1] as RequestInit;
+    expect(JSON.parse(init.body as string)).toEqual({
+      type: 'skipped',
+      fromStep: 'choose_source',
+    });
+  });
+
+  it('serialises generation_failed events with error + attempt', async () => {
+    const { trackOnboardingEvent } = await import('@/lib/onboarding/track');
+
+    trackOnboardingEvent({
+      type: 'generation_failed',
+      error: 'Network timeout',
+      attempt: 2,
+    });
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const init = mockFetch.mock.calls[0]?.[1] as RequestInit;
+    expect(JSON.parse(init.body as string)).toEqual({
+      type: 'generation_failed',
+      error: 'Network timeout',
+      attempt: 2,
+    });
+  });
+
+  it('does not throw when fetch rejects (analytics must never break UX)', async () => {
+    mockFetch.mockRejectedValueOnce(new Error('Network down'));
+    const { trackOnboardingEvent } = await import('@/lib/onboarding/track');
+
+    expect(() =>
+      trackOnboardingEvent({
+        type: 'step_completed',
+        step: 'welcome',
+        durationMs: 100,
+      })
+    ).not.toThrow();
+  });
+
+  it('returns synchronously without awaiting the fetch (fire-and-forget)', async () => {
+    let resolved = false;
+    mockFetch.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          setTimeout(() => {
+            resolved = true;
+            resolve({ ok: true });
+          }, 100);
+        })
+    );
+
+    const { trackOnboardingEvent } = await import('@/lib/onboarding/track');
+
+    trackOnboardingEvent({
+      type: 'step_completed',
+      step: 'prompt',
+      durationMs: 500,
+    });
+
+    expect(resolved).toBe(false);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 });
