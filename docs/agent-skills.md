@@ -31,6 +31,7 @@ dash-bi distingue **3 categorías** de skills. Esta separación reduce el repo e
 
 **Tracked (parte del producto):**
 - `.opencode/skills/security-audit/SKILL.md` — skill propio de dash-bi (10 controles del threat model)
+- `.opencode/skills/ci-hygiene/SKILL.md` — skill propio de dash-bi (pre-push verification gates + symptom→root-cause table + red-build discipline; long-form en `docs/ci-hygiene.md`)
 
 **Untracked pero en disco (regenerables):**
 - `.opencode/skills/impeccable/` — paquete `impeccable` npm vendorizado (123 archivos, 2.9 MB)
@@ -119,9 +120,9 @@ npx impeccable detect
 
 ## Agregar una nueva skill al proyecto
 
-### Si la skill es **dash-bi-authored** (ej: security-audit, impeccable-contract)
+### Si la skill es **dash-bi-authored** (ej: security-audit, ci-hygiene, impeccable-contract)
 
-1. Crear `.opencode/skills/<nombre>/SKILL.md`
+1. Crear `.opencode/skills/<nombre>/SKILL.md` (el runtime opencode también lo carga desde `.agents/skills/<nombre>/SKILL.md`; crear el mirror localmente, queda gitignored)
 2. Agregar entrada en el "Skills — when to invoke" section de `AGENTS.md` (per-developer)
 3. Commit: `feat(tooling): add <nombre> skill`
 
@@ -146,7 +147,8 @@ Si una skill de terceros no está en `.agents/skills/`, no se carga. Por eso el 
 ```bash
 # 1. El repo debe tener solo project-authored skills tracked
 git ls-files .opencode/skills/
-# → debe listar solo .opencode/skills/security-audit/SKILL.md
+# → debe listar .opencode/skills/security-audit/SKILL.md y
+#   .opencode/skills/ci-hygiene/SKILL.md (los demás son vendors 3rd-party)
 
 # 2. Los vendors deben estar en disco pero gitignored
 ls .opencode/skills/impeccable/    # debe existir
