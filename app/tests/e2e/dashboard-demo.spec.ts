@@ -1,7 +1,11 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('dashboard demo surface', () => {
-  test('renders dashboard context and widgets on desktop', async ({ page }) => {
+  test('renders dashboard context and widgets on desktop', async ({ page, viewport }) => {
+    test.skip(
+      viewport !== null && viewport.width < 1024,
+      'desktop-width assertion; mobile-safari/iPhone projects intentionally use a small viewport'
+    );
     await page.goto('/demo/dashboard');
 
     await expect(page.getByRole('heading', { name: 'Ingresos y rendimiento' })).toBeVisible();
@@ -30,7 +34,11 @@ test.describe('dashboard demo surface', () => {
       overflow: document.documentElement.scrollWidth > window.innerWidth,
     }));
 
-    expect(state.columns).toContain('358px');
+    // Assert the *intent* of responsive design: grid collapses to a
+    // single track on a phone. Don't hard-code pixel widths — they
+    // shift with gutter/border/padding values and aren't load-bearing.
+    const trackCount = state.columns.split(' ').filter(Boolean).length;
+    expect(trackCount).toBe(1);
     expect(state.overflow).toBe(false);
   });
 });

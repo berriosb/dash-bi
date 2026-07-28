@@ -38,6 +38,8 @@ test.describe('theme + layout', () => {
   test('demo dashboard renders the Decision Desk surface', async ({ page }) => {
     await page.goto('/demo/dashboard');
     await expect(page.getByText(/Panel de decisión/i)).toBeVisible();
-    await expect(page.getByText(/Ingresos netos|Ingresos por período|Conversión|Órdenes|Ticket promedio/)).toBeVisible();
+    // The regex matches all 5 widget titles. Use .first() to satisfy
+    // strict-mode (Playwright refuses ambiguous matches by default).
+    await expect(page.getByText(/Ingresos netos|Ingresos por período|Conversión|Órdenes|Ticket promedio/).first()).toBeVisible();
   });
 });
