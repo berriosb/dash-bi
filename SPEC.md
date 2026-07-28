@@ -77,7 +77,7 @@ Ver specs completos:
 ### Deploy
 - **Docker Compose** único (Postgres + Next.js + Puppeteer Chrome incluido)
 
-## 11. Internacionalización (i18n)
+## 5. Internacionalización (i18n)
 
 **Decisión MVP v0.3:** aplicación monolingüe en **español**. Toda la copy de UI, mensajes de error, emails y docs en español.
 
@@ -92,7 +92,7 @@ Ver specs completos:
 
 ---
 
-## 5. Conectores
+## 6. Conectores
 
 ### MVP (Semana 2)
 
@@ -111,13 +111,13 @@ Ver specs completos:
 | Notion | API REST | Content/ops |
 | MySQL | Database | Alternativa a Postgres |
 
-## 6. Multi-tenancy
+## 7. Multi-tenancy
 
 - Cada `organization` tiene su propio set de: data sources, dashboards, users, LLM provider config, branding
 - Row Level Security en Postgres: cada query filtra por `org_id`
 - Auth via better-auth con sesiones por org
 
-## 7. Plan de implementación
+## 8. Plan de implementación
 
 ### Semana 1 — Foundation
 - Repo público + scaffolding Next.js 16
@@ -145,13 +145,13 @@ Ver specs completos:
 - README con screenshots
 - Post LinkedIn launch
 
-## 8. Diferenciadores vs competencia
+## 9. Diferenciadores vs competencia
 
 **Cuadrante único:** OSS + AI que compone dashboards + multi-LLM + self-hosted + look SaaS moderno.
 
 Análisis de competidores OSS (Metabase, Superset, Lightdash, Grafana, OpenBB, Briefer, Wren AI, Evidence) y SaaS con free tier (Looker Studio) vivido durante el planning phase. Conclusión: nadie combina OSS + self-host + AI generativa de dashboards completos + multi-LLM + look SaaS moderno.
 
-## 9. Riesgos identificados
+## 10. Riesgos identificados
 
 | Riesgo | Mitigación |
 |--------|-----------|
@@ -161,7 +161,7 @@ Análisis de competidores OSS (Metabase, Superset, Lightdash, Grafana, OpenBB, B
 | Tiempo real 4 semanas → 8 | MVP funcional en semana 3, polish en 4 es bonus |
 | Deploy on-prem complicado | Docker Compose bien documentado, Cloudflare como alternativa |
 
-## 10. Métricas de éxito (portfolio)
+## 11. Métricas de éxito (portfolio)
 
 - Repo público con README decente
 - Demo live deployada

@@ -115,7 +115,7 @@ app/
 - [x] Logger Pino con redaction + Sentry setup
 - [x] Docker Compose (Postgres + Redis + app + PDF worker)
 - [x] CI: lint + typecheck + unit + security + e2e + audit
-- [x] **208 tests passing** (unit + security)
+- [x] **386 tests passing** (unit + security)
 - [x] ESLint 9 flat config + custom rule
 - [x] ErrorState + WidgetErrorState components
 - [x] Demo dashboard público en `/demo/dashboard`
@@ -162,7 +162,7 @@ pnpm start            # arrancar build
 pnpm lint             # ESLint (warnings OK, errors no)
 pnpm lint:strict      # igual pero --max-warnings 0
 pnpm typecheck        # tsc --noEmit
-pnpm test             # vitest run (208 tests)
+pnpm test             # vitest run (386 tests)
 pnpm test:watch       # watch mode
 pnpm test:security    # solo threat-model P0 tests
 pnpm test:e2e         # playwright

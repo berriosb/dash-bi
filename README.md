@@ -7,7 +7,7 @@
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Stack: Next.js 16](https://img.shields.io/badge/Next.js-16-black)](https://nextjs.org)
 [![TypeScript: strict](https://img.shields.io/badge/TypeScript-strict-blue)](https://www.typescriptlang.org)
-[![Tests: 252+](https://img.shields.io/badge/tests-252%2B%20passing-brightgreen)](./app/tests)
+[![Tests: 386](https://img.shields.io/badge/tests-386%20passing-brightgreen)](./app/tests)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](./CONTRIBUTING.md)
 
 > **NOTA:** Este es el directorio de trabajo local del proyecto. El código de la aplicación vive en `./app/`.
@@ -74,7 +74,7 @@ dash-bi/
     ├── src/                        ← Next.js App Router + componentes
     ├── drizzle/migrations/         ← SQL migrations
     ├── scripts/                    ← setup-rls + init-readonly
-    ├── tests/                      ← 208 tests passing
+    ├── tests/                      ← 386 tests passing (unit + security)
     └── ...
 ```
 
@@ -92,7 +92,7 @@ Ver [`app/README.md`](./app/README.md) para detalle completo.
 - [x] RLS policies + script de setup
 - [x] `withOrgContext()` wrapper + ESLint rule anti-data-leak v1.1
 - [x] Security utilities (encryption, validate-query, validate-connection)
-- [x] **208 tests passing** (unit + security, sin DB)
+- [x] **386 tests passing** (unit + security, sin DB)
 - [x] Docker Compose (Postgres + Redis + app + PDF worker)
 - [x] CI/CD (lint + typecheck + unit + security + e2e + audit)
 - [x] Logger con redaction (Pino) + Sentry
