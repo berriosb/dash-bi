@@ -102,10 +102,12 @@ jobs:
     timeout-minutes: 30
     # E2E is currently non-blocking. The verify job (lint + typecheck
     # + test + build) is the merge gate. E2E has deeper setup needs
-    # (DB roles, seed data, real auth sessions) that we're working
-    # through in a separate sprint. Until then, e2e failures show as
-    # red on the run but don't block the workflow status.
-    continue-on-error: true
+    # E2E is now a blocking gate: see commit 5b44a6e (webServer), 5925fa9
+    # (middleware location + browsers), 0ba05bb (PUBLIC_PATHS + security
+    # boundary), e1ca144 (Grid reads prop widgets in read-only), 7f0edb8
+    # (test-quality fixes). Suite is 95/96 green with one intentional
+    # mobile-safari skip for a desktop-only assertion. Removing the bypass
+    # so any future regression is loud instead of silent.
     if: github.event_name == 'pull_request' || github.event_name == 'push'
 
     services:
