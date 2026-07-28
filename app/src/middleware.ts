@@ -1,12 +1,14 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 const PUBLIC_PATHS = [
+  '/',
   '/login',
   '/signup',
   '/magic-link',
   '/forgot-password',
   '/reset-password',
   '/share/',
+  '/demo/',
   '/api/auth',
   '/api/health',
   '/api/public/',
@@ -25,8 +27,23 @@ function hasSessionCookie(req: NextRequest): boolean {
 }
 
 function isPublicPath(pathname: string): boolean {
-  return PUBLIC_PATHS.some((p) => pathname.startsWith(p));
+  // SECURITY: `startsWith` alone is unsafe. Without the trailing-slash
+  // guard, '/login' would match '/loginv2' or '/dashboards-extra' could
+  // collide with '/dashboards'. Match each entry as either exact (only
+  // for the singleton '/') or with a forced trailing-slash boundary so
+  // /login only matches /login and /login/** — never /loginv2.
+  if (pathname === '/') return PUBLIC_PATHS.includes('/');
+  for (const p of PUBLIC_PATHS) {
+    if (p === '/') continue;
+    if (pathname === p) return true;
+    if (pathname.startsWith(p.endsWith('/') ? p : `${p}/`)) return true;
+  }
+  return false;
 }
+
+// Exported for unit testing only. Do NOT use in app code.
+// See tests/unit/middleware/public-paths.test.ts.
+export const __testing = { PUBLIC_PATHS, isPublicPath, hasSessionCookie };
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
