@@ -19,6 +19,7 @@ import {
   ArrowRight,
   Inbox,
 } from 'lucide-react';
+import { TemplatePicker } from '@/components/templates/TemplatePicker';
 
 interface DashboardListItem {
   id: string;
@@ -105,6 +106,8 @@ function DashboardsContent() {
     generate.mutate({ prompt, dataSourceId: selectedDataSourceId });
   };
 
+  const [activeTab, setActiveTab] = useState<'my-dashboards' | 'templates'>('my-dashboards');
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -114,7 +117,7 @@ function DashboardsContent() {
             <span>Dashboards</span>
           </h1>
           <p className="text-xs text-slate-400 mt-1">
-            Explorá tus tableros de control y generá nuevos resúmenes ejecutivos con IA.
+            Explorá tus tableros de control, plantillas por industria y generá nuevos resúmenes ejecutivos con IA.
           </p>
         </div>
 
@@ -180,17 +183,41 @@ function DashboardsContent() {
         </Card>
       </div>
 
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-500" />
-          <Input
-            placeholder="Buscar dashboards por título o descripción..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9 bg-slate-900/80 border-slate-800 text-white placeholder:text-slate-500 text-xs h-9"
-          />
-        </div>
+      <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
+        <Button
+          variant={activeTab === 'my-dashboards' ? 'default' : 'ghost'}
+          size="sm"
+          onClick={() => setActiveTab('my-dashboards')}
+          className="text-xs h-8"
+        >
+          Mis Dashboards ({dashboards.length})
+        </Button>
+        <Button
+          variant={activeTab === 'templates' ? 'default' : 'ghost'}
+          size="sm"
+          onClick={() => setActiveTab('templates')}
+          className="text-xs h-8 gap-1.5"
+        >
+          <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+          <span>Plantillas por Industria</span>
+        </Button>
       </div>
+
+      {activeTab === 'templates' ? (
+        <TemplatePicker />
+      ) : (
+        <>
+          <div className="flex items-center gap-3">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-500" />
+              <Input
+                placeholder="Buscar dashboards por título o descripción..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9 bg-slate-900/80 border-slate-800 text-white placeholder:text-slate-500 text-xs h-9"
+              />
+            </div>
+          </div>
 
       {isLoading && <p className="text-slate-400 text-sm">Cargando dashboards…</p>}
 
@@ -265,6 +292,8 @@ function DashboardsContent() {
             </Card>
           ))}
         </div>
+      )}
+        </>
       )}
 
       {showAiModal && (
