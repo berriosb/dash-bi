@@ -1,26 +1,12 @@
-import { z } from 'zod';
 import { redactSecrets } from '@/lib/redact';
 import type { OrgRole } from '@/lib/auth/permissions';
-import type { ConnectorType } from '@/lib/connectors/types';
+import type { ConnectorType, Query } from '@/lib/connectors/types';
 
-// Tipos (importar de @/lib/widgets/schemas cuando exista)
-const querySchema = z.union([
-  z.object({ kind: z.literal('sql'), sql: z.string() }),
-  z.object({
-    kind: z.literal('stripe'),
-    operation: z.object({
-      type: z.string(),
-      params: z.unknown(),
-    }),
-  }),
-  z.object({
-    kind: z.literal('sheets'),
-    spreadsheetId: z.string(),
-    range: z.string(),
-  }),
-]);
-
-export type Query = z.infer<typeof querySchema>;
+// Re-export the canonical Query type so existing callers
+// (`import { Query } from '@/lib/security/validate-query'`)
+// keep compiling. The canonical type lives in `@/lib/connectors/types`
+// and is the single source of truth for the in-memory shape.
+export type { Query } from '@/lib/connectors/types';
 
 // Re-export for backward compat
 export type { ConnectorType };
@@ -90,6 +76,31 @@ export function validateQuery(
   if (dataSourceType === 'sheets') {
     if (query.kind !== 'sheets') {
       throw new ValidationError('Sheets expects sheet query');
+    }
+  }
+
+  if (dataSourceType === 'spreadsheet' || dataSourceType === 'csv' || dataSourceType === 'excel') {
+    if (query.kind !== 'spreadsheet') {
+      throw new ValidationError('Spreadsheet expects spreadsheet query');
+    }
+    // Validate the embedded SQL the same way as postgres: SELECT-only,
+    // single statement, no DML/DDL, optional role-based PII filter.
+    const sql = query.sql.trim();
+    const upper = sql.toUpperCase();
+    if (!/^(SELECT|WITH|EXPLAIN)/.test(upper)) {
+      throw new ValidationError('Only SELECT queries allowed');
+    }
+    const semicolons = sql.split(';').filter((s) => s.trim().length > 0);
+    if (semicolons.length > 1) {
+      throw new ValidationError('Multi-statement queries not allowed');
+    }
+    const forbidden = /\b(INSERT|UPDATE|DELETE|DROP|TRUNCATE|ALTER|CREATE|GRANT|REVOKE)\b/i;
+    if (forbidden.test(sql)) {
+      throw new ValidationError('DML/DDL statements not allowed');
+    }
+    if (role) assertRolePermissions(sql, role);
+    if (!/LIMIT\s+\d+/i.test(sql)) {
+      query.sql = `${sql.replace(/;\s*$/, '')} LIMIT 10000`;
     }
   }
 }
