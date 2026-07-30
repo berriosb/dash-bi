@@ -4,6 +4,7 @@ import React from 'react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import type { LineChartWidget as LineChartWidgetType } from '@/lib/widgets/types';
 import { WidgetSurface } from './WidgetSurface';
+import { HighDensityChart, HIGH_DENSITY_THRESHOLD } from './HighDensityChart';
 
 export function LineChartWidget({ widget }: { widget: LineChartWidgetType }) {
   const { config, data } = widget;
@@ -26,6 +27,23 @@ export function LineChartWidget({ widget }: { widget: LineChartWidgetType }) {
   }, [series]);
 
   const colors = ['hsl(var(--color-primary))', 'hsl(var(--color-secondary))', 'hsl(var(--color-success))', 'hsl(var(--color-warning))', 'hsl(var(--color-accent))'];
+
+  if (chartData.length >= HIGH_DENSITY_THRESHOLD) {
+    const seriesKeys = series.map((s) => s.name);
+    return (
+      <WidgetSurface widgetId={widget.id} title={config.title} isEmpty={!hasData}>
+        <div className="h-full w-full p-2">
+          <HighDensityChart
+            type="line"
+            data={chartData}
+            xAxisKey="x"
+            seriesKeys={seriesKeys}
+            height="100%"
+          />
+        </div>
+      </WidgetSurface>
+    );
+  }
 
   return (
     <WidgetSurface widgetId={widget.id} title={config.title} isEmpty={!hasData}>
