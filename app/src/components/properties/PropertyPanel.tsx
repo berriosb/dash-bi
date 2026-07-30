@@ -25,7 +25,7 @@ interface PropertyPanelProps {
   dashboardId: string;
 }
 
-export function PropertyPanel({ dashboardId }: PropertyPanelProps) {
+export function PropertyPanel({ dashboardId: _dashboardId }: PropertyPanelProps) {
   const widgets = useDashboardStore((s) => s.widgets);
   const updateWidget = useDashboardStore((s) => s.updateWidget);
   const removeWidget = useDashboardStore((s) => s.removeWidget);

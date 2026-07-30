@@ -1,41 +1,35 @@
 import { NextResponse } from 'next/server';
-import { eq } from 'drizzle-orm';
-import { db, withOrgContext } from '@/db/client';
+import { withSystemContext } from '@/db/client';
 import { users } from '@/db/schema';
-import { requirePermission } from '@/lib/auth/context';
+import { requireAuth } from '@/lib/auth/request';
+import { eq } from 'drizzle-orm';
+import { toUserError, getOrGenerateCorrelationId } from '@/lib/errors/to-user-error';
+import { statusFromCode } from '@/lib/errors/types';
 
 export const dynamic = 'force-dynamic';
 
+function errorResponse(error: unknown, req: Request) {
+  const correlationId = getOrGenerateCorrelationId(req);
+  const appError = toUserError(error, correlationId);
+  return NextResponse.json(appError, {
+    status: statusFromCode(appError.code),
+    headers: { 'x-correlation-id': correlationId },
+  });
+}
+
 export async function POST(req: Request) {
-  const orgId = req.headers.get('x-org-id');
-  const userId = req.headers.get('x-user-id');
-
-  if (!orgId || !userId) {
-    return NextResponse.json(
-      { error: 'x-org-id and x-user-id headers required' },
-      { status: 400 }
-    );
-  }
-
   try {
-    await requirePermission(userId, orgId, 'dashboard.view');
+    const ctx = await requireAuth(req, 'dashboard.view');
 
-    await withOrgContext(orgId, userId, async () => {
-      await db
-        .update(users)
-        .set({
-          onboardingCompletedAt: new Date(),
-          currentOnboardingStep: 'completed',
-        })
-        .where(eq(users.id, userId));
-    });
+    await withSystemContext(async (tx) =>
+      tx.update(users).set({
+        onboardingCompletedAt: new Date(),
+        currentOnboardingStep: 'completed',
+      }).where(eq(users.id, ctx.userId))
+    );
 
     return NextResponse.json({ ok: true });
   } catch (error) {
-    const e = error as { message?: string; name?: string };
-    return NextResponse.json(
-      { error: e.message ?? 'Internal error' },
-      { status: e.name === 'ForbiddenError' ? 403 : 500 }
-    );
+    return errorResponse(error, req);
   }
 }

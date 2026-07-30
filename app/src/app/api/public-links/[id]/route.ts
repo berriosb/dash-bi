@@ -1,38 +1,38 @@
 import { NextResponse } from 'next/server';
 import { eq, and } from 'drizzle-orm';
-import { db, withOrgContext } from '@/db/client';
+import { withOrgContext } from '@/db/client';
 import { publicLinks } from '@/db/schema';
-import { requirePermission } from '@/lib/auth/context';
+import { requireAuth } from '@/lib/auth/request';
 import { audit } from '@/lib/audit/log';
+import { toUserError, getOrGenerateCorrelationId } from '@/lib/errors/to-user-error';
+import { statusFromCode } from '@/lib/errors/types';
 
 export const dynamic = 'force-dynamic';
 
+function errorResponse(error: unknown, req: Request) {
+  const correlationId = getOrGenerateCorrelationId(req);
+  const appError = toUserError(error, correlationId);
+  return NextResponse.json(appError, {
+    status: statusFromCode(appError.code),
+    headers: { 'x-correlation-id': correlationId },
+  });
+}
+
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const url = new URL(req.url);
-  const orgId = req.headers.get('x-org-id') || url.searchParams.get('orgId');
-  const userId = req.headers.get('x-user-id');
-
-  if (!orgId || !userId) {
-    return NextResponse.json({ error: 'x-org-id and x-user-id headers required' }, { status: 400 });
-  }
 
   try {
-    await requirePermission(userId, orgId, 'dashboard.sharePublic');
-    await withOrgContext(orgId, userId, async () => {
-      await db.update(publicLinks)
+    const ctx = await requireAuth(req, 'dashboard.sharePublic');
+    await withOrgContext(ctx.orgId, ctx.userId, ctx.role, async (tx) =>
+      tx.update(publicLinks)
         .set({ revokedAt: new Date() })
-        .where(and(eq(publicLinks.id, id), eq(publicLinks.orgId, orgId)));
-    });
+        .where(and(eq(publicLinks.id, id), eq(publicLinks.orgId, ctx.orgId)))
+    );
 
-    await audit(orgId, userId, 'export.link_revoked', `public_link:${id}`);
+    await audit(ctx.orgId, ctx.userId, 'export.link_revoked', `public_link:${id}`, { req });
 
     return NextResponse.json({ ok: true });
   } catch (error) {
-    const e = error as { message?: string; name?: string };
-    return NextResponse.json(
-      { error: e.message ?? 'Internal error' },
-      { status: e.name === 'ForbiddenError' ? 403 : 500 }
-    );
+    return errorResponse(error, req);
   }
 }

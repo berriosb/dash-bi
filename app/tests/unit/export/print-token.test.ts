@@ -12,6 +12,10 @@ const mockRedisInstance = {
   del: mockRedisDel,
 };
 
+// `vi.hoisted` ensures the ioredis default export is a stable function that
+// always returns the same instance object. `vi.resetAllMocks()` would wipe
+// the constructor's `mockReturnValue`, so we use `vi.clearAllMocks()` in
+// beforeEach and explicitly clear the per-test `mockResolvedValueOnce` queue.
 vi.mock('ioredis', () => ({
   default: vi.fn(() => mockRedisInstance),
   Redis: vi.fn(() => mockRedisInstance),

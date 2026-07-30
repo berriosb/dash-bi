@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server';
-import { db, withOrgContext } from '@/db/client';
+import { withOrgContext } from '@/db/client';
 import { publicLinks } from '@/db/schema';
-import { requirePermission } from '@/lib/auth/context';
+import { requireAuth } from '@/lib/auth/request';
 import { generatePublicToken } from '@/lib/sharing/token';
 import { audit } from '@/lib/audit/log';
+import { toUserError, getOrGenerateCorrelationId } from '@/lib/errors/to-user-error';
+import { statusFromCode } from '@/lib/errors/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,49 +20,46 @@ function sanitizeExpiresInDays(value: unknown): number {
   return days;
 }
 
+function errorResponse(error: unknown, req: Request) {
+  const correlationId = getOrGenerateCorrelationId(req);
+  const appError = toUserError(error, correlationId);
+  return NextResponse.json(appError, {
+    status: statusFromCode(appError.code),
+    headers: { 'x-correlation-id': correlationId },
+  });
+}
+
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id: dashboardId } = await params;
-  const url = new URL(req.url);
-  const orgId = req.headers.get('x-org-id') || url.searchParams.get('orgId');
-  const userId = req.headers.get('x-user-id');
-
-  if (!orgId || !userId) {
-    return NextResponse.json(
-      { error: 'x-org-id and x-user-id headers required' },
-      { status: 400 }
-    );
-  }
 
   try {
-    await requirePermission(userId, orgId, 'dashboard.sharePublic');
+    const ctx = await requireAuth(req, 'dashboard.sharePublic');
 
     const body = await req.json().catch(() => ({}));
     const expiresInDays = sanitizeExpiresInDays(body.expiresInDays);
     const expiresAt = new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000);
     const token = generatePublicToken();
 
-    const [link] = await withOrgContext(orgId, userId, async () => {
-      return db.insert(publicLinks).values({
-        orgId,
+    const [link] = await withOrgContext(ctx.orgId, ctx.userId, ctx.role, async (tx) =>
+      tx.insert(publicLinks).values({
+        orgId: ctx.orgId,
         dashboardId,
         token,
         expiresAt,
-        createdBy: userId,
-      }).returning();
-    });
+        createdBy: ctx.userId,
+      }).returning()
+    );
 
     if (!link) {
-      return NextResponse.json(
-        { error: 'Failed to create share link' },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: 'Failed to create share link' }, { status: 500 });
     }
 
-    await audit(orgId, userId, 'export.link_generated', `dashboard:${dashboardId}`, {
+    await audit(ctx.orgId, ctx.userId, 'export.link_generated', `dashboard:${dashboardId}`, {
       metadata: { linkId: link.id, expiresInDays },
+      req,
     });
 
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? '';
@@ -70,13 +69,9 @@ export async function POST(
         token: link.token,
         expiresAt: link.expiresAt,
       },
-      { status: 201 }
+      { status: 201 },
     );
   } catch (error) {
-    const e = error as { message?: string; name?: string };
-    return NextResponse.json(
-      { error: e.message ?? 'Internal error' },
-      { status: e.name === 'ForbiddenError' ? 403 : 500 }
-    );
+    return errorResponse(error, req);
   }
 }

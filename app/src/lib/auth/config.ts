@@ -1,14 +1,13 @@
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { magicLink } from 'better-auth/plugins';
-import { db } from '@/db/client';
+import { db, type Tx } from '@/db/client';
 import * as schema from '@/db/schema';
 import { orgs, orgMembers } from '@/db/schema';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { sendEmail } from '@/lib/email';
 import { MagicLinkEmail } from './messages';
 import { logger } from '@/lib/logger';
-import { audit } from '@/lib/audit/log';
 
 function slugify(value: string): string {
   return value
@@ -20,11 +19,11 @@ function slugify(value: string): string {
     .slice(0, 64) || 'org';
 }
 
-async function uniqueSlug(base: string): Promise<string> {
+async function uniqueSlug(tx: Tx, base: string): Promise<string> {
   let candidate = base;
   let suffix = 0;
   while (suffix < 50) {
-    const existing = await db.select({ id: orgs.id }).from(orgs).where(eq(orgs.slug, candidate)).limit(1);
+    const existing = await tx.select({ id: orgs.id }).from(orgs).where(eq(orgs.slug, candidate)).limit(1);
     if (existing.length === 0) return candidate;
     suffix += 1;
     candidate = `${base}-${suffix}`;
@@ -32,42 +31,74 @@ async function uniqueSlug(base: string): Promise<string> {
   return `${base}-${Date.now()}`;
 }
 
-async function provisionOrgForUser(userId: string, email: string, displayName?: string | null): Promise<string> {
+async function provisionOrgForUser(
+  userId: string,
+  email: string,
+  displayName?: string | null,
+): Promise<string> {
   const seedName = displayName?.trim() || email.split('@')[0] || 'Mi organización';
   const baseSlug = slugify(seedName);
-  const slug = await uniqueSlug(baseSlug);
 
-  const [org] = await db
-    .insert(orgs)
-    .values({
-      name: seedName,
-      slug,
-      plan: 'free',
-      defaultTheme: 'moderno-saas',
-      llmProvider: 'openai',
-      llmModel: 'gpt-4o',
-    })
-    .returning({ id: orgs.id });
+  // Run the entire provisioning flow inside a single `withSystemContext`
+  // transaction. The `org_members_isolation` RLS policy requires
+  // `app.current_user_id` to be set; we set it to the freshly-created user
+  // id so the policy evaluates true and the INSERT succeeds. We use the
+  // system context (which runs at the table-owner role) and set the GUCs
+  // ourselves so the policies still see the right identity.
+  return await db.transaction(async (tx) => {
+    await tx.execute(sql`SET LOCAL ROLE NONE`);
+    await tx.execute(
+      sql`SELECT set_config('app.current_org_id', ${userId}, true)`,
+    );
+    await tx.execute(
+      sql`SELECT set_config('app.current_user_id', ${userId}, true)`,
+    );
+    await tx.execute(
+      sql`SELECT set_config('app.current_user_role', ${'admin'}, true)`,
+    );
 
-  if (!org) {
-    throw new Error('Failed to provision organization during signup');
-  }
+    const slug = await uniqueSlug(tx, baseSlug);
 
-  await db.insert(orgMembers).values({
-    orgId: org.id,
-    userId,
-    role: 'admin',
-    joinedAt: new Date(),
+    const [org] = await tx
+      .insert(orgs)
+      .values({
+        name: seedName,
+        slug,
+        plan: 'free',
+        defaultTheme: 'moderno-saas',
+        llmProvider: 'openai',
+        llmModel: 'gpt-4o',
+      })
+      .returning({ id: orgs.id });
+
+    if (!org) {
+      throw new Error('Failed to provision organization during signup');
+    }
+
+    await tx.insert(orgMembers).values({
+      orgId: org.id,
+      userId,
+      role: 'admin',
+      joinedAt: new Date(),
+    });
+
+    await tx
+      .update(schema.users)
+      .set({ activeOrgId: org.id })
+      .where(eq(schema.users.id, userId));
+
+    // Write the audit row inside the same transaction so it is also
+    // visible under the same GUCs (audit_log_isolation).
+    await tx.insert(schema.auditLog).values({
+      orgId: org.id,
+      userId,
+      action: 'org.created',
+      resource: `org:${org.id}`,
+      metadata: { source: 'signup' },
+    });
+
+    return org.id;
   });
-
-  await db
-    .update(schema.users)
-    .set({ activeOrgId: org.id })
-    .where(eq(schema.users.id, userId));
-
-  await audit(org.id, userId, 'org.created', `org:${org.id}`, { metadata: { source: 'signup' } });
-
-  return org.id;
 }
 
 /**
@@ -100,6 +131,20 @@ export const auth = betterAuth({
   secret: process.env.BETTER_AUTH_SECRET,
   baseURL: process.env.BETTER_AUTH_URL || 'http://localhost:3000',
 
+  // Sprint 1.5: better-auth's default `generateId` produces 32-char
+  // alphanumeric strings (see `@better-auth/utils/random`). Our schema
+  // declares `id uuid PRIMARY KEY DEFAULT gen_random_uuid()` so
+  // better-auth's string IDs collide with the UUID cast. The cleanest
+  // fix is to let Postgres generate the ID via the column's
+  // `defaultRandom()` and pass it back through RETURNING.
+  advanced: {
+    cookiePrefix: 'dashbi',
+    useSecureCookies: process.env.NODE_ENV === 'production',
+    database: {
+      generateId: false,
+    },
+  },
+
   emailAndPassword: {
     enabled: true,
     requireEmailVerification: true,
@@ -131,6 +176,11 @@ export const auth = betterAuth({
           return { data: user };
         },
         after: async (user) => {
+          // Provision org + membership. We use `db.transaction` (not
+          // `withSystemContext`) because the better-auth `after` hook
+          // runs outside any open transaction. We set the GUCs
+          // explicitly so the `org_members_isolation` RLS policy
+          // accepts the INSERT.
           try {
             await provisionOrgForUser(user.id, user.email, user.name);
             logger.info({ userId: user.id }, 'organization provisioned for new user');
@@ -197,11 +247,6 @@ export const auth = betterAuth({
       '/reset-password': { window: 60, max: 5 },
       '/verify-email': { window: 60, max: 10 },
     },
-  },
-
-  advanced: {
-    cookiePrefix: 'dashbi',
-    useSecureCookies: process.env.NODE_ENV === 'production',
   },
 
   // Email verification URL pattern

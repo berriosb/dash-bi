@@ -1,17 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// vi.hoisted ensures mockInsert is initialized before vi.mock factory runs (which is hoisted)
-const { mockInsert } = vi.hoisted(() => {
-  const mockInsert = vi.fn().mockReturnValue({
+// vi.hoisted ensures mockInsert is initialized before vi.mock factory runs (which is hoisted).
+// Sprint 1.5: audit() ahora corre dentro de withOrgContext(), que recibe
+// `tx` y delega el insert en `tx.insert`. Los tests mockean `tx.insert`
+// para preservar el contrato de aislamiento (no usamos `db.insert`).
+const { mockTxInsert } = vi.hoisted(() => {
+  const mockTxInsert = vi.fn().mockReturnValue({
     values: vi.fn().mockResolvedValue(undefined),
   });
-  return { mockInsert };
+  return { mockTxInsert };
 });
 
 vi.mock('@/db/client', () => ({
-  db: {
-    insert: mockInsert,
-  },
+  withOrgContext: async (_orgId: string, _userId: string | null, fn: (tx: { insert: typeof mockTxInsert }) => unknown) =>
+    fn({ insert: mockTxInsert }),
+  withSystemContext: async (fn: (tx: { insert: typeof mockTxInsert }) => unknown) => fn({ insert: mockTxInsert }),
 }));
 
 import { audit, _auditUnsafe } from '@/lib/audit/log';
@@ -19,7 +22,7 @@ import { auditLog } from '@/db/schema';
 
 /** Helper to extract the first values() call payload from a mock. */
 function getInsertPayload(): Record<string, unknown> {
-  const lastResult = mockInsert.mock.results.at(-1);
+  const lastResult = mockTxInsert.mock.results.at(-1);
   if (!lastResult) throw new Error('mockInsert was not called');
   const valuesFn = (lastResult.value as { values: ReturnType<typeof vi.fn> }).values;
   const lastCall = valuesFn.mock.calls.at(-1);
@@ -29,8 +32,8 @@ function getInsertPayload(): Record<string, unknown> {
 
 describe('Audit log helper', () => {
   beforeEach(() => {
-    mockInsert.mockClear();
-    mockInsert.mockReturnValue({
+    mockTxInsert.mockClear();
+    mockTxInsert.mockReturnValue({
       values: vi.fn().mockResolvedValue(undefined),
     });
   });
@@ -39,8 +42,8 @@ describe('Audit log helper', () => {
     it('inserts a row in audit_log with required fields', async () => {
       await audit('org-123', 'user-456', 'dashboard.generated', 'dashboard:dash-789');
 
-      expect(mockInsert).toHaveBeenCalledTimes(1);
-      expect(mockInsert).toHaveBeenCalledWith(auditLog);
+      expect(mockTxInsert).toHaveBeenCalledTimes(1);
+      expect(mockTxInsert).toHaveBeenCalledWith(auditLog);
 
       const insertPayload = getInsertPayload();
       expect(insertPayload).toMatchObject({
@@ -102,19 +105,16 @@ describe('Audit log helper', () => {
     });
 
     it('does NOT throw when DB fails (audit log must never break flow)', async () => {
-      mockInsert.mockReturnValue({
+      mockTxInsert.mockReturnValue({
         values: vi.fn().mockRejectedValue(new Error('connection lost')),
       });
 
-      // Should NOT throw
       await expect(
         audit('org-1', 'user-1', 'dashboard.created'),
       ).resolves.toBeUndefined();
     });
 
     it('throws in dev mode when metadata contains forbidden keys', async () => {
-      // NODE_ENV is 'test' (not 'production'), so assertSafeMetadata IS enforced.
-      // Use _auditUnsafe (test variant) because audit() swallows errors by design.
       await expect(
         _auditUnsafe('org-1', 'user-1', 'auth.login', undefined, {
           metadata: { password: 'secret123' },
@@ -123,8 +123,6 @@ describe('Audit log helper', () => {
     });
 
     it('audit() silently swallows forbidden-key errors (must not break flow)', async () => {
-      // Even with forbidden keys, audit() resolves (because it never throws).
-      // The forbidden-key detection is a dev-time guard; in prod, redaction handles it.
       await expect(
         audit('org-1', 'user-1', 'auth.login', undefined, {
           metadata: { password: 'secret123' },
@@ -177,15 +175,14 @@ describe('Audit log helper', () => {
     ] as const;
 
     it.each(events)('supports event "%s"', async (event) => {
-      // Should not throw on metadata validation
       await audit('org-1', 'user-1', event);
-      expect(mockInsert).toHaveBeenCalled();
+      expect(mockTxInsert).toHaveBeenCalled();
     });
   });
 
   describe('_auditUnsafe — test-only variant', () => {
     it('propagates DB errors', async () => {
-      mockInsert.mockReturnValue({
+      mockTxInsert.mockReturnValue({
         values: vi.fn().mockRejectedValue(new Error('connection lost')),
       });
 

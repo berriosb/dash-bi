@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm';
-import { db, withOrgContext } from '@/db/client';
+import { withOrgContext } from '@/db/client';
 import { dashboards } from '@/db/schema';
 import { validatePrintToken } from './print-token';
 
@@ -28,11 +28,10 @@ export async function getPrintDashboard(token: string): Promise<PrintDashboardRe
   const payload = await validatePrintToken(token);
   if (!payload) return { status: 'unauthorized' };
 
-  const dashboard = await withOrgContext(payload.orgId, null, async () => {
-    const row = await db.query.dashboards.findFirst({
+  const dashboard = await withOrgContext(payload.orgId, null, async (tx) => {
+    return tx.query.dashboards.findFirst({
       where: eq(dashboards.id, payload.dashboardId),
     });
-    return row;
   });
 
   if (!dashboard) return { status: 'not_found' };

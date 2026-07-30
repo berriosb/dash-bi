@@ -5,7 +5,7 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 const mockFetch = vi.fn();
 
 vi.mock('@/stores/onboardingStore', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/stores/onboardingStore')>();
+  const actual = await importOriginal<Record<string, unknown>>();
   return actual;
 });
 
@@ -14,7 +14,7 @@ import { useOnboardingStore } from '@/stores/onboardingStore';
 
 describe('GeneratingStep', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     useOnboardingStore.getState().reset();
     globalThis.fetch = mockFetch as unknown as typeof fetch;
   });

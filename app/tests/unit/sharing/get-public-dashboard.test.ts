@@ -2,26 +2,21 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const {
   mockFindFirst,
-  mockDbUpdate,
+  mockTxUpdate,
+  mockWithSystemContext,
   mockWithOrgContext,
   mockAudit,
 } = vi.hoisted(() => ({
   mockFindFirst: vi.fn(),
-  mockDbUpdate: vi.fn(),
-  mockWithOrgContext: vi.fn(
-    async (_orgId: string, _userId: string | null, fn: () => Promise<unknown>) => fn()
-  ),
+  mockTxUpdate: vi.fn(),
+  mockWithSystemContext: vi.fn(async (..._args: unknown[]) => undefined),
+  mockWithOrgContext: vi.fn(async (..._args: unknown[]) => undefined),
   mockAudit: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('@/db/client', () => ({
-  db: {
-    query: {
-      publicLinks: { findFirst: mockFindFirst },
-      dashboards: { findFirst: mockFindFirst },
-    },
-    update: mockDbUpdate,
-  },
+  db: {},
+  withSystemContext: mockWithSystemContext,
   withOrgContext: mockWithOrgContext,
 }));
 
@@ -65,17 +60,37 @@ const validDashboard = {
   widgets: [],
 };
 
+function installMocks(): void {
+  (mockWithSystemContext as unknown as { mockImplementation: (impl: (fn: unknown) => Promise<unknown>) => void }).mockImplementation((fn: unknown) => {
+    const tx = { query: { publicLinks: { findFirst: mockFindFirst } } };
+    return (fn as (t: typeof tx) => Promise<unknown>)(tx);
+  });
+  (mockWithOrgContext as unknown as { mockImplementation: (impl: (...args: unknown[]) => Promise<unknown>) => void }).mockImplementation((...args: unknown[]) => {
+    let fn: unknown;
+    if (args.length === 4) fn = args[3];
+    else if (args.length === 3) fn = args[2];
+    const tx = {
+      query: { dashboards: { findFirst: mockFindFirst } },
+      update: mockTxUpdate,
+    };
+    return (fn as (t: typeof tx) => Promise<unknown>)(tx);
+  });
+}
+
 describe('getPublicDashboard', () => {
   beforeEach(() => {
+    // clearAllMocks preserves constructor `mockReturnValue` set in vi.hoisted,
+    // so the mock fns keep their shape. We then rewire the implementations
+    // and reset the per-test `mockResolvedValueOnce` queue manually.
     vi.clearAllMocks();
     mockAudit.mockResolvedValue(undefined);
-    mockWithOrgContext.mockImplementation(
-      async (_orgId, _userId, fn) => fn()
-    );
+    mockFindFirst.mockReset();
+    mockTxUpdate.mockReset();
+    installMocks();
     const set = vi.fn().mockReturnValue({
       where: vi.fn().mockResolvedValue(undefined),
     });
-    mockDbUpdate.mockReturnValue({ set });
+    mockTxUpdate.mockReturnValue({ set });
   });
 
   it('returns not_found when token does not exist', async () => {
@@ -121,6 +136,7 @@ describe('getPublicDashboard', () => {
     expect(mockWithOrgContext).toHaveBeenCalledWith(
       'org-123',
       null,
+      'editor',
       expect.any(Function)
     );
   });
@@ -131,7 +147,7 @@ describe('getPublicDashboard', () => {
       .mockResolvedValueOnce(validDashboard);
     await getPublicDashboard('valid-token');
 
-    expect(mockDbUpdate).toHaveBeenCalledTimes(1);
+    expect(mockTxUpdate).toHaveBeenCalledTimes(1);
     expect(mockAudit).toHaveBeenCalledTimes(1);
     expect(mockAudit).toHaveBeenCalledWith(
       'org-123',
@@ -145,7 +161,7 @@ describe('getPublicDashboard', () => {
     mockFindFirst
       .mockResolvedValueOnce(validLink)
       .mockResolvedValueOnce(validDashboard);
-    mockDbUpdate.mockReturnValueOnce({
+    mockTxUpdate.mockReturnValueOnce({
       set: vi.fn().mockReturnValue({
         where: vi.fn().mockRejectedValueOnce(new Error('db fail')),
       }),

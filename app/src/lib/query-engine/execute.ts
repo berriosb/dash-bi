@@ -64,7 +64,14 @@ export async function executeWithTimeout(
 
   // Sprint 1: validar ANTES de ejecutar (T2 SQL injection defense)
   if (shouldValidate) {
-    validateQuery(query, connector.type, opts.role);
+    // Sprint 1.5: spreadsheet queries carry their own SQL inside the
+    // `kind: 'spreadsheet'` discriminator. validateQuery expects a
+    // `{kind:'sql'}` shape, so we project before validating.
+    const queryForValidation =
+      query.kind === 'spreadsheet'
+        ? { kind: 'sql' as const, sql: query.sql, params: query.params }
+        : query;
+    validateQuery(queryForValidation, connector.type, opts.role);
   }
 
   const start = Date.now();

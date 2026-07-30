@@ -68,10 +68,10 @@ export type BaseConfig = {
 export type QueryKind = 'sql' | 'stripe' | 'sheets';
 
 export type StripeOperation =
-  | { type: 'listCharges'; params: any }
-  | { type: 'listSubscriptions'; params: any }
-  | { type: 'listCustomers'; params: any }
-  | { type: 'listInvoices'; params: any }
+  | { type: 'listCharges'; params: Record<string, unknown> }
+  | { type: 'listSubscriptions'; params: Record<string, unknown> }
+  | { type: 'listCustomers'; params: Record<string, unknown> }
+  | { type: 'listInvoices'; params: Record<string, unknown> }
   | { type: 'getRevenue'; params: { period: 'day' | 'week' | 'month' | 'year'; count: number } };
 
 export type Query =
@@ -132,13 +132,13 @@ export type TableConfig = BaseConfig & {
 };
 
 export type Widget =
-  | { type: 'kpi'; id: string; position: Position; config: KPIWidgetConfig; data: any; source: DataSource }
-  | { type: 'line-chart'; id: string; position: Position; config: ChartConfig; data: any; source: DataSource }
-  | { type: 'bar-chart'; id: string; position: Position; config: ChartConfig; data: any; source: DataSource }
-  | { type: 'pie-chart'; id: string; position: Position; config: ChartConfig; data: any; source: DataSource }
-  | { type: 'area-chart'; id: string; position: Position; config: ChartConfig; data: any; source: DataSource }
-  | { type: 'scatter'; id: string; position: Position; config: ChartConfig; data: any; source: DataSource }
-  | { type: 'table'; id: string; position: Position; config: TableConfig; data: any; source: DataSource };
+  | { type: 'kpi'; id: string; position: Position; config: KPIWidgetConfig; data: unknown; source: DataSource }
+  | { type: 'line-chart'; id: string; position: Position; config: ChartConfig; data: unknown; source: DataSource }
+  | { type: 'bar-chart'; id: string; position: Position; config: ChartConfig; data: unknown; source: DataSource }
+  | { type: 'pie-chart'; id: string; position: Position; config: ChartConfig; data: unknown; source: DataSource }
+  | { type: 'area-chart'; id: string; position: Position; config: ChartConfig; data: unknown; source: DataSource }
+  | { type: 'scatter'; id: string; position: Position; config: ChartConfig; data: unknown; source: DataSource }
+  | { type: 'table'; id: string; position: Position; config: TableConfig; data: unknown; source: DataSource };
 
 export type KPIWidget = Extract<Widget, { type: 'kpi' }>;
 export type LineChartWidget = Extract<Widget, { type: 'line-chart' }>;

@@ -1,34 +1,48 @@
 import { NextResponse } from 'next/server';
-import { eq, desc } from 'drizzle-orm';
-import { z } from 'zod';
-import { db, withOrgContext } from '@/db/client';
+import { desc, eq } from 'drizzle-orm';
+import { withOrgContext } from '@/db/client';
 import { dashboards } from '@/db/schema';
-import { requirePermission } from '@/lib/auth/context';
+import { requireAuth } from '@/lib/auth/request';
 import { logRequest } from '@/lib/logger';
 import { audit } from '@/lib/audit/log';
-import {
-  toUserError,
-  getOrGenerateCorrelationId,
-} from '@/lib/errors/to-user-error';
+import { toUserError, getOrGenerateCorrelationId } from '@/lib/errors/to-user-error';
 import { statusFromCode } from '@/lib/errors/types';
 import type { ThemeId } from '@/lib/widgets/types';
+import { z } from 'zod';
 
 export const dynamic = 'force-dynamic';
+
+const ArchetypeVariantSchema = z.object({
+  density: z.enum(['spacious', 'balanced', 'dense']).optional(),
+  accent: z.enum(['default', 'accent', 'muted']).optional(),
+  timeWindow: z
+    .enum(['last_24h', 'last_7d', 'last_30d', 'last_quarter', 'last_90d', 'last_6mo', 'last_year', 'all_time'])
+    .optional(),
+  comparativo: z
+    .enum(['none', 'previous_period', 'previous_month', 'previous_quarter', 'previous_year', 'last_year_same_week'])
+    .optional(),
+});
 
 const CreateDashboardSchema = z.object({
   title: z.string().min(1).max(200),
   description: z.string().max(2000).optional(),
   theme: z.enum(['moderno-saas', 'corporate']).optional(),
   widgets: z.array(z.unknown()).optional(),
+  archetype: z
+    .enum([
+      'kpi-grid',
+      'hero-focus',
+      'cohort-matrix',
+      'sales-pipeline',
+      'executive-summary',
+      'operations-live',
+      'finance-report',
+      'growth-metrics',
+      'custom',
+    ])
+    .optional(),
+  archetypeVariant: ArchetypeVariantSchema.optional(),
 });
-
-function getAuthHeaders(req: Request): { orgId: string | null; userId: string | null } {
-  const url = new URL(req.url);
-  return {
-    orgId: req.headers.get('x-org-id') || url.searchParams.get('orgId'),
-    userId: req.headers.get('x-user-id'),
-  };
-}
 
 function errorResponse(error: unknown, req: Request, fallbackStatus = 500) {
   const correlationId = getOrGenerateCorrelationId(req);
@@ -41,21 +55,14 @@ function errorResponse(error: unknown, req: Request, fallbackStatus = 500) {
 }
 
 export async function GET(req: Request) {
-  const { orgId, userId } = getAuthHeaders(req);
-  if (!orgId || !userId) {
-    return errorResponse(new Error('x-org-id and x-user-id headers required'), req);
-  }
-
   const { correlationId, logger: reqLogger } = logRequest(req);
 
   try {
-    await requirePermission(userId, orgId, 'dashboard.view');
-    const result = await withOrgContext(orgId, userId, async () => {
-      return db.select()
-        .from(dashboards)
-        .where(eq(dashboards.orgId, orgId))
-        .orderBy(desc(dashboards.updatedAt));
-    });
+    const ctx = await requireAuth(req, 'dashboard.view');
+
+    const result = await withOrgContext(ctx.orgId, ctx.userId, ctx.role, async (tx) =>
+      tx.select().from(dashboards).where(eq(dashboards.orgId, ctx.orgId)).orderBy(desc(dashboards.updatedAt))
+    );
 
     reqLogger.info({ count: result.length }, 'dashboards listed');
     return NextResponse.json(
@@ -69,37 +76,37 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const { orgId, userId } = getAuthHeaders(req);
-  if (!orgId || !userId) {
-    return errorResponse(new Error('x-org-id and x-user-id headers required'), req);
-  }
-
   const { correlationId, logger: reqLogger } = logRequest(req);
 
   try {
-    await requirePermission(userId, orgId, 'dashboard.create');
+    const ctx = await requireAuth(req, 'dashboard.create');
 
     const body = await req.json();
     const parsed = CreateDashboardSchema.parse(body);
 
-    const inserted = await withOrgContext(orgId, userId, async () => {
-      return db.insert(dashboards).values({
-        orgId,
+    const inserted = await withOrgContext(ctx.orgId, ctx.userId, ctx.role, async (tx) =>
+      tx.insert(dashboards).values({
+        orgId: ctx.orgId,
         title: parsed.title,
         description: parsed.description ?? null,
         theme: (parsed.theme as ThemeId) ?? 'moderno-saas',
         widgets: parsed.widgets ?? [],
-        createdBy: userId,
-        updatedBy: userId,
-      }).returning();
-    });
+        archetype: parsed.archetype ?? 'custom',
+        archetypeVariantDensity: parsed.archetypeVariant?.density ?? 'balanced',
+        archetypeVariantAccent: parsed.archetypeVariant?.accent ?? 'default',
+        archetypeVariantTimeWindow: parsed.archetypeVariant?.timeWindow ?? 'last_30d',
+        archetypeVariantComparativo: parsed.archetypeVariant?.comparativo ?? 'previous_period',
+        createdBy: ctx.userId,
+        updatedBy: ctx.userId,
+      }).returning()
+    );
 
     const created = inserted[0];
     if (!created) {
       throw new Error('Dashboard insert returned no row');
     }
 
-    await audit(orgId, userId, 'dashboard.created', `dashboard:${created.id}`, {
+    await audit(ctx.orgId, ctx.userId, 'dashboard.created', `dashboard:${created.id}`, {
       metadata: { title: parsed.title },
       req,
     });

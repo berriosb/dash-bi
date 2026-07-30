@@ -40,7 +40,7 @@ interface AddWidgetDialogProps {
   dashboardId: string;
 }
 
-export function AddWidgetDialog({ dashboardId }: AddWidgetDialogProps) {
+export function AddWidgetDialog({ dashboardId: _dashboardId }: AddWidgetDialogProps) {
   const [open, setOpen] = React.useState(false);
   const [step, setStep] = React.useState<'type' | 'form'>('type');
   const [selectedType, setSelectedType] = React.useState<WidgetType | null>(null);

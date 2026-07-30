@@ -8,9 +8,7 @@ const {
 } = vi.hoisted(() => ({
   mockValidatePrintToken: vi.fn(),
   mockFindFirst: vi.fn(),
-  mockWithOrgContext: vi.fn(
-    async (_orgId: string, _userId: string | null, fn: () => Promise<unknown>) => fn()
-  ),
+  mockWithOrgContext: vi.fn(async (..._args: unknown[]) => undefined),
   mockAudit: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -19,7 +17,7 @@ vi.mock('@/lib/export/print-token', () => ({
 }));
 
 vi.mock('@/db/client', () => ({
-  db: { query: { dashboards: { findFirst: mockFindFirst } } },
+  db: {},
   withOrgContext: mockWithOrgContext,
 }));
 
@@ -55,8 +53,14 @@ const validDashboard = {
 describe('getPrintDashboard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockFindFirst.mockReset();
+    mockWithOrgContext.mockReset();
     mockAudit.mockResolvedValue(undefined);
-    mockWithOrgContext.mockImplementation(async (_orgId, _userId, fn) => fn());
+    (mockWithOrgContext as unknown as { mockImplementation: (impl: (...args: unknown[]) => Promise<unknown>) => void }).mockImplementation((...args: unknown[]) => {
+      const fn = args[2] as (t: unknown) => Promise<unknown>;
+      const tx = { query: { dashboards: { findFirst: mockFindFirst } } };
+      return fn(tx);
+    });
   });
 
   it('returns unauthorized when token is invalid', async () => {

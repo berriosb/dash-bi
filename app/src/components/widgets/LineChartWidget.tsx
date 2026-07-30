@@ -7,7 +7,10 @@ import { WidgetSurface } from './WidgetSurface';
 
 export function LineChartWidget({ widget }: { widget: LineChartWidgetType }) {
   const { config, data } = widget;
-  const series: Array<{ name: string; data: Array<{ x: string | number; y: number }> }> = (data as any)?.series ?? [];
+  const series = React.useMemo(() => {
+    return (data as { series?: Array<{ name: string; data: Array<{ x: string | number; y: number }> }> } | null)?.series ?? [];
+  }, [data]);
+
   const hasData = series.some((item) => item.data.length > 0);
 
   const chartData = React.useMemo(() => {

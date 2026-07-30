@@ -1,33 +1,48 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { UnauthorizedError, ForbiddenError } from '@/lib/auth/context';
 
-const { mockGetOnboardingResumePath } = vi.hoisted(() => ({
+const { mockGetOnboardingResumePath, mockRequireAuth } = vi.hoisted(() => ({
   mockGetOnboardingResumePath: vi.fn(),
+  mockRequireAuth: vi.fn(),
 }));
 
 vi.mock('@/lib/onboarding/resume', () => ({
   getOnboardingResumePath: mockGetOnboardingResumePath,
 }));
 
+
+vi.mock('@/lib/auth/request', () => ({
+  requireAuth: mockRequireAuth,
+}));
+
+
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },
 }));
 
+
 import { GET } from '@/app/api/onboarding/resume/route';
 
 function makeReq(): Request {
-  return new Request('http://localhost/api/onboarding/resume', {
-    method: 'GET',
-    headers: { 'x-user-id': 'user-uuid' },
-  });
+  return new Request('http://localhost/api/onboarding/resume');
 }
 
 describe('GET /api/onboarding/resume', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockRequireAuth.mockResolvedValue({
+      userId: 'user-uuid',
+      email: 'a@b.com',
+      orgId: 'org-1',
+      role: 'admin',
+    });
   });
 
-  it('returns 401 when x-user-id header is missing', async () => {
-    const res = await GET(new Request('http://localhost/api/onboarding/resume'));
+  it('returns 401 when there is no valid session', async () => {
+    mockRequireAuth.mockRejectedValueOnce(
+      new UnauthorizedError()
+    );
+    const res = await GET(makeReq());
     expect(res.status).toBe(401);
   });
 

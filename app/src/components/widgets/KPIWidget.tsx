@@ -6,9 +6,10 @@ import { WidgetSurface } from './WidgetSurface';
 
 export function KPIWidget({ widget }: { widget: KPIWidgetType }) {
   const { config, data } = widget;
-  const hasValue = typeof data?.value === 'number' && Number.isFinite(data.value);
-  const value = hasValue ? data.value : 0;
-  const delta = data?.delta;
+  const kpiData = data as { value?: number; delta?: { value?: number; percent?: number; isPositive?: boolean } } | null;
+  const hasValue = typeof kpiData?.value === 'number' && Number.isFinite(kpiData.value);
+  const value = hasValue ? kpiData.value! : 0;
+  const delta = kpiData?.delta;
 
   const formattedValue = React.useMemo(() => {
     if (config.format === 'currency') {

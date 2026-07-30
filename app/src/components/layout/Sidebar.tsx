@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useUIStore } from '@/stores/uiStore';
-import { LayoutDashboard, Database, Settings, Sparkles, Compass, HelpCircle } from 'lucide-react';
+import { LayoutDashboard, Database, Settings, Sparkles, Compass } from 'lucide-react';
 import { cn } from '@/lib/cn';
 
 const navItems = [

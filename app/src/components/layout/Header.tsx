@@ -140,7 +140,13 @@ export function Header() {
 
           {userMenuOpen && (
             <>
-              <div className="fixed inset-0 z-40" onClick={() => setUserMenuOpen(false)} />
+              <button
+                type="button"
+                aria-label="Cerrar menú de usuario"
+                tabIndex={-1}
+                className="fixed inset-0 z-40 cursor-default bg-transparent border-0 w-full h-full p-0"
+                onClick={() => setUserMenuOpen(false)}
+              />
               <div className="absolute right-0 mt-2 w-56 rounded-xl bg-slate-900 border border-slate-800 shadow-2xl p-2 z-50 space-y-1 text-slate-200 animate-in fade-in zoom-in-95">
                 <div className="px-3 py-2 border-b border-slate-800">
                   <p className="text-xs font-semibold text-white truncate">

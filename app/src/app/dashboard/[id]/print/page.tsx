@@ -4,7 +4,7 @@ import { DashboardPrintView } from '@/components/dashboard/DashboardPrintView';
 export const dynamic = 'force-dynamic';
 
 export default async function PrintDashboardPage({
-  params,
+  params: _params,
   searchParams,
 }: {
   params: Promise<{ id: string }>;

@@ -57,7 +57,7 @@ describe('AiGateway — NLQA methods', () => {
   });
 
   afterEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
   });
 
   describe('generateNLQASql', () => {

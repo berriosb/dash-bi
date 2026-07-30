@@ -38,7 +38,7 @@ const CHART_TYPE_LABEL: Record<string, string> = {
   table: 'Tabla',
 };
 
-export function NlqaPanel({ dashboardId, dataSourceId, open, onClose }: NlqaPanelProps) {
+export function NlqaPanel({ dashboardId: _dashboardId, dataSourceId, open, onClose }: NlqaPanelProps) {
   const [messages, setMessages] = React.useState<NlqaMessage[]>([]);
   const [input, setInput] = React.useState('');
   const [conversationId, setConversationId] = React.useState<string | null>(null);

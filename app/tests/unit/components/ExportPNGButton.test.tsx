@@ -31,7 +31,7 @@ import { ExportPNGButton } from '@/components/dashboard/ExportPNGButton';
 
 describe('ExportPNGButton', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     mockHtml2Canvas.mockResolvedValue(mockCanvas);
     mockToBlob.mockImplementation((cb: (blob: Blob | null) => void) => {
       cb(new Blob(['png-bytes'], { type: 'image/png' }));

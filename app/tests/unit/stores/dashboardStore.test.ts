@@ -87,4 +87,36 @@ describe('useDashboardStore', () => {
     });
     expect(useDashboardStore.getState().widgets).toHaveLength(1);
   });
+
+  it('round-trips archetype and variant through setDashboard / updateArchetype', () => {
+    act(() => {
+      useDashboardStore.getState().setDashboard({
+        id: 'd-1',
+        title: 'Sales',
+        theme: 'moderno-saas',
+        widgets: [],
+        archetype: 'finance-report',
+        archetypeVariant: {
+          density: 'dense',
+          accent: 'accent',
+          timeWindow: 'last_quarter',
+          comparativo: 'previous_quarter',
+        },
+      });
+    });
+    expect(useDashboardStore.getState().archetype).toBe('finance-report');
+    expect(useDashboardStore.getState().archetypeVariant.density).toBe('dense');
+
+    act(() => {
+      useDashboardStore.getState().updateArchetype('hero-focus');
+    });
+    expect(useDashboardStore.getState().archetype).toBe('hero-focus');
+
+    act(() => {
+      useDashboardStore.getState().updateArchetypeVariant({ density: 'spacious' });
+    });
+    expect(useDashboardStore.getState().archetypeVariant.density).toBe('spacious');
+    // Other variant axes are preserved when patching one.
+    expect(useDashboardStore.getState().archetypeVariant.accent).toBe('accent');
+  });
 });

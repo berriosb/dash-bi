@@ -1,18 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { UnauthorizedError, ForbiddenError } from '@/lib/auth/context';
 
-// Mock DB to prevent real DB calls
-const { mockDbInsert, mockWithOrgContext, mockRequirePermission } = vi.hoisted(() => ({
-  mockDbInsert: vi.fn().mockReturnValue({
-    values: vi.fn().mockReturnValue({
-      returning: vi.fn().mockResolvedValue([
-        { id: 'ds-test-1', name: 'Test', type: 'postgres', createdAt: new Date() },
-      ]),
-    }),
-  }),
-  mockWithOrgContext: vi.fn(async (_orgId: string, _userId: string, fn: (tx: unknown) => Promise<unknown>) => {
-    return fn({} as unknown);
-  }),
-  mockRequirePermission: vi.fn().mockResolvedValue(undefined),
+// Sprint 1.5: los route handlers ya no leen `x-org-id`/`x-user-id` del
+// request. Derivan identidad de la sesión via `requireAuth`, que mockeamos.
+const { mockRequireAuth, mockDbInsert, mockWithOrgContext } = vi.hoisted(() => ({
+  mockRequireAuth: vi.fn(),
+  mockDbInsert: vi.fn(),
+  mockWithOrgContext: vi.fn(
+    async (..._args: unknown[]) => undefined
+  ),
 }));
 
 vi.mock('@/db/client', () => ({
@@ -20,37 +16,48 @@ vi.mock('@/db/client', () => ({
   withOrgContext: mockWithOrgContext,
 }));
 
-vi.mock('@/lib/auth/context', () => ({
-  requirePermission: mockRequirePermission,
+
+vi.mock('@/lib/auth/request', () => ({
+  requireAuth: mockRequireAuth,
 }));
+
 
 vi.mock('@/lib/audit/log', () => ({
   audit: vi.fn().mockResolvedValue(undefined),
 }));
 
+
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },
 }));
+
 
 import { POST } from '@/app/api/data-sources/route';
 
 function makeReq(body: unknown): Request {
   return new Request('http://localhost/api/data-sources', {
     method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-org-id': 'org-1',
-      'x-user-id': 'user-1',
-    },
+    headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
   });
 }
 
 describe('POST /api/data-sources — validation', () => {
   beforeEach(() => {
-    mockDbInsert.mockClear();
-    mockWithOrgContext.mockClear();
-    mockRequirePermission.mockClear();
+    vi.clearAllMocks();
+    mockDbInsert.mockReset();
+    mockWithOrgContext.mockReset();
+    mockRequireAuth.mockReset();
+    mockRequireAuth.mockResolvedValue({
+      userId: 'user-1',
+      email: 'a@b.com',
+      orgId: 'org-1',
+      role: 'admin',
+    });
+    (mockWithOrgContext as unknown as { mockImplementation: (impl: (...args: unknown[]) => Promise<unknown>) => void }).mockImplementation((...args: unknown[]) => {
+      const fn = args[3] as (t: unknown) => Promise<unknown>;
+      return fn({ insert: mockDbInsert });
+    });
     mockDbInsert.mockReturnValue({
       values: vi.fn().mockReturnValue({
         returning: vi.fn().mockResolvedValue([
@@ -60,11 +67,12 @@ describe('POST /api/data-sources — validation', () => {
     });
   });
 
-  it('rejects when x-org-id / x-user-id headers missing', async () => {
-    const res = await POST(new Request('http://localhost/api/data-sources', { method: 'POST' }));
-    expect(res.status).toBe(400);
-    const body = await res.json();
-    expect(body.error).toContain('x-org-id and x-user-id headers required');
+  it('returns 401 when there is no authenticated session', async () => {
+    mockRequireAuth.mockRejectedValueOnce(
+      new UnauthorizedError()
+    );
+    const res = await POST(makeReq({ name: 'X', type: 'postgres', config: {} }));
+    expect(res.status).toBe(401);
   });
 
   it('rejects body without name', async () => {
@@ -95,7 +103,7 @@ describe('POST /api/data-sources — validation', () => {
     );
     expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.error).toBe('connector.ssrf_blocked');
+    expect(body.code).toBe('connector.ssrf_blocked');
   });
 
   it('rejects postgres config with private IP (SSRF)', async () => {
@@ -142,7 +150,7 @@ describe('POST /api/data-sources — validation', () => {
     );
     expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.error).toBe('validation.invalid_format');
+    expect(body.code).toBe('validation.invalid_format');
   });
 
   it('rejects sheets config with missing spreadsheetId', async () => {
@@ -218,8 +226,8 @@ describe('POST /api/data-sources — validation', () => {
       'org-1',
       'user-1',
       'datasource.created',
-      expect.stringContaining('datasource:'),
-      expect.objectContaining({ metadata: expect.any(Object) }),
+      'datasource:ds-test-1',
+      expect.objectContaining({ metadata: expect.objectContaining({ name: 'Production DB', type: 'postgres' }) })
     );
   });
 });

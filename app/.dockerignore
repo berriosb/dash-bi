@@ -1,0 +1,49 @@
+# Sprint 1.5 — Prune build context for the Next.js app image.
+
+# Local node_modules + build artifacts
+node_modules
+.next
+.next/**
+.next/standalone
+.next/static
+.turbo
+
+# Test outputs
+coverage
+test-results
+playwright-report
+
+# Documentation / agent workspace
+README.md
+SPEC.md
+PRODUCT.md
+DESIGN.md
+CODE_OF_CONDUCT.md
+CONTRIBUTING.md
+AGENTS.md
+docs/**
+specs/**
+research/**
+diagrams/**
+.impeccable/**
+.hermes/**
+.agents/**
+.claude/**
+.opencode/**
+
+# Tooling + IDE
+.husky
+.vscode
+.idea
+.DS_Store
+*.log
+.env*
+!.env.example
+*.tsbuildinfo
+
+# Build context that doesn't make sense to copy into the image
+.github
+.git
+.gitignore
+LICENSE
+docs

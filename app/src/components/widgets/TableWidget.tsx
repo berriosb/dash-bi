@@ -6,8 +6,8 @@ import { WidgetSurface } from './WidgetSurface';
 
 export function TableWidget({ widget }: { widget: TableWidgetType }) {
   const { config, data } = widget;
-  const rows: Record<string, unknown>[] = Array.isArray(data) ? data : [];
-  const columns = config.columns || [];
+  const rows = React.useMemo(() => (Array.isArray(data) ? (data as Record<string, unknown>[]) : []), [data]);
+  const columns = React.useMemo(() => config.columns || [], [config.columns]);
 
   const inferredColumns = React.useMemo(() => {
     if (columns.length > 0) return columns;

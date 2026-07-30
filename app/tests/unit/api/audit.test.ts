@@ -1,15 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { UnauthorizedError, ForbiddenError } from '@/lib/auth/context';
 
 const {
   mockDbSelect,
   mockWithOrgContext,
-  mockRequirePermission,
+  mockRequireAuth,
 } = vi.hoisted(() => ({
   mockDbSelect: vi.fn(),
   mockWithOrgContext: vi.fn(
-    async (_orgId: string, _userId: string | null, fn: () => Promise<unknown>) => fn()
+    async (..._args: unknown[]) => undefined
   ),
-  mockRequirePermission: vi.fn().mockResolvedValue(undefined),
+  mockRequireAuth: vi.fn(),
 }));
 
 vi.mock('@/db/client', () => ({
@@ -17,9 +18,11 @@ vi.mock('@/db/client', () => ({
   withOrgContext: mockWithOrgContext,
 }));
 
-vi.mock('@/lib/auth/context', () => ({
-  requirePermission: mockRequirePermission,
+
+vi.mock('@/lib/auth/request', () => ({
+  requireAuth: mockRequireAuth,
 }));
+
 
 vi.mock('@/lib/audit/events', () => ({
   AUDIT_EVENT_CATEGORIES: {
@@ -27,6 +30,7 @@ vi.mock('@/lib/audit/events', () => ({
     dashboard: ['dashboard.generated', 'dashboard.shared'],
   },
 }));
+
 
 vi.mock('drizzle-orm', () => ({
   eq: vi.fn((a: unknown, b: unknown) => ({ op: 'eq', a, b })),
@@ -36,29 +40,36 @@ vi.mock('drizzle-orm', () => ({
   inArray: vi.fn((a: unknown, b: unknown) => ({ op: 'inArray', a, b })),
 }));
 
+
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },
 }));
 
+
 import { GET } from '@/app/api/audit/route';
 
-function makeReq(query: Record<string, string> = {}, headers: Record<string, string> = {}): Request {
+function makeReq(query: Record<string, string> = {}): Request {
   const url = new URL('http://localhost/api/audit');
   for (const [k, v] of Object.entries(query)) url.searchParams.set(k, v);
-  return new Request(url.toString(), {
-    method: 'GET',
-    headers: {
-      'x-org-id': 'org-test',
-      'x-user-id': 'user-test',
-      ...headers,
-    },
-  });
+  return new Request(url.toString(), { method: 'GET' });
 }
 
 describe('GET /api/audit', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockRequirePermission.mockResolvedValue(undefined);
+    mockRequireAuth.mockReset();
+    mockWithOrgContext.mockReset();
+    mockDbSelect.mockReset();
+    mockRequireAuth.mockResolvedValue({
+      userId: 'user-test',
+      email: 'a@b.com',
+      orgId: 'org-test',
+      role: 'admin',
+    });
+    (mockWithOrgContext as unknown as { mockImplementation: (impl: (...args: unknown[]) => Promise<unknown>) => void }).mockImplementation((...args: unknown[]) => {
+      const fn = args[3] as (t: unknown) => Promise<unknown>;
+      return fn({ select: mockDbSelect });
+    });
     const limit = vi.fn().mockResolvedValue([
       { id: 'evt-1', action: 'dashboard.generated', userId: 'u-1', resource: 'dashboard:d-1', metadata: null, ip: '1.2.3.4', createdAt: new Date('2026-07-01') },
       { id: 'evt-2', action: 'auth.login', userId: 'u-2', resource: null, metadata: null, ip: null, createdAt: new Date('2026-07-02') },
@@ -73,7 +84,7 @@ describe('GET /api/audit', () => {
     const res = await GET(makeReq());
 
     expect(res.status).toBe(200);
-    expect(mockWithOrgContext).toHaveBeenCalledWith('org-test', 'user-test', expect.any(Function));
+    expect(mockWithOrgContext).toHaveBeenCalledWith('org-test', 'user-test', 'admin', expect.any(Function));
   });
 
   it('returns entries with id, action, userId, resource, createdAt fields', async () => {
@@ -92,53 +103,39 @@ describe('GET /api/audit', () => {
 
   it('limits results to 100 by default', async () => {
     await GET(makeReq());
-    const selectResult = mockDbSelect.mock.results[0]?.value as {
-      from: ReturnType<typeof vi.fn>;
-    };
-    const fromResult = selectResult.from.mock.results[0]?.value as {
-      where: ReturnType<typeof vi.fn>;
-    };
-    const whereResult = fromResult.where.mock.results[0]?.value as {
-      orderBy: ReturnType<typeof vi.fn>;
-    };
-    const orderByResult = whereResult.orderBy.mock.results[0]?.value as {
-      limit: ReturnType<typeof vi.fn>;
-    };
+    const selectResult = mockDbSelect.mock.results[0]?.value as { from: ReturnType<typeof vi.fn> };
+    const fromResult = selectResult.from.mock.results[0]?.value as { where: ReturnType<typeof vi.fn> };
+    const whereResult = fromResult.where.mock.results[0]?.value as { orderBy: ReturnType<typeof vi.fn> };
+    const orderByResult = whereResult.orderBy.mock.results[0]?.value as { limit: ReturnType<typeof vi.fn> };
     expect(orderByResult.limit).toHaveBeenCalledWith(100);
   });
 
   it('respects custom limit param', async () => {
     await GET(makeReq({ limit: '25' }));
-    const selectResult = mockDbSelect.mock.results[0]?.value as {
-      from: ReturnType<typeof vi.fn>;
-    };
-    const fromResult = selectResult.from.mock.results[0]?.value as {
-      where: ReturnType<typeof vi.fn>;
-    };
-    const whereResult = fromResult.where.mock.results[0]?.value as {
-      orderBy: ReturnType<typeof vi.fn>;
-    };
-    const orderByResult = whereResult.orderBy.mock.results[0]?.value as {
-      limit: ReturnType<typeof vi.fn>;
-    };
+    const selectResult = mockDbSelect.mock.results[0]?.value as { from: ReturnType<typeof vi.fn> };
+    const fromResult = selectResult.from.mock.results[0]?.value as { where: ReturnType<typeof vi.fn> };
+    const whereResult = fromResult.where.mock.results[0]?.value as { orderBy: ReturnType<typeof vi.fn> };
+    const orderByResult = whereResult.orderBy.mock.results[0]?.value as { limit: ReturnType<typeof vi.fn> };
     expect(orderByResult.limit).toHaveBeenCalledWith(25);
   });
 
   it('filters by category when category param is provided', async () => {
     await GET(makeReq({ category: 'dashboard' }));
-    // The query chain is exercised; we just verify the call was made without error
     expect(mockDbSelect).toHaveBeenCalled();
   });
 
-  it('rejects when x-org-id header is missing', async () => {
-    const res = await GET(makeReq({}, { 'x-org-id': '' }));
-    expect(res.status).toBe(400);
+  it('returns 401 when session is invalid', async () => {
+    mockRequireAuth.mockRejectedValueOnce(
+      new UnauthorizedError()
+    );
+    const res = await GET(makeReq());
+    expect(res.status).toBe(401);
     expect(mockDbSelect).not.toHaveBeenCalled();
   });
 
   it('returns 403 when user lacks audit:read permission', async () => {
-    mockRequirePermission.mockRejectedValueOnce(
-      Object.assign(new Error('Forbidden'), { name: 'ForbiddenError' })
+    mockRequireAuth.mockRejectedValueOnce(
+      new ForbiddenError()
     );
     const res = await GET(makeReq());
     expect(res.status).toBe(403);

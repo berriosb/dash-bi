@@ -1,8 +1,12 @@
-# Dockerfile para PDF Worker (Puppeteer + Chrome)
+# Dockerfile para PDF Worker (Puppeteer + Chrome).
+#
+# Sprint 1.5: este worker consume la cola `pdf-export` de BullMQ (Redis)
+# y renderiza dashboards con Puppeteer. Corre como proceso separado
+# del app principal para aislar el consumo de memoria y CPU.
 
 FROM node:22-bookworm-slim AS base
 
-# Install Chrome dependencies
+# Install Chrome dependencies + Chromium
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates fonts-liberation libasound2 libatk-bridge2.0-0 libatk1.0-0 \
     libc6 libcairo2 libcups2 libdbus-1-3 libexpat1 libfontconfig1 libgbm1 \
@@ -17,16 +21,18 @@ RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
 
 WORKDIR /app
 
-# Install deps (solo lo necesario para el worker)
-COPY package.json pnpm-lock.yaml .npmrc ./
-RUN pnpm install --frozen-lockfile --filter=puppeteer...
+# Install deps
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
 
-# Copy worker source
-COPY worker/ ./worker/
-COPY src/lib/pdf ./src/lib/pdf 2>/dev/null || true
-COPY src/lib/logger ./src/lib/logger 2>/dev/null || true
-COPY src/lib/env ./src/lib/env 2>/dev/null || true
-COPY src/lib/queue ./src/lib/queue 2>/dev/null || true
+# Copy source. The worker is a tsx-runtime script (no separate build
+# step required in production; the container is started with tsx).
+# For a thinner image, compile to JS with `pnpm worker:pdf:build` and
+# copy the compiled output here. We keep the tsx path for now to mirror
+# the npm script and avoid drift between dev and prod.
+COPY tsconfig.json ./
+COPY src ./src
+COPY scripts ./scripts
 
 # Security: non-root
 RUN addgroup --system --gid 1001 nodejs && \
@@ -39,4 +45,4 @@ ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
 EXPOSE 3001
 
-CMD ["node", "worker/index.js"]
+CMD ["pnpm", "worker:pdf"]

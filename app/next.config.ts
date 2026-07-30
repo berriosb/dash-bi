@@ -4,13 +4,19 @@ import type { NextConfig } from 'next';
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
-  
+
   typedRoutes: true,
+
+  // Sprint 1.5: enable Next.js standalone output so the production
+  // Dockerfile can copy `.next/standalone` instead of running the full
+  // build with node_modules. See app/Dockerfile.
+  output: 'standalone',
+
   experimental: {
     // Optimize package imports
     optimizePackageImports: ['lucide-react', '@tremor/react', 'recharts'],
   },
-  
+
   // Image optimization
   images: {
     formats: ['image/avif', 'image/webp'],
@@ -18,7 +24,7 @@ const nextConfig: NextConfig = {
       { protocol: 'https', hostname: '**' },
     ],
   },
-  
+
   // Security headers
   async headers() {
     return [
@@ -40,10 +46,10 @@ const nextConfig: NextConfig = {
       },
     ];
   },
-  
+
   // Sentry configuration (added when Sentry is initialized)
   // sentry: { ... },
-  
+
   // Webpack tweaks (if needed)
   webpack: (config) => {
     // Externalize puppeteer (used only in worker service)

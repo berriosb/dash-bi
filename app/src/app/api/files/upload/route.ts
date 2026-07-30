@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { withSystemContext, db } from '@/db/client';
+import { withSystemContext } from '@/db/client';
 import { uploadedFiles } from '@/db/schema';
 import { requireAuth } from '@/lib/auth/request';
 import { toUserError, getOrGenerateCorrelationId } from '@/lib/errors/to-user-error';

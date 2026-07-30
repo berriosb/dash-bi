@@ -1,13 +1,15 @@
 import { NextResponse } from 'next/server';
-import { eq } from 'drizzle-orm';
 import { z } from 'zod';
-import { db, withOrgContext } from '@/db/client';
-import { dataSources, auditLog } from '@/db/schema';
-import { requirePermission } from '@/lib/auth/context';
+import { eq } from 'drizzle-orm';
+import { withOrgContext } from '@/db/client';
+import { dataSources } from '@/db/schema';
+import { requireAuth } from '@/lib/auth/request';
 import { encryptApiKey } from '@/lib/security/encryption';
 import { validatePostgresHost } from '@/lib/security/validate-connection';
 import { checkRateLimit } from '@/lib/rate-limit';
 import { audit } from '@/lib/audit/log';
+import { toUserError, getOrGenerateCorrelationId } from '@/lib/errors/to-user-error';
+import { statusFromCode } from '@/lib/errors/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,19 +38,21 @@ const CreateDataSourceSchema = z.object({
   config: z.unknown(),
 });
 
+function errorResponse(error: unknown, req: Request) {
+  const correlationId = getOrGenerateCorrelationId(req);
+  const appError = toUserError(error, correlationId);
+  return NextResponse.json(appError, {
+    status: statusFromCode(appError.code),
+    headers: { 'x-correlation-id': correlationId },
+  });
+}
+
 export async function GET(req: Request) {
-  const url = new URL(req.url);
-  const orgId = req.headers.get('x-org-id') || url.searchParams.get('orgId');
-  const userId = req.headers.get('x-user-id');
-
-  if (!orgId || !userId) {
-    return NextResponse.json({ error: 'x-org-id and x-user-id headers required' }, { status: 400 });
-  }
-
   try {
-    await requirePermission(userId, orgId, 'datasource.view');
-    const sources = await withOrgContext(orgId, userId, async () => {
-      return db.select({
+    const ctx = await requireAuth(req, 'datasource.view');
+
+    const sources = await withOrgContext(ctx.orgId, ctx.userId, ctx.role, async (tx) =>
+      tx.select({
         id: dataSources.id,
         orgId: dataSources.orgId,
         type: dataSources.type,
@@ -61,55 +65,50 @@ export async function GET(req: Request) {
         updatedAt: dataSources.updatedAt,
       })
       .from(dataSources)
-      .where(eq(dataSources.orgId, orgId));
-    });
+      .where(eq(dataSources.orgId, ctx.orgId))
+    );
 
     return NextResponse.json({ dataSources: sources });
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Internal error';
-    const status = error instanceof Error && error.name === 'ForbiddenError' ? 403 : 500;
-    return NextResponse.json({ error: message }, { status });
+  } catch (error) {
+    return errorResponse(error, req);
   }
 }
 
 export async function POST(req: Request) {
-  const url = new URL(req.url);
-  const orgId = req.headers.get('x-org-id') || url.searchParams.get('orgId');
-  const userId = req.headers.get('x-user-id');
-  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
-
-  if (!orgId || !userId) {
-    return NextResponse.json({ error: 'x-org-id and x-user-id headers required' }, { status: 400 });
-  }
-
-  // T9: rate limit data source creation. Encryption + DB writes son
-  // costosas y pueden revelar secrets si se abuse. 30 burst, 1 cada 2s.
-  const dsLimit = checkRateLimit({
-    capacity: 30,
-    refillPerSecond: 0.5,
-    key: `ds-create:org:${orgId}:ip:${ip}`,
-  });
-  if (!dsLimit.allowed) {
-    return NextResponse.json(
-      { error: 'rate_limited', retryAfterSeconds: dsLimit.retryAfterSeconds },
-      { status: 429, headers: { 'Retry-After': String(dsLimit.retryAfterSeconds) } },
-    );
-  }
-
   try {
-    await requirePermission(userId, orgId, 'datasource.create');
+    const ctx = await requireAuth(req, 'datasource.create');
+    const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
+
+    const dsLimit = checkRateLimit({
+      capacity: 30,
+      refillPerSecond: 0.5,
+      key: `ds-create:org:${ctx.orgId}:ip:${ip}`,
+    });
+    if (!dsLimit.allowed) {
+      return NextResponse.json(
+        { error: 'rate_limited', retryAfterSeconds: dsLimit.retryAfterSeconds },
+        { status: 429, headers: { 'Retry-After': String(dsLimit.retryAfterSeconds) } },
+      );
+    }
 
     const rawBody = await req.json();
     const parsed = CreateDataSourceSchema.safeParse(rawBody);
     if (!parsed.success) {
+      const correlationId = getOrGenerateCorrelationId(req);
       const fieldErrors: Record<string, string> = {};
       for (const issue of parsed.error.issues) {
         const path = issue.path.join('.') || 'root';
         if (!fieldErrors[path]) fieldErrors[path] = issue.message;
       }
       return NextResponse.json(
-        { error: 'validation.invalid_format', message: 'Revisá los campos marcados.', fieldErrors },
-        { status: 400 },
+        {
+          code: 'validation.invalid_format',
+          message: 'Revisá los campos marcados.',
+          correlationId,
+          retryable: false,
+          fieldErrors,
+        },
+        { status: 400, headers: { 'x-correlation-id': correlationId } },
       );
     }
 
@@ -119,47 +118,83 @@ export async function POST(req: Request) {
     if (type === 'postgres') {
       const result = PostgresConfigSchema.safeParse(config);
       if (!result.success) {
+        const correlationId = getOrGenerateCorrelationId(req);
         return NextResponse.json(
-          { error: 'validation.invalid_format', fieldErrors: flattenZod(result.error) },
-          { status: 400 },
+          {
+            code: 'validation.invalid_format',
+            message: 'Revisá los campos marcados.',
+            correlationId,
+            retryable: false,
+            fieldErrors: flattenZod(result.error),
+          },
+          { status: 400, headers: { 'x-correlation-id': correlationId } },
         );
       }
       try {
         validatePostgresHost(result.data.host);
       } catch (ssrfErr) {
+        const correlationId = getOrGenerateCorrelationId(req);
         return NextResponse.json(
-          { error: 'connector.ssrf_blocked', message: ssrfErr instanceof Error ? ssrfErr.message : 'Host bloqueado' },
-          { status: 400 },
+          {
+            code: 'connector.ssrf_blocked',
+            message: ssrfErr instanceof Error ? ssrfErr.message : 'Host bloqueado',
+            correlationId,
+            retryable: false,
+          },
+          { status: 400, headers: { 'x-correlation-id': correlationId } },
         );
       }
       validatedConfig = result.data as Record<string, unknown>;
     } else if (type === 'stripe') {
       const result = StripeConfigSchema.safeParse(config);
       if (!result.success) {
+        const correlationId = getOrGenerateCorrelationId(req);
         return NextResponse.json(
-          { error: 'validation.invalid_format', fieldErrors: flattenZod(result.error) },
-          { status: 400 },
+          {
+            code: 'validation.invalid_format',
+            message: 'Revisá los campos marcados.',
+            correlationId,
+            retryable: false,
+            fieldErrors: flattenZod(result.error),
+          },
+          { status: 400, headers: { 'x-correlation-id': correlationId } },
         );
       }
       validatedConfig = result.data as Record<string, unknown>;
     } else if (type === 'sheets') {
       const result = SheetsConfigSchema.safeParse(config);
       if (!result.success) {
+        const correlationId = getOrGenerateCorrelationId(req);
         return NextResponse.json(
-          { error: 'validation.invalid_format', fieldErrors: flattenZod(result.error) },
-          { status: 400 },
+          {
+            code: 'validation.invalid_format',
+            message: 'Revisá los campos marcados.',
+            correlationId,
+            retryable: false,
+            fieldErrors: flattenZod(result.error),
+          },
+          { status: 400, headers: { 'x-correlation-id': correlationId } },
         );
       }
       validatedConfig = result.data as Record<string, unknown>;
     } else {
-      return NextResponse.json({ error: 'connector.unsupported_format' }, { status: 400 });
+      const correlationId = getOrGenerateCorrelationId(req);
+      return NextResponse.json(
+        {
+          code: 'connector.unsupported_format',
+          message: 'Tipo de conector no soportado',
+          correlationId,
+          retryable: false,
+        },
+        { status: 400, headers: { 'x-correlation-id': correlationId } },
+      );
     }
 
     const configEncrypted = encryptApiKey(JSON.stringify(validatedConfig));
 
-    const [created] = await withOrgContext(orgId, userId, async () => {
-      return db.insert(dataSources).values({
-        orgId,
+    const [created] = await withOrgContext(ctx.orgId, ctx.userId, ctx.role, async (tx) =>
+      tx.insert(dataSources).values({
+        orgId: ctx.orgId,
         type,
         name,
         configEncrypted,
@@ -168,22 +203,21 @@ export async function POST(req: Request) {
         name: dataSources.name,
         type: dataSources.type,
         createdAt: dataSources.createdAt,
-      });
-    });
+      })
+    );
 
     if (!created) {
       return NextResponse.json({ error: 'Failed to create data source' }, { status: 500 });
     }
 
-    await audit(orgId, userId, 'datasource.created', `datasource:${created.id}`, {
+    await audit(ctx.orgId, ctx.userId, 'datasource.created', `datasource:${created.id}`, {
       metadata: { name, type },
+      req,
     });
 
     return NextResponse.json({ dataSource: created }, { status: 201 });
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Internal error';
-    const status = error instanceof Error && error.name === 'ForbiddenError' ? 403 : 500;
-    return NextResponse.json({ error: message }, { status });
+  } catch (error) {
+    return errorResponse(error, req);
   }
 }
 

@@ -3,7 +3,6 @@
 import * as React from 'react';
 import { useDebouncedCallback } from 'use-debounce';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useDashboardStore } from '@/stores/dashboardStore';
 import { useToast } from '@/hooks/use-toast';
 import type { Dashboard } from '@/lib/widgets/types';
 
@@ -25,10 +24,20 @@ export function useAutoSave(dashboardId: string, debounceMs = 1000): UseAutoSave
 
   const mutation = useMutation({
     mutationFn: async (dashboard: Dashboard) => {
+      // The API expects the canonical Dashboard shape. We project
+      // `archetype` + `archetypeVariant` so the server can persist them.
+      const payload = {
+        title: dashboard.title,
+        description: dashboard.description,
+        theme: dashboard.theme,
+        widgets: dashboard.widgets,
+        archetype: dashboard.archetype,
+        archetypeVariant: dashboard.archetypeVariant,
+      };
       const res = await fetch(`/api/dashboards/${dashboardId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(dashboard),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -68,7 +77,16 @@ export function useAutoSave(dashboardId: string, debounceMs = 1000): UseAutoSave
 
   const trigger = React.useCallback(
     (dashboard: Dashboard) => {
-      const serialized = JSON.stringify(dashboard);
+      // Include archetype + variant so the serializer comparison doesn't
+      // miss fields that change archetype selection.
+      const serialized = JSON.stringify({
+        title: dashboard.title,
+        description: dashboard.description,
+        theme: dashboard.theme,
+        widgets: dashboard.widgets,
+        archetype: dashboard.archetype,
+        archetypeVariant: dashboard.archetypeVariant,
+      });
       if (serialized === lastSavedRef.current) return;
       debounced(dashboard);
     },

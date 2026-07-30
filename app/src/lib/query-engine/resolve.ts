@@ -1,5 +1,5 @@
 import { eq, and } from 'drizzle-orm';
-import { db, withOrgContext } from '@/db/client';
+import { withOrgContext, type Tx } from '@/db/client';
 import { dataSources } from '@/db/schema';
 import { createConnector } from '@/lib/connectors/registry';
 import type { Connector, ConnectorConfig, ConnectorType } from '@/lib/connectors/types';
@@ -24,7 +24,7 @@ export async function resolveConnector(
   dataSourceId: string,
   role?: OrgRole,
 ): Promise<Connector> {
-  const fetchFn = async (tx: Parameters<Parameters<typeof db.transaction>[0]>[0]) => {
+  const fetchFn = async (tx: Tx) => {
     const rows = await tx
       .select()
       .from(dataSources)

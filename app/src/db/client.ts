@@ -17,6 +17,15 @@ const mainClient = postgres(connectionString, {
   idle_timeout: 20,
   connect_timeout: 10,
   prepare: false,
+  debug: process.env.PG_DEBUG === '1'
+    ? (_connection: number, query: string, _params: unknown[]) => {
+        // Sprint 1.5: gated behind PG_DEBUG=1. Logs every prepared
+        // statement — useful for tracing better-auth's INSERT flow.
+        if (query.includes('INSERT') || query.includes('UPDATE')) {
+          logger.debug({ query }, 'postgres query');
+        }
+      }
+    : undefined,
 });
 
 export const db = drizzle(mainClient, { schema });
@@ -49,6 +58,7 @@ const readonlyClient = postgres(readonlyConnectionString, {
 export const readonlyDb = drizzle(readonlyClient, { schema });
 
 export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+export type ReadOnlyTx = Parameters<Parameters<typeof readonlyDb.transaction>[0]>[0];
 
 // ─────────────────────────────────────────────────────────────────
 // ⚠️ withOrgContext: WRAPPER OBLIGATORIO para queries a DB
@@ -65,6 +75,11 @@ export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
  * de org_id SIEMPRE se aplica a las queries que están adentro.
  *
  * Postgres RLS policies leen `app.current_org_id` y filtran rows.
+ *
+ * IMPORTANTE — Sprint 1.5: el callback recibe `tx` y DEBE usarlo para
+ * todas las queries. Si el código llama `db.select()` desde adentro del
+ * callback, esas queries NO verán las GUC y RLS las rechazará / will
+ * leak rows. ESLint lo bloquea vía `dash-bi/no-raw-db-queries`.
  *
  * Acepta `role` opcional (Sprint 1, v0.2): si se pasa, se setea
  * `app.current_user_role` para que `query-engine` y RLS policies
@@ -93,17 +108,20 @@ export async function withOrgContext<T>(
 ): Promise<T> {
   const role: OrgRole = typeof roleOrFn === 'function' ? 'editor' : roleOrFn;
   const fn = (typeof roleOrFn === 'function' ? roleOrFn : fnMaybe)!;
-  // Anonymous callers (e.g., public share links) pass userId=null. The session
-  // variable must be a string for SET LOCAL; use the empty string. RLS policies
-  // that key off `current_user_id` will return no rows, which is the intended
-  // isolation behavior for unauthenticated contexts.
-  const userIdForSession = userId ?? '';
 
   return await db.transaction(async (tx) => {
-    // Setear variables de sesión que las RLS policies leen
-    await tx.execute(sql`SET LOCAL app.current_org_id = ${orgId}`);
-    await tx.execute(sql`SET LOCAL app.current_user_id = ${userIdForSession}`);
-    await tx.execute(sql`SET LOCAL app.current_user_role = ${role}`);
+    // Setear variables de sesión que las RLS policies leen.
+    // Use `set_config(name, value, is_local)` instead of `SET LOCAL name = $val`
+    // because (a) it accepts NULL for anonymous callers without breaking
+    // the `::uuid` cast in the policies and (b) avoids the postgres-js
+    // tagged-template binding for SET, which only works for DML params.
+    await tx.execute(sql`SELECT set_config('app.current_org_id', ${orgId}, true)`);
+    if (userId === null) {
+      await tx.execute(sql`SELECT set_config('app.current_user_id', NULL, true)`);
+    } else {
+      await tx.execute(sql`SELECT set_config('app.current_user_id', ${userId}, true)`);
+    }
+    await tx.execute(sql`SELECT set_config('app.current_user_role', ${role}, true)`);
 
     const start = Date.now();
     try {
@@ -150,29 +168,29 @@ export async function withSystemContext<T>(fn: (tx: Tx) => Promise<T>): Promise<
 export async function withOrgContextReadOnly<T>(
   orgId: string,
   userId: string,
-  fn: (tx: Parameters<Parameters<typeof readonlyDb.transaction>[0]>[0]) => Promise<T>,
+  fn: (tx: ReadOnlyTx) => Promise<T>,
 ): Promise<T>;
 export async function withOrgContextReadOnly<T>(
   orgId: string,
   userId: string,
   role: OrgRole,
-  fn: (tx: Parameters<Parameters<typeof readonlyDb.transaction>[0]>[0]) => Promise<T>,
+  fn: (tx: ReadOnlyTx) => Promise<T>,
 ): Promise<T>;
 export async function withOrgContextReadOnly<T>(
   orgId: string,
   userId: string,
   roleOrFn:
     | OrgRole
-    | ((tx: Parameters<Parameters<typeof readonlyDb.transaction>[0]>[0]) => Promise<T>),
-  fnMaybe?: (tx: Parameters<Parameters<typeof readonlyDb.transaction>[0]>[0]) => Promise<T>,
+    | ((tx: ReadOnlyTx) => Promise<T>),
+  fnMaybe?: (tx: ReadOnlyTx) => Promise<T>,
 ): Promise<T> {
   const role: OrgRole = typeof roleOrFn === 'function' ? 'editor' : roleOrFn;
   const fn = (typeof roleOrFn === 'function' ? roleOrFn : fnMaybe)!;
 
   return await readonlyDb.transaction(async (tx) => {
-    await tx.execute(sql`SET LOCAL app.current_org_id = ${orgId}`);
-    await tx.execute(sql`SET LOCAL app.current_user_id = ${userId}`);
-    await tx.execute(sql`SET LOCAL app.current_user_role = ${role}`);
+    await tx.execute(sql`SELECT set_config('app.current_org_id', ${orgId}, true)`);
+    await tx.execute(sql`SELECT set_config('app.current_user_id', ${userId}, true)`);
+    await tx.execute(sql`SELECT set_config('app.current_user_role', ${role}, true)`);
 
     const start = Date.now();
     try {

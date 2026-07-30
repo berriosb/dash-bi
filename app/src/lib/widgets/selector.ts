@@ -2,7 +2,6 @@ import type { ArchetypeId } from './types';
 import {
   ARCHETYPE_KEYWORDS,
   ARCHETYPE_LIST,
-  ARCHETYPES,
   ARCHETYPE_IDS,
   type ArchetypeTemplate,
 } from './archetypes';
@@ -92,7 +91,6 @@ export function selectArchetype(input: SelectorInput): SelectorResult {
   const keywordHits = scored.filter(s => s.score >= 10);
 
   if (keywordHits.length === 0) {
-    const fallback: ArchetypeTemplate = ARCHETYPES['kpi-grid'];
     return {
       archetype: 'kpi-grid',
       reason: 'Sin keywords matchados — fallback al default "kpi-grid"',

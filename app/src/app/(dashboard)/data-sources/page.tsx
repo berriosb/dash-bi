@@ -1,53 +1,64 @@
 'use client';
 
 import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Database, Plus, CheckCircle2, AlertCircle, RefreshCw, Key, FileSpreadsheet, Server, ExternalLink } from 'lucide-react';
+import {
+  Database,
+  Plus,
+  CheckCircle2,
+  AlertCircle,
+  RefreshCw,
+  Key,
+  FileSpreadsheet,
+  Server,
+  Inbox,
+} from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 interface DataSourceItem {
   id: string;
   name: string;
   type: 'postgres' | 'stripe' | 'sheets';
-  lastTestedAt: string;
-  status: 'ok' | 'error' | 'pending';
+  lastTestedAt: string | null;
+  lastTestOk: boolean | null;
   details: string;
 }
 
-const initialDataSources: DataSourceItem[] = [
-  {
-    id: 'ds_postgres_prod',
-    name: 'PostgreSQL Principal (Producción)',
-    type: 'postgres',
-    lastTestedAt: 'Hace 5 minutos',
-    status: 'ok',
-    details: 'db.empresa.internal:5432 / DB: production',
-  },
-  {
-    id: 'ds_stripe_billing',
-    name: 'Stripe Pasarela Pagos',
-    type: 'stripe',
-    lastTestedAt: 'Hace 1 hora',
-    status: 'ok',
-    details: 'sk_live_••••••••••••39A2',
-  },
-  {
-    id: 'ds_sheets_sales',
-    name: 'Google Sheets Ventas Q3',
-    type: 'sheets',
-    lastTestedAt: 'Ayer',
-    status: 'ok',
-    details: 'spreadsheet_id: 1BxiMVs0XR... (OAuth activo)',
-  },
-];
+async function fetchDataSources(): Promise<DataSourceItem[]> {
+  const res = await fetch('/api/data-sources');
+  if (!res.ok) {
+    throw Object.assign(new Error(`HTTP ${res.status}`), { status: res.status });
+  }
+  const data = await res.json();
+  return (data.dataSources ?? []).map((row: {
+    id: string;
+    name: string;
+    type: string;
+    lastTestedAt: string | null;
+    lastTestOk: boolean | null;
+  }) => ({
+    id: row.id,
+    name: row.name,
+    type: row.type,
+    lastTestedAt: row.lastTestedAt,
+    lastTestOk: row.lastTestOk,
+    details:
+      row.type === 'stripe'
+        ? 'sk_live_••••••••(cifrada)'
+        : row.type === 'sheets'
+          ? 'OAuth Google Sheets'
+          : 'PostgreSQL (host cifrado)',
+  }));
+}
 
 export default function DataSourcesPage() {
   const { toast } = useToast();
-  const [dataSources, setDataSources] = useState<DataSourceItem[]>(initialDataSources);
+  const queryClient = useQueryClient();
   const [testingId, setTestingId] = useState<string | null>(null);
   const [showConnectModal, setShowConnectModal] = useState(false);
   const [selectedType, setSelectedType] = useState<'postgres' | 'stripe' | 'sheets'>('postgres');
@@ -62,29 +73,26 @@ export default function DataSourcesPage() {
   const [stripeKey, setStripeKey] = useState('');
   const [spreadsheetId, setSpreadsheetId] = useState('');
 
+  const { data: dataSources = [], isLoading } = useQuery({
+    queryKey: ['data-sources'],
+    queryFn: fetchDataSources,
+  });
+
   const handleTestConnection = async (id: string) => {
     setTestingId(id);
     try {
-      const res = await fetch(`/api/data-sources/${id}/test`, {
-        method: 'POST',
-        headers: { 'x-org-id': 'demo', 'x-user-id': 'demo' },
-      });
+      const res = await fetch(`/api/data-sources/${id}/test`, { method: 'POST' });
       const data = await res.json().catch(() => null);
       if (res.ok && data?.ok) {
-        setDataSources((prev) =>
-          prev.map((ds) => (ds.id === id ? { ...ds, lastTestedAt: 'Justo ahora', status: 'ok' } : ds)),
-        );
         toast({ title: 'Conexión exitosa', description: `${id} responde correctamente.` });
       } else {
-        setDataSources((prev) =>
-          prev.map((ds) => (ds.id === id ? { ...ds, lastTestedAt: 'Justo ahora', status: 'error' } : ds)),
-        );
         toast({
           variant: 'destructive',
           title: 'No pudimos conectar',
-          description: data?.error || 'Verificá las credenciales y volvé a intentar.',
+          description: data?.error ?? 'Verificá las credenciales y volvé a intentar.',
         });
       }
+      queryClient.invalidateQueries({ queryKey: ['data-sources'] });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Error de red';
       toast({ variant: 'destructive', title: 'Error al probar conexión', description: message });
@@ -103,79 +111,65 @@ export default function DataSourcesPage() {
     setSpreadsheetId('');
   };
 
-  const handleCreateSource = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSubmitting(true);
-
-    try {
-      const config: Record<string, unknown> = {};
-      if (selectedType === 'postgres') {
-        config.host = host;
-        config.port = 5432;
-        config.database = database;
-        config.username = user;
-        config.password = password;
-      } else if (selectedType === 'stripe') {
-        config.apiKey = stripeKey;
-      } else if (selectedType === 'sheets') {
-        config.spreadsheetId = spreadsheetId;
-        config.refreshTokenEncrypted = '';
-        config.sheetNames = [];
-      }
-
+  const create = useMutation({
+    mutationFn: async (body: Record<string, unknown>) => {
       const res = await fetch('/api/data-sources', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-org-id': 'demo',
-          'x-user-id': 'demo',
-        },
-        body: JSON.stringify({ name: name || `Nueva Fuente ${selectedType.toUpperCase()}`, type: selectedType, config }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
       });
-
-      const data = await res.json();
-
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast({
-          variant: 'destructive',
-          title: 'No pudimos guardar la fuente',
-          description: data?.error || 'Verificá los datos ingresados.',
-        });
-        return;
+        const code = (data as { code?: string }).code ?? 'unknown';
+        const message =
+          (data as { message?: string }).message ?? `No pudimos guardar la fuente (${code})`;
+        throw new Error(message);
       }
-
-      const newDs: DataSourceItem = {
-        id: data.dataSource?.id ?? `ds_${Date.now()}`,
-        name: name || `Nueva Fuente ${selectedType.toUpperCase()}`,
-        type: selectedType,
-        lastTestedAt: 'Recién añadida',
-        status: 'ok',
-        details:
-          selectedType === 'postgres'
-            ? `${host || 'localhost'}:5432 / ${database || 'main'}`
-            : selectedType === 'stripe'
-              ? `sk_live_••••••••${(stripeKey || '').slice(-4)}`
-              : `Spreadsheet: ${spreadsheetId || 'oauth'}`,
-      };
-
-      setDataSources((prev) => [newDs, ...prev]);
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['data-sources'] });
       setShowConnectModal(false);
       resetForm();
       toast({
         title: 'Fuente conectada',
         description: 'Probá la conexión para confirmar que todo funciona.',
       });
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Error de red';
-      toast({ variant: 'destructive', title: 'Error al guardar', description: message });
-    } finally {
-      setSubmitting(false);
+    },
+    onError: (err: Error) => {
+      toast({ variant: 'destructive', title: 'No pudimos guardar la fuente', description: err.message });
+    },
+  });
+
+  const handleCreateSource = (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitting(true);
+    const config: Record<string, unknown> = {};
+    if (selectedType === 'postgres') {
+      config.host = host;
+      config.port = 5432;
+      config.database = database;
+      config.username = user;
+      config.password = password;
+    } else if (selectedType === 'stripe') {
+      config.apiKey = stripeKey;
+    } else if (selectedType === 'sheets') {
+      config.spreadsheetId = spreadsheetId;
+      config.refreshTokenEncrypted = '';
+      config.sheetNames = [];
     }
+    create.mutate(
+      {
+        name: name || `Nueva Fuente ${selectedType.toUpperCase()}`,
+        type: selectedType,
+        config,
+      },
+      { onSettled: () => setSubmitting(false) },
+    );
   };
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
@@ -189,6 +183,7 @@ export default function DataSourcesPage() {
 
         <Button
           onClick={() => setShowConnectModal(true)}
+          data-testid="connect-datasource"
           className="bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs px-4 h-9 shadow-lg shadow-indigo-500/20 gap-1.5"
         >
           <Plus className="w-4 h-4" />
@@ -196,50 +191,76 @@ export default function DataSourcesPage() {
         </Button>
       </div>
 
-      {/* List of Connected Data Sources */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        {dataSources.map((ds) => (
-          <Card key={ds.id} className="bg-slate-900/70 border-slate-800 flex flex-col justify-between">
-            <CardHeader className="p-5 pb-3">
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-indigo-400 font-bold">
-                    {ds.type === 'postgres' && <Server className="w-5 h-5" />}
-                    {ds.type === 'stripe' && <Key className="w-5 h-5 text-purple-400" />}
-                    {ds.type === 'sheets' && <FileSpreadsheet className="w-5 h-5 text-emerald-400" />}
-                  </div>
-                  <div>
-                    <CardTitle className="text-base font-bold text-white">{ds.name}</CardTitle>
-                    <span className="text-[10px] text-slate-500 font-mono block mt-0.5">{ds.details}</span>
+      {isLoading && <p className="text-slate-400 text-sm">Cargando fuentes…</p>}
+
+      {!isLoading && dataSources.length === 0 && (
+        <div className="rounded-xl border border-dashed border-slate-800 bg-slate-900/40 p-10 text-center">
+          <Inbox className="w-8 h-8 text-slate-500 mx-auto mb-3" />
+          <h2 className="text-sm font-semibold text-white">Todavía no conectaste ninguna fuente</h2>
+          <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
+            Conectá una base de datos PostgreSQL, Stripe o Google Sheets para empezar a generar dashboards.
+          </p>
+        </div>
+      )}
+
+      {dataSources.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {dataSources.map((ds) => (
+            <Card
+              key={ds.id}
+              data-testid={`datasource-card-${ds.id}`}
+              className="bg-slate-900/70 border-slate-800 flex flex-col justify-between"
+            >
+              <CardHeader className="p-5 pb-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-indigo-400 font-bold">
+                      {ds.type === 'postgres' && <Server className="w-5 h-5" />}
+                      {ds.type === 'stripe' && <Key className="w-5 h-5 text-purple-400" />}
+                      {ds.type === 'sheets' && <FileSpreadsheet className="w-5 h-5 text-emerald-400" />}
+                    </div>
+                    <div>
+                      <CardTitle className="text-base font-bold text-white">{ds.name}</CardTitle>
+                      <span className="text-[10px] text-slate-500 font-mono block mt-0.5">{ds.details}</span>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </CardHeader>
+              </CardHeader>
 
-            <CardContent className="p-5 pt-3 space-y-4">
-              <div className="flex items-center justify-between border-t border-slate-800/80 pt-3 text-xs">
-                <Badge variant="outline" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-[10px] gap-1">
-                  <CheckCircle2 className="w-3 h-3" />
-                  Conexión Activa
-                </Badge>
+              <CardContent className="p-5 pt-3 space-y-4">
+                <div className="flex items-center justify-between border-t border-slate-800/80 pt-3 text-xs">
+                  {ds.lastTestOk === false ? (
+                    <Badge variant="outline" className="bg-red-500/10 text-red-400 border-red-500/20 text-[10px] gap-1">
+                      <AlertCircle className="w-3 h-3" />
+                      Error de conexión
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-[10px] gap-1">
+                      <CheckCircle2 className="w-3 h-3" />
+                      Conexión Activa
+                    </Badge>
+                  )}
 
-                <span className="text-slate-500 text-[11px]">Probado: {ds.lastTestedAt}</span>
-              </div>
+                  <span className="text-slate-500 text-[11px]">
+                    {ds.lastTestedAt ? `Probado: ${new Date(ds.lastTestedAt).toLocaleString()}` : 'Sin probar'}
+                  </span>
+                </div>
 
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleTestConnection(ds.id)}
-                disabled={testingId === ds.id}
-                className="w-full bg-slate-800 border-slate-700 hover:bg-slate-700 text-slate-200 text-xs gap-1.5"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${testingId === ds.id ? 'animate-spin text-indigo-400' : ''}`} />
-                <span>{testingId === ds.id ? 'Probando...' : 'Probar Conexión'}</span>
-              </Button>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleTestConnection(ds.id)}
+                  disabled={testingId === ds.id}
+                  className="w-full bg-slate-800 border-slate-700 hover:bg-slate-700 text-slate-200 text-xs gap-1.5"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${testingId === ds.id ? 'animate-spin text-indigo-400' : ''}`} />
+                  <span>{testingId === ds.id ? 'Probando...' : 'Probar Conexión'}</span>
+                </Button>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
 
       {/* Connect Modal */}
       {showConnectModal && (

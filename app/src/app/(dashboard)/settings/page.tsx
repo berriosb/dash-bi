@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Settings, Key, ShieldCheck, Sparkles, Users, Palette, Check, Save } from 'lucide-react';
+import { Settings, ShieldCheck, Sparkles, Users, Palette, Check, Save } from 'lucide-react';
 import { useUIStore } from '@/stores/uiStore';
 
 export default function SettingsPage() {
@@ -155,9 +155,10 @@ export default function SettingsPage() {
 
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
-            <div
+            <button
+              type="button"
               onClick={() => setActiveTheme('moderno-saas')}
-              className={`p-4 rounded-xl border cursor-pointer transition ${
+              className={`p-4 rounded-xl border cursor-pointer transition text-left ${
                 activeTheme === 'moderno-saas'
                   ? 'bg-indigo-600/15 border-indigo-500 ring-2 ring-indigo-500/30'
                   : 'bg-slate-950 border-slate-800 hover:border-slate-700'
@@ -168,11 +169,12 @@ export default function SettingsPage() {
                 {activeTheme === 'moderno-saas' && <Check className="w-4 h-4 text-indigo-400" />}
               </div>
               <p className="text-[11px] text-slate-400 mt-1">Estilo oscuro vibrante con degradados en morado e índigo.</p>
-            </div>
+            </button>
 
-            <div
+            <button
+              type="button"
               onClick={() => setActiveTheme('corporate')}
-              className={`p-4 rounded-xl border cursor-pointer transition ${
+              className={`p-4 rounded-xl border cursor-pointer transition text-left ${
                 activeTheme === 'corporate'
                   ? 'bg-indigo-600/15 border-indigo-500 ring-2 ring-indigo-500/30'
                   : 'bg-slate-950 border-slate-800 hover:border-slate-700'
@@ -183,7 +185,7 @@ export default function SettingsPage() {
                 {activeTheme === 'corporate' && <Check className="w-4 h-4 text-indigo-400" />}
               </div>
               <p className="text-[11px] text-slate-400 mt-1">Líneas limpias, tipografía sobria y paleta azul marino ejecutiva.</p>
-            </div>
+            </button>
           </div>
         </CardContent>
       </Card>

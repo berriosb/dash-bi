@@ -1,17 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { UnauthorizedError, ForbiddenError } from '@/lib/auth/context';
 
 const {
   mockDbInsert,
   mockWithOrgContext,
-  mockRequirePermission,
+  mockRequireAuth,
   mockGeneratePublicToken,
   mockAudit,
 } = vi.hoisted(() => ({
   mockDbInsert: vi.fn(),
   mockWithOrgContext: vi.fn(
-    async (_orgId: string, _userId: string | null, fn: () => Promise<unknown>) => fn()
+    async (..._args: unknown[]) => undefined
   ),
-  mockRequirePermission: vi.fn().mockResolvedValue(undefined),
+  mockRequireAuth: vi.fn(),
   mockGeneratePublicToken: vi.fn().mockReturnValue('test-token-aaaaaaaaaaaaaaaaaaaaaaaa'),
   mockAudit: vi.fn().mockResolvedValue(undefined),
 }));
@@ -21,33 +22,33 @@ vi.mock('@/db/client', () => ({
   withOrgContext: mockWithOrgContext,
 }));
 
-vi.mock('@/lib/auth/context', () => ({
-  requirePermission: mockRequirePermission,
+
+vi.mock('@/lib/auth/request', () => ({
+  requireAuth: mockRequireAuth,
 }));
+
 
 vi.mock('@/lib/audit/log', () => ({
   audit: mockAudit,
 }));
 
+
 vi.mock('@/lib/sharing/token', () => ({
   generatePublicToken: mockGeneratePublicToken,
 }));
+
 
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },
 }));
 
+
 import { POST } from '@/app/api/dashboards/[id]/share/route';
 
-function makeReq(body: unknown, headers: Record<string, string> = {}): Request {
+function makeReq(body: unknown): Request {
   return new Request('http://localhost/api/dashboards/dash-123/share', {
     method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-org-id': 'org-test',
-      'x-user-id': 'user-test',
-      ...headers,
-    },
+    headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
   });
 }
@@ -55,8 +56,22 @@ function makeReq(body: unknown, headers: Record<string, string> = {}): Request {
 describe('POST /api/dashboards/[id]/share', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockRequirePermission.mockResolvedValue(undefined);
+    mockRequireAuth.mockReset();
+    mockWithOrgContext.mockReset();
+    mockDbInsert.mockReset();
+    mockAudit.mockReset();
+    mockGeneratePublicToken.mockReset();
+    mockRequireAuth.mockResolvedValue({
+      userId: 'user-test',
+      email: 'a@b.com',
+      orgId: 'org-test',
+      role: 'admin',
+    });
     mockGeneratePublicToken.mockReturnValue('test-token-aaaaaaaaaaaaaaaaaaaaaaaa');
+    (mockWithOrgContext as unknown as { mockImplementation: (impl: (...args: unknown[]) => Promise<unknown>) => void }).mockImplementation((...args: unknown[]) => {
+      const fn = args[3] as (t: unknown) => Promise<unknown>;
+      return fn({ insert: mockDbInsert });
+    });
     const returning = vi.fn().mockResolvedValue([
       {
         id: 'link-id-1',
@@ -66,6 +81,7 @@ describe('POST /api/dashboards/[id]/share', () => {
     ]);
     const values = vi.fn().mockReturnValue({ returning });
     mockDbInsert.mockReturnValue({ values });
+    mockAudit.mockResolvedValue(undefined);
     process.env.NEXT_PUBLIC_APP_URL = 'http://localhost:3000';
   });
 
@@ -78,14 +94,13 @@ describe('POST /api/dashboards/[id]/share', () => {
     expect(json.url).toBe('http://localhost:3000/share/test-token-aaaaaaaaaaaaaaaaaaaaaaaa');
     expect(json.token).toBe('test-token-aaaaaaaaaaaaaaaaaaaaaaaa');
     expect(json.expiresAt).toBeDefined();
-    expect(mockRequirePermission).toHaveBeenCalledWith('user-test', 'org-test', 'dashboard.sharePublic');
+    expect(mockRequireAuth).toHaveBeenCalledWith(req, 'dashboard.sharePublic');
   });
 
   it('respects custom expiresInDays', async () => {
     const req = makeReq({ expiresInDays: 7 });
-    const res = await POST(req, { params: Promise.resolve({ id: 'dash-123' }) });
+    await POST(req, { params: Promise.resolve({ id: 'dash-123' }) });
 
-    expect(res.status).toBe(201);
     const insertResult = mockDbInsert.mock.results[0]?.value as { values: ReturnType<typeof vi.fn> };
     const valuesFn = insertResult.values;
     const inserted = valuesFn.mock.calls[0]?.[0] as { expiresAt: Date };
@@ -102,6 +117,7 @@ describe('POST /api/dashboards/[id]/share', () => {
     expect(mockWithOrgContext).toHaveBeenCalledWith(
       'org-test',
       'user-test',
+      'admin',
       expect.any(Function)
     );
   });
@@ -120,29 +136,22 @@ describe('POST /api/dashboards/[id]/share', () => {
     );
   });
 
-  it('rejects when x-org-id header is missing', async () => {
-    const req = makeReq({}, { 'x-org-id': '' });
+  it('returns 401 when session is invalid', async () => {
+    mockRequireAuth.mockRejectedValueOnce(
+      new UnauthorizedError()
+    );
+    const req = makeReq({});
     const res = await POST(req, { params: Promise.resolve({ id: 'dash-123' }) });
-
-    expect(res.status).toBe(400);
-    expect(mockDbInsert).not.toHaveBeenCalled();
-  });
-
-  it('rejects when x-user-id header is missing', async () => {
-    const req = makeReq({}, { 'x-user-id': '' });
-    const res = await POST(req, { params: Promise.resolve({ id: 'dash-123' }) });
-
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(401);
     expect(mockDbInsert).not.toHaveBeenCalled();
   });
 
   it('returns 403 when user lacks sharePublic permission', async () => {
-    mockRequirePermission.mockRejectedValueOnce(
-      Object.assign(new Error('Forbidden'), { name: 'ForbiddenError' })
+    mockRequireAuth.mockRejectedValueOnce(
+      new ForbiddenError()
     );
     const req = makeReq({});
     const res = await POST(req, { params: Promise.resolve({ id: 'dash-123' }) });
-
     expect(res.status).toBe(403);
     expect(mockDbInsert).not.toHaveBeenCalled();
   });

@@ -1,14 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { UnauthorizedError, ForbiddenError } from '@/lib/auth/context';
 
 const {
   mockEnqueuePdfExport,
   mockGetPdfJobStatus,
-  mockRequirePermission,
+  mockRequireAuth,
   mockAudit,
 } = vi.hoisted(() => ({
   mockEnqueuePdfExport: vi.fn(),
   mockGetPdfJobStatus: vi.fn(),
-  mockRequirePermission: vi.fn().mockResolvedValue(undefined),
+  mockRequireAuth: vi.fn(),
   mockAudit: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -17,29 +18,28 @@ vi.mock('@/lib/export/pdf-enqueue', () => ({
   getPdfJobStatus: mockGetPdfJobStatus,
 }));
 
-vi.mock('@/lib/auth/context', () => ({
-  requirePermission: mockRequirePermission,
+
+vi.mock('@/lib/auth/request', () => ({
+  requireAuth: mockRequireAuth,
 }));
+
 
 vi.mock('@/lib/audit/log', () => ({
   audit: mockAudit,
 }));
 
+
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },
 }));
 
+
 import { POST, GET } from '@/app/api/dashboards/[id]/export/pdf/route';
 
-function makeReq(method: string, body?: unknown, headers: Record<string, string> = {}): Request {
+function makeReq(method: string, body?: unknown): Request {
   return new Request(`http://localhost/api/dashboards/dash-123/export/pdf`, {
     method,
-    headers: {
-      'content-type': 'application/json',
-      'x-org-id': 'org-test',
-      'x-user-id': 'user-test',
-      ...headers,
-    },
+    headers: { 'content-type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined,
   });
 }
@@ -47,7 +47,14 @@ function makeReq(method: string, body?: unknown, headers: Record<string, string>
 describe('POST /api/dashboards/[id]/export/pdf', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockRequirePermission.mockResolvedValue(undefined);
+    mockRequireAuth.mockReset();
+    mockRequireAuth.mockResolvedValue({
+      userId: 'user-test',
+      email: 'a@b.com',
+      orgId: 'org-test',
+      role: 'admin',
+    });
+    mockEnqueuePdfExport.mockReset();
     mockEnqueuePdfExport.mockResolvedValue('job-abc-123');
   });
 
@@ -91,17 +98,18 @@ describe('POST /api/dashboards/[id]/export/pdf', () => {
     );
   });
 
-  it('rejects when x-org-id header is missing', async () => {
-    const res = await POST(makeReq('POST', {}, { 'x-org-id': '' }), {
-      params: Promise.resolve({ id: 'dash-123' }),
-    });
-    expect(res.status).toBe(400);
+  it('returns 401 when session is invalid', async () => {
+    mockRequireAuth.mockRejectedValueOnce(
+      new UnauthorizedError()
+    );
+    const res = await POST(makeReq('POST', {}), { params: Promise.resolve({ id: 'dash-123' }) });
+    expect(res.status).toBe(401);
     expect(mockEnqueuePdfExport).not.toHaveBeenCalled();
   });
 
   it('returns 403 when user lacks export.pdf permission', async () => {
-    mockRequirePermission.mockRejectedValueOnce(
-      Object.assign(new Error('Forbidden'), { name: 'ForbiddenError' })
+    mockRequireAuth.mockRejectedValueOnce(
+      new ForbiddenError()
     );
     const res = await POST(makeReq('POST', {}), { params: Promise.resolve({ id: 'dash-123' }) });
     expect(res.status).toBe(403);
@@ -111,7 +119,13 @@ describe('POST /api/dashboards/[id]/export/pdf', () => {
 describe('GET /api/dashboards/[id]/export/pdf', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockRequirePermission.mockResolvedValue(undefined);
+    mockRequireAuth.mockReset();
+    mockRequireAuth.mockResolvedValue({
+      userId: 'user-test',
+      email: 'a@b.com',
+      orgId: 'org-test',
+      role: 'admin',
+    });
   });
 
   it('returns job status as JSON when not completed', async () => {
@@ -147,7 +161,7 @@ describe('GET /api/dashboards/[id]/export/pdf', () => {
     expect(Buffer.from(body).toString()).toBe('PDF-CONTENT');
   });
 
-  it('returns 404 when jobId is missing', async () => {
+  it('returns 400 when jobId is missing', async () => {
     const res = await GET(makeReq('GET'), { params: Promise.resolve({ id: 'dash-123' }) });
     expect(res.status).toBe(400);
   });

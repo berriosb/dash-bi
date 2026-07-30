@@ -23,6 +23,13 @@ const mockDashboard: Dashboard = {
   description: 'desc',
   theme: 'moderno-saas',
   widgets: [],
+  archetype: 'kpi-grid',
+  archetypeVariant: {
+    density: 'balanced',
+    accent: 'default',
+    timeWindow: 'last_30d',
+    comparativo: 'previous_period',
+  },
 };
 
 describe('useAutoSave', () => {
@@ -70,6 +77,9 @@ describe('useAutoSave', () => {
     expect(init?.method).toBe('PATCH');
     const body = JSON.parse(init?.body);
     expect(body.title).toBe('Updated');
+    // Sprint 1.5: archetype + variant are round-tripped in the PATCH body.
+    expect(body.archetype).toBe('kpi-grid');
+    expect(body.archetypeVariant.density).toBe('balanced');
   });
 
   it('exposes idle/saved status lifecycle', async () => {

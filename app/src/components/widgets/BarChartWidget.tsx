@@ -7,8 +7,14 @@ import { WidgetSurface } from './WidgetSurface';
 
 export function BarChartWidget({ widget }: { widget: BarChartWidgetType }) {
   const { config, data } = widget;
-  const categories: string[] = (data as any)?.categories ?? [];
-  const series: Array<{ name: string; data: number[] }> = (data as any)?.series ?? [];
+  const categories = React.useMemo(() => {
+    return (data as { categories?: string[] } | null)?.categories ?? [];
+  }, [data]);
+
+  const series = React.useMemo(() => {
+    return (data as { series?: Array<{ name: string; data: number[] }> } | null)?.series ?? [];
+  }, [data]);
+
   const hasData = categories.length > 0 && series.some((item) => item.data.length > 0);
 
   const chartData = React.useMemo(

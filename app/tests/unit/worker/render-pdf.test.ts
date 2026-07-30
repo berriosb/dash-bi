@@ -55,7 +55,7 @@ const fakePdfBuffer = Buffer.from('PDF-BYTES');
 
 describe('renderPdf', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     mockLaunch.mockResolvedValue(mockBrowser);
     mockNewPage.mockResolvedValue(mockPage);
     mockSetViewport.mockResolvedValue(undefined);

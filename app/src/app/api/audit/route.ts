@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server';
 import { eq, and, desc, gte, inArray, type SQL } from 'drizzle-orm';
-import { db, withOrgContext } from '@/db/client';
+import { withOrgContext } from '@/db/client';
 import { auditLog } from '@/db/schema';
-import { requirePermission } from '@/lib/auth/context';
+import { requireAuth } from '@/lib/auth/request';
 import { AUDIT_EVENT_CATEGORIES, type AuditCategory } from '@/lib/audit/events';
+import { toUserError, getOrGenerateCorrelationId } from '@/lib/errors/to-user-error';
+import { statusFromCode } from '@/lib/errors/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,20 +36,20 @@ function sanitizeSinceDays(raw: string | null): Date | null {
   return new Date(Date.now() - n * 24 * 60 * 60 * 1000);
 }
 
+function errorResponse(error: unknown, req: Request) {
+  const correlationId = getOrGenerateCorrelationId(req);
+  const appError = toUserError(error, correlationId);
+  return NextResponse.json(appError, {
+    status: statusFromCode(appError.code),
+    headers: { 'x-correlation-id': correlationId },
+  });
+}
+
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  const orgId = req.headers.get('x-org-id') || url.searchParams.get('orgId');
-  const userId = req.headers.get('x-user-id');
-
-  if (!orgId || !userId) {
-    return NextResponse.json(
-      { error: 'x-org-id and x-user-id headers required' },
-      { status: 400 }
-    );
-  }
 
   try {
-    await requirePermission(userId, orgId, 'audit.read');
+    const ctx = await requireAuth(req, 'audit.read');
 
     const limit = sanitizeLimit(url.searchParams.get('limit'));
     const since = sanitizeSinceDays(url.searchParams.get('sinceDays'));
@@ -57,14 +59,14 @@ export async function GET(req: Request) {
         ? (categoryRaw as AuditCategory)
         : null;
 
-    const entries = await withOrgContext(orgId, userId, async () => {
-      const conditions: SQL[] = [eq(auditLog.orgId, orgId)];
+    const entries = await withOrgContext(ctx.orgId, ctx.userId, ctx.role, async (tx) => {
+      const conditions: SQL[] = [eq(auditLog.orgId, ctx.orgId)];
       if (since) conditions.push(gte(auditLog.createdAt, since));
       if (category) {
         conditions.push(inArray(auditLog.action, [...AUDIT_EVENT_CATEGORIES[category]]));
       }
 
-      const rows = await db
+      const rows = await tx
         .select({
           id: auditLog.id,
           action: auditLog.action,
@@ -83,10 +85,6 @@ export async function GET(req: Request) {
 
     return NextResponse.json({ entries, count: entries.length });
   } catch (error) {
-    const e = error as { message?: string; name?: string };
-    return NextResponse.json(
-      { error: e.message ?? 'Internal error' },
-      { status: e.name === 'ForbiddenError' ? 403 : 500 }
-    );
+    return errorResponse(error, req);
   }
 }

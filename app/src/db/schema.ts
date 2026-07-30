@@ -19,6 +19,8 @@ export const connectorTypeEnum = pgEnum('connector_type', [
   'postgres',
   'stripe',
   'sheets',
+  'csv',
+  'excel',
 ]);
 
 export const themeEnum = pgEnum('theme', ['moderno-saas', 'corporate']);
@@ -31,6 +33,42 @@ export const llmProviderEnum = pgEnum('llm_provider', [
   'openai',
   'anthropic',
   'gemini',
+]);
+
+export const archetypeEnum = pgEnum('archetype', [
+  'kpi-grid',
+  'hero-focus',
+  'cohort-matrix',
+  'sales-pipeline',
+  'executive-summary',
+  'operations-live',
+  'finance-report',
+  'growth-metrics',
+  'custom',
+]);
+
+export const densityEnum = pgEnum('density', ['spacious', 'balanced', 'dense']);
+
+export const themeAccentEnum = pgEnum('theme_accent', ['default', 'accent', 'muted']);
+
+export const timeWindowEnum = pgEnum('time_window', [
+  'last_24h',
+  'last_7d',
+  'last_30d',
+  'last_quarter',
+  'last_90d',
+  'last_6mo',
+  'last_year',
+  'all_time',
+]);
+
+export const comparativoEnum = pgEnum('comparativo', [
+  'none',
+  'previous_period',
+  'previous_month',
+  'previous_quarter',
+  'previous_year',
+  'last_year_same_week',
 ]);
 
 // ─────────────────────────────────────────────────────────────────
@@ -89,6 +127,7 @@ export const users = pgTable(
     onboardingDataSourceId: uuid('onboarding_data_source_id'),
 
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
   },
   (t) => ({
@@ -230,6 +269,14 @@ export const dashboards = pgTable(
     // Widgets (JSON validado por Zod antes de guardar)
     widgets: jsonb('widgets').notNull().default([]),
 
+    // Archetype metadata persisted as columns so we can index / filter
+    // on it without parsing the JSONB widgets array.
+    archetype: archetypeEnum('archetype').notNull().default('custom'),
+    archetypeVariantDensity: densityEnum('archetype_variant_density').notNull().default('balanced'),
+    archetypeVariantAccent: themeAccentEnum('archetype_variant_accent').notNull().default('default'),
+    archetypeVariantTimeWindow: timeWindowEnum('archetype_variant_time_window').notNull().default('last_30d'),
+    archetypeVariantComparativo: comparativoEnum('archetype_variant_comparativo').notNull().default('previous_period'),
+
     // Schema version (para migraciones futuras del formato)
     schemaVersion: integer('schema_version').notNull().default(1),
 
@@ -351,6 +398,63 @@ export const auditLog = pgTable(
   (t) => ({
     orgIdx: index('audit_log_org_idx').on(t.orgId),
     createdAtIdx: index('audit_log_created_at_idx').on(t.createdAt),
+  }),
+);
+
+// ─────────────────────────────────────────────────────────────────
+// Uploaded files (Sprint 1.5 tier-1: CSV/Excel connector)
+//
+// Cada archivo subido se materializa en una tabla Postgres dedicada
+// (ver lib/connectors/parsers/load.ts). Esta tabla `uploaded_files`
+// sólo guarda metadata + el nombre de la tabla materializada.
+// ─────────────────────────────────────────────────────────────────
+
+export const uploadedFileFormatEnum = pgEnum('uploaded_file_format', [
+  'csv',
+  'xlsx',
+  'xls',
+]);
+
+export const uploadedFileColumnTypeEnum = pgEnum('uploaded_file_column_type', [
+  'number',
+  'string',
+  'date',
+  'boolean',
+  'json',
+]);
+
+export type UploadedFileColumn = {
+  name: string;
+  type: 'number' | 'string' | 'date' | 'boolean' | 'json';
+  nullable: boolean;
+  samples: unknown[];
+};
+
+export const uploadedFiles = pgTable(
+  'uploaded_files',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+
+    name: text('name').notNull(),
+    originalFilename: text('original_filename').notNull(),
+    format: uploadedFileFormatEnum('format').notNull(),
+    sizeBytes: integer('size_bytes').notNull(),
+
+    // Tabla Postgres donde se cargaron los datos. El connector
+    // 'spreadsheet' corre SQL sobre esta tabla. Ver specs/csv-excel-connector.md §4.2.
+    targetTable: text('target_table').notNull(),
+    rowCount: integer('row_count').notNull(),
+
+    columns: jsonb('columns').$type<UploadedFileColumn[]>().notNull(),
+
+    createdBy: uuid('created_by').notNull().references(() => users.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => ({
+    orgIdx: index('uploaded_files_org_idx').on(t.orgId),
   }),
 );
 

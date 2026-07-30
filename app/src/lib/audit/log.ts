@@ -1,4 +1,4 @@
-import { db } from '@/db/client';
+import { withOrgContext } from '@/db/client';
 import { auditLog } from '@/db/schema';
 import { logger } from '@/lib/logger';
 import { redactSecrets } from '@/lib/redact';
@@ -29,6 +29,11 @@ import {
  * - Single INSERT por evento
  * - Para high-throughput (e.g., query.executed), considerar batch via
  *   BullMQ en Sprint 5+ (ver testing.md §3.2 sobre audit log isolation).
+ *
+ * Sprint 1.5: el INSERT corre dentro de `withOrgContext` para que las
+ * RLS policies (`audit_log_isolation`) acepten la fila. Antes hacía
+ * `db.insert(auditLog)` directo y el INSERT fallaba silenciosamente
+ * con `FORCE ROW LEVEL SECURITY`.
  */
 export interface AuditOptions {
   /**
@@ -65,6 +70,16 @@ function extractRequestMetadata(req: RequestLike | undefined): {
   };
 }
 
+function redactMetadata(meta?: Record<string, unknown>): Record<string, unknown> | undefined {
+  if (!meta) return undefined;
+  return Object.fromEntries(
+    Object.entries(meta).map(([k, v]) => [
+      k,
+      typeof v === 'string' ? redactSecrets(v) : v,
+    ]),
+  );
+}
+
 export async function audit(
   orgId: string,
   userId: string | null,
@@ -72,29 +87,22 @@ export async function audit(
   resource?: string,
   options: AuditOptions = {},
 ): Promise<void> {
+  const requestMeta = extractRequestMetadata(options.req);
+  const sanitizedMetadata = redactMetadata(options.metadata);
+
   try {
     assertSafeMetadata(options.metadata);
 
-    const requestMeta = extractRequestMetadata(options.req);
-
-    // Defense in depth: redactar metadata string values antes de insertar
-    const sanitizedMetadata = options.metadata
-      ? Object.fromEntries(
-          Object.entries(options.metadata).map(([k, v]) => [
-            k,
-            typeof v === 'string' ? redactSecrets(v) : v,
-          ]),
-        )
-      : undefined;
-
-    await db.insert(auditLog).values({
-      orgId,
-      userId,
-      action,
-      resource,
-      metadata: sanitizedMetadata,
-      ip: requestMeta.ip,
-      userAgent: requestMeta.userAgent,
+    await withOrgContext(orgId, userId, async (tx) => {
+      await tx.insert(auditLog).values({
+        orgId,
+        userId,
+        action,
+        resource,
+        metadata: sanitizedMetadata,
+        ip: requestMeta.ip,
+        userAgent: requestMeta.userAgent,
+      });
     });
   } catch (error) {
     // Audit log nunca debe romper el flujo principal.
@@ -123,26 +131,20 @@ export async function _auditUnsafe(
   resource?: string,
   options: AuditOptions = {},
 ): Promise<void> {
+  const requestMeta = extractRequestMetadata(options.req);
+  const sanitizedMetadata = redactMetadata(options.metadata);
+
   assertSafeMetadata(options.metadata);
 
-  const requestMeta = extractRequestMetadata(options.req);
-
-  const sanitizedMetadata = options.metadata
-    ? Object.fromEntries(
-        Object.entries(options.metadata).map(([k, v]) => [
-          k,
-          typeof v === 'string' ? redactSecrets(v) : v,
-        ]),
-      )
-    : undefined;
-
-  await db.insert(auditLog).values({
-    orgId,
-    userId,
-    action,
-    resource,
-    metadata: sanitizedMetadata,
-    ip: requestMeta.ip,
-    userAgent: requestMeta.userAgent,
+  await withOrgContext(orgId, userId, async (tx) => {
+    await tx.insert(auditLog).values({
+      orgId,
+      userId,
+      action,
+      resource,
+      metadata: sanitizedMetadata,
+      ip: requestMeta.ip,
+      userAgent: requestMeta.userAgent,
+    });
   });
 }

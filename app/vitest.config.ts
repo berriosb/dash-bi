@@ -10,6 +10,7 @@ export default defineConfig({
       'tests/unit/**/*.test.ts',
       'tests/unit/**/*.test.tsx',
       'tests/security/**/*.test.ts',
+      'tests/integration/**/*.test.ts',
     ],
     exclude: ['tests/e2e/**', 'node_modules/**', '.next/**'],
     coverage: {

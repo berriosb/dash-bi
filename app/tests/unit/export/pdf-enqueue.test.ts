@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { mockQueueAdd, mockQueueGetJob } = vi.hoisted(() => ({
+const { mockQueueAdd, mockQueueGetJob, mockGeneratePrintToken, mockGetOrgBranding } = vi.hoisted(() => ({
   mockQueueAdd: vi.fn(),
   mockQueueGetJob: vi.fn(),
+  mockGeneratePrintToken: vi.fn().mockResolvedValue('print-token-aaaaaaaaaaaaaaaaaaaa'),
+  mockGetOrgBranding: vi.fn().mockResolvedValue({ logoUrl: 'https://cdn/logo.png' }),
 }));
 
 const mockQueueInstance = {
@@ -15,7 +17,7 @@ vi.mock('bullmq', () => ({
 }));
 
 vi.mock('@/lib/export/print-token', () => ({
-  generatePrintToken: vi.fn().mockResolvedValue('print-token-aaaaaaaaaaaaaaaaaaaa'),
+  generatePrintToken: mockGeneratePrintToken,
 }));
 
 vi.mock('@/lib/logger', () => ({
@@ -23,15 +25,20 @@ vi.mock('@/lib/logger', () => ({
 }));
 
 vi.mock('@/lib/export/branding', () => ({
-  getOrgBranding: vi.fn().mockResolvedValue({ logoUrl: 'https://cdn/logo.png' }),
+  getOrgBranding: mockGetOrgBranding,
 }));
 
 import { enqueuePdfExport, getPdfJobStatus } from '@/lib/export/pdf-enqueue';
 
 describe('pdf-enqueue', () => {
   beforeEach(() => {
+    // clearAllMocks preserves constructor `mockReturnValue` from `vi.hoisted`,
+    // so `Queue()` keeps returning `mockQueueInstance`. We then clear the
+    // per-test setup manually for `mockResolvedValueOnce` queues.
     vi.clearAllMocks();
     mockQueueAdd.mockResolvedValue({ id: 'job-123' });
+    mockGeneratePrintToken.mockResolvedValue('print-token-aaaaaaaaaaaaaaaaaaaa');
+    mockGetOrgBranding.mockResolvedValue({ logoUrl: 'https://cdn/logo.png' });
   });
 
   describe('enqueuePdfExport', () => {
@@ -72,8 +79,7 @@ describe('pdf-enqueue', () => {
     });
 
     it('passes branding logoUrl through from getOrgBranding', async () => {
-      const { getOrgBranding } = await import('@/lib/export/branding');
-      (getOrgBranding as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ logoUrl: 'https://other/logo.svg' });
+      mockGetOrgBranding.mockResolvedValueOnce({ logoUrl: 'https://other/logo.svg' });
 
       await enqueuePdfExport({
         dashboardId: 'dash-1',

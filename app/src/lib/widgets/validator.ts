@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Dashboard, Widget, ArchetypeId } from './types';
+import type { Dashboard, ArchetypeId } from './types';
 import { requireArchetype, isArchetypeId } from './archetypes';
 import { slotContainsWidget } from './atomic-patterns';
 
@@ -241,7 +241,7 @@ export const ArchetypeVariantSchema = z.object({
   comparativo: ComparativoEnum,
 });
 
-const WidgetTypeEnum = z.enum([
+export const WidgetTypeEnum = z.enum([
   'kpi',
   'line-chart',
   'bar-chart',

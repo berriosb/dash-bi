@@ -1,15 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const {
-  mockWorkerInstance,
-  mockRenderPdf,
-} = vi.hoisted(() => ({
-  mockWorkerInstance: {
+// Define mocks inside vi.hoisted so that vi.mock factories (also hoisted)
+// can reference them without hitting a TDZ.
+const { mockRenderPdf, mockWorkerInstance } = vi.hoisted(() => {
+  const instance = {
     on: vi.fn().mockReturnThis(),
     close: vi.fn().mockResolvedValue(undefined),
-  },
-  mockRenderPdf: vi.fn(),
-}));
+  };
+  return {
+    mockRenderPdf: vi.fn(),
+    mockWorkerInstance: instance,
+  };
+});
 
 vi.mock('bullmq', () => ({
   Worker: vi.fn(() => mockWorkerInstance),
@@ -34,8 +36,9 @@ const fakeConnection = {} as never;
 
 describe('createPdfWorker', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
-    mockWorkerInstance.on.mockReturnThis();
+    mockWorkerInstance.on.mockClear();
+    mockWorkerInstance.close.mockClear();
+    mockRenderPdf.mockReset();
     mockRenderPdf.mockResolvedValue({ buffer: Buffer.from('PDF') });
   });
 
@@ -56,8 +59,6 @@ describe('createPdfWorker', () => {
 
   it('registers handlers for completed, failed, and error events', async () => {
     createPdfWorker(fakeConnection);
-    // Touch import to ensure mock is loaded
-    await import('bullmq');
 
     expect(mockWorkerInstance.on).toHaveBeenCalledWith('completed', expect.any(Function));
     expect(mockWorkerInstance.on).toHaveBeenCalledWith('failed', expect.any(Function));

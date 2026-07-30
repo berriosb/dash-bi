@@ -1,4 +1,4 @@
-export type ConnectorType = 'postgres' | 'stripe' | 'sheets' | 'shopify' | 'meta-ads' | 'notion';
+export type ConnectorType = 'postgres' | 'stripe' | 'sheets' | 'csv' | 'excel' | 'spreadsheet' | 'shopify' | 'meta-ads' | 'notion';
 
 export type ConnectorConfig = {
   id: string;
@@ -34,10 +34,19 @@ export type StripeOperation =
   | { type: 'listInvoices'; params?: { created?: { gte?: number; lte?: number }; limit?: number } }
   | { type: 'getRevenue'; params: { period: 'day' | 'week' | 'month' | 'year'; count: number } };
 
+/**
+ * Sprint 1.5: a new `spreadsheet` query kind points at the schema-qualified
+ * Postgres table backing an `uploaded_files` row. The AI Gateway
+ * generates `sql: 'SELECT ... FROM <targetTable> WHERE ...'` based on the
+ * column schema; we run it via the postgres connector's validation
+ * path. The `kind: 'spreadsheet'` marker tells the connector to load
+ * the schema for the right file before running the query.
+ */
 export type Query =
   | { kind: 'sql'; sql: string; params?: unknown[] }
   | { kind: 'stripe'; operation: StripeOperation; params?: unknown }
-  | { kind: 'sheets'; spreadsheetId: string; range: string };
+  | { kind: 'sheets'; spreadsheetId: string; range: string }
+  | { kind: 'spreadsheet'; fileId: string; sql: string; params?: unknown[] };
 
 export type QueryResult<T = Record<string, unknown>> = {
   rows: T[];

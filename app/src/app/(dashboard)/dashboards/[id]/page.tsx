@@ -16,7 +16,7 @@ import { useDashboardStore } from '@/stores/dashboardStore';
 import { useAutoSave } from '@/hooks/use-auto-save';
 import { useUndoRedo, useDashboardKeyboardShortcuts } from '@/hooks/use-undo-redo';
 import { useToast } from '@/hooks/use-toast';
-import type { Dashboard, ArchetypeId } from '@/lib/widgets/types';
+import type { Dashboard, ArchetypeId, ArchetypeVariant } from '@/lib/widgets/types';
 import {
   ArrowLeft,
   Edit3,
@@ -35,7 +35,20 @@ async function fetchDashboard(id: string): Promise<Dashboard> {
     throw Object.assign(new Error(err?.error ?? `HTTP ${res.status}`), { status: res.status });
   }
   const data = await res.json();
-  return data.dashboard as Dashboard;
+  // The backend stores archetype + variant as top-level columns; fold
+  // them into the Dashboard shape so callers see a single object.
+  const d = data.dashboard as Dashboard & {
+    archetype?: ArchetypeId;
+    archetypeVariant?: ArchetypeVariant;
+  };
+  return {
+    title: d.title,
+    description: d.description,
+    theme: d.theme,
+    widgets: d.widgets,
+    archetype: d.archetype ?? 'custom',
+    archetypeVariant: d.archetypeVariant,
+  };
 }
 
 export default function DashboardDetailPage() {
@@ -46,12 +59,15 @@ export default function DashboardDetailPage() {
   const { toast } = useToast();
 
   const setDashboard = useDashboardStore((s) => s.setDashboard);
+  const updateArchetype = useDashboardStore((s) => s.updateArchetype);
   const storeState = useDashboardStore((s) => ({
     id: s.id,
     title: s.title,
     description: s.description,
     theme: s.theme,
     widgets: s.widgets,
+    archetype: s.archetype,
+    archetypeVariant: s.archetypeVariant,
   }));
   const dashboard: Dashboard = useMemo(
     () => ({
@@ -59,9 +75,17 @@ export default function DashboardDetailPage() {
       description: storeState.description,
       theme: storeState.theme,
       widgets: storeState.widgets,
-      archetype: 'custom',
+      archetype: storeState.archetype,
+      archetypeVariant: storeState.archetypeVariant,
     }),
-    [storeState.title, storeState.description, storeState.theme, storeState.widgets],
+    [
+      storeState.title,
+      storeState.description,
+      storeState.theme,
+      storeState.widgets,
+      storeState.archetype,
+      storeState.archetypeVariant,
+    ],
   );
 
   const [copiedShare, setCopiedShare] = useState(false);
@@ -75,16 +99,17 @@ export default function DashboardDetailPage() {
   });
 
   useEffect(() => {
-    if (remoteDashboard) {
-      setDashboard({
-        id: dashboardId,
-        title: remoteDashboard.title,
-        description: remoteDashboard.description ?? '',
-        theme: remoteDashboard.theme,
-        widgets: remoteDashboard.widgets,
-      });
-      setActiveTheme(remoteDashboard.theme);
-    }
+    if (!remoteDashboard) return;
+    setDashboard({
+      id: dashboardId,
+      title: remoteDashboard.title,
+      description: remoteDashboard.description ?? '',
+      theme: remoteDashboard.theme,
+      widgets: remoteDashboard.widgets,
+      archetype: remoteDashboard.archetype ?? 'custom',
+      archetypeVariant: remoteDashboard.archetypeVariant,
+    });
+    setActiveTheme(remoteDashboard.theme);
   }, [remoteDashboard, dashboardId, setDashboard, setActiveTheme]);
 
   const { trigger, status, flush } = useAutoSave(dashboardId);
@@ -98,18 +123,26 @@ export default function DashboardDetailPage() {
       description: dashboard.description,
       theme: dashboard.theme,
       widgets: dashboard.widgets,
-      archetype: 'custom',
+      archetype: dashboard.archetype,
+      archetypeVariant: dashboard.archetypeVariant,
     };
     trigger(serialized);
-  }, [isEditing, dashboard.title, dashboard.description, dashboard.theme, dashboard.widgets, trigger]);
+  }, [
+    isEditing,
+    dashboard.title,
+    dashboard.description,
+    dashboard.theme,
+    dashboard.widgets,
+    dashboard.archetype,
+    dashboard.archetypeVariant,
+    trigger,
+  ]);
 
-  const archetype: ArchetypeId = 'custom';
-
-// Derive the primary data source from the first widget (dashboards have
-// at most a few data sources; for MVP we use the first one). Better: fetch
-// the full dataSource list separately in a future Sprint.
-const primaryDataSourceId =
-  storeState.widgets.find((w) => w.source?.dataSourceId)?.source?.dataSourceId ?? undefined;
+  // Derive the primary data source from the first widget (dashboards have
+  // at most a few data sources; for MVP we use the first one). Better: fetch
+  // the full dataSource list separately in a future Sprint.
+  const primaryDataSourceId =
+    storeState.widgets.find((w) => w.source?.dataSourceId)?.source?.dataSourceId ?? undefined;
 
   const handleToggleEdit = () => {
     if (isEditing) flush();
@@ -125,10 +158,29 @@ const primaryDataSourceId =
 
   const handleThemeChange = (next: typeof activeTheme) => {
     setActiveTheme(next);
-    setDashboard({ id: storeState.id ?? undefined, title: dashboard.title, description: dashboard.description, theme: next, widgets: dashboard.widgets });
+    setDashboard({
+      id: storeState.id ?? undefined,
+      title: dashboard.title,
+      description: dashboard.description,
+      theme: next,
+      widgets: dashboard.widgets,
+      archetype: dashboard.archetype,
+      archetypeVariant: dashboard.archetypeVariant,
+    });
     toast({
       title: `Tema ${next === 'moderno-saas' ? 'Moderno SaaS' : 'Corporate'}`,
       description: 'El cambio se ve de inmediato en todos los widgets.',
+    });
+  };
+
+  const handleArchetypeChange = (next: ArchetypeId) => {
+    updateArchetype(next);
+    toast({
+      title: `Disposición ${next}`,
+      description:
+        next === 'custom'
+          ? 'Mantuviste la disposición actual.'
+          : 'Los widgets se reorganizan al patrón del archetype.',
     });
   };
 
@@ -232,14 +284,9 @@ const primaryDataSourceId =
           {isEditing && (
             <DashboardControls
               theme={activeTheme}
-              archetype={archetype}
+              archetype={dashboard.archetype ?? 'custom'}
               onThemeChange={handleThemeChange}
-              onArchetypeChange={() => {
-                toast({
-                  title: 'Cambio de archetype',
-                  description: 'Reorganización automática en Sprint 3.',
-                });
-              }}
+              onArchetypeChange={handleArchetypeChange}
             />
           )}
 

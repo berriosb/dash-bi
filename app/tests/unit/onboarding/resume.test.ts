@@ -16,7 +16,7 @@ import { getOnboardingResumePath } from '@/lib/onboarding/resume';
 
 describe('getOnboardingResumePath', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
   });
 
   it('returns null when the user has not been found', async () => {

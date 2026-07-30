@@ -1,50 +1,50 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { UnauthorizedError, ForbiddenError } from '@/lib/auth/context';
 
 const {
   mockDbUpdate,
-  mockWithOrgContext,
-  mockRequirePermission,
-  mockAudit,
+  mockWithSystemContext,
+  mockRequireAuth,
 } = vi.hoisted(() => ({
   mockDbUpdate: vi.fn(),
-  mockWithOrgContext: vi.fn(
-    async (_orgId: string, _userId: string | null, fn: () => Promise<unknown>) => fn()
+  mockWithSystemContext: vi.fn(
+    async (..._args: unknown[]) => undefined
   ),
-  mockRequirePermission: vi.fn().mockResolvedValue(undefined),
-  mockAudit: vi.fn().mockResolvedValue(undefined),
+  mockRequireAuth: vi.fn(),
 }));
 
 vi.mock('@/db/client', () => ({
   db: { update: mockDbUpdate },
-  withOrgContext: mockWithOrgContext,
+  withSystemContext: mockWithSystemContext,
 }));
 
-vi.mock('@/lib/auth/context', () => ({
-  requirePermission: mockRequirePermission,
+
+vi.mock('@/lib/auth/request', () => ({
+  requireAuth: mockRequireAuth,
 }));
+
 
 vi.mock('@/lib/audit/log', () => ({
-  audit: mockAudit,
+  audit: vi.fn().mockResolvedValue(undefined),
 }));
+
 
 vi.mock('drizzle-orm', () => ({
   eq: vi.fn((a: unknown, b: unknown) => ({ op: 'eq', a, b })),
 }));
 
+
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },
 }));
+
 
 import { POST } from '@/app/api/onboarding/step/route';
 
 function makeReq(body: unknown): Request {
   return new Request('http://localhost/api/onboarding/step', {
     method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-org-id': 'org-test',
-      'x-user-id': 'user-test',
-    },
+    headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
   });
 }
@@ -52,19 +52,28 @@ function makeReq(body: unknown): Request {
 describe('POST /api/onboarding/step', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockRequirePermission.mockResolvedValue(undefined);
+    mockDbUpdate.mockReset();
+    mockWithSystemContext.mockReset();
+    mockRequireAuth.mockReset();
+    mockRequireAuth.mockResolvedValue({
+      userId: 'user-test',
+      email: 'a@b.com',
+      orgId: 'org-test',
+      role: 'admin',
+    });
+    (mockWithSystemContext as unknown as { mockImplementation: (impl: (fn: unknown) => Promise<unknown>) => void }).mockImplementation((fn: unknown) => (fn as (tx: { update: typeof mockDbUpdate }) => Promise<unknown>)({ update: mockDbUpdate }) ?? Promise.resolve(undefined));
     const where = vi.fn().mockResolvedValue(undefined);
     const set = vi.fn().mockReturnValue({ where });
     mockDbUpdate.mockReturnValue({ set });
   });
 
-  it('updates currentOnboardingStep inside withOrgContext', async () => {
+  it('updates currentOnboardingStep inside withSystemContext', async () => {
     const res = await POST(makeReq({ step: 'choose_source' }));
     const json = await res.json();
 
     expect(res.status).toBe(200);
     expect(json).toEqual({ ok: true });
-    expect(mockWithOrgContext).toHaveBeenCalledWith('org-test', 'user-test', expect.any(Function));
+    expect(mockWithSystemContext).toHaveBeenCalledTimes(1);
     expect(mockDbUpdate).toHaveBeenCalledTimes(1);
     const setCall = (mockDbUpdate.mock.results[0]?.value as { set: ReturnType<typeof vi.fn> }).set.mock.calls[0]?.[0] as {
       currentOnboardingStep: string;
@@ -92,14 +101,12 @@ describe('POST /api/onboarding/step', () => {
     expect(mockDbUpdate).not.toHaveBeenCalled();
   });
 
-  it('rejects when x-org-id header is missing', async () => {
-    const req = new Request('http://localhost/api/onboarding/step', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-user-id': 'user-test' },
-      body: JSON.stringify({ step: 'choose_source' }),
-    });
-    const res = await POST(req);
-    expect(res.status).toBe(400);
+  it('returns 401 when session is invalid', async () => {
+    mockRequireAuth.mockRejectedValueOnce(
+      new UnauthorizedError()
+    );
+    const res = await POST(makeReq({ step: 'choose_source' }));
+    expect(res.status).toBe(401);
     expect(mockDbUpdate).not.toHaveBeenCalled();
   });
 });
