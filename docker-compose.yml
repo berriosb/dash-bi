@@ -1,0 +1,135 @@
+name: dashbi
+
+services:
+  app:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    image: dashbi/app:${VERSION:-latest}
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgres://${POSTGRES_USER:-dashbi}:${POSTGRES_PASSWORD:-dashbi_password}@postgres:5432/${POSTGRES_DB:-dashbi}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-redis_password}@redis:6379
+      - LLM_KEY_ENCRYPTION_KEY=${LLM_KEY_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      - EMAIL_PROVIDER=${EMAIL_PROVIDER:-resend}
+      - RESEND_API_KEY=${RESEND_API_KEY:-resend_dummy}
+      - EMAIL_FROM=${EMAIL_FROM:-noreply@dash-bi.com}
+      - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    networks: [dashbi]
+
+  pdf-worker:
+    build:
+      context: ./app
+      dockerfile: Dockerfile.worker
+    image: dashbi/pdf-worker:${VERSION:-latest}
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-redis_password}@redis:6379
+      - EXPORTS_DIR=/var/lib/dash-bi/exports
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - exports:/var/lib/dash-bi/exports
+    healthcheck:
+      test: ["CMD", "node", "-e", "process.exit(0)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    networks: [dashbi]
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-dashbi}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-dashbi_password}
+      - POSTGRES_DB=${POSTGRES_DB:-dashbi}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./scripts/postgres/init-readonly.sql:/docker-entrypoint-initdb.d/00-init-readonly.sql:ro
+    command: >
+      postgres
+        -c shared_buffers=256MB
+        -c max_connections=200
+        -c statement_timeout=30000
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dashbi} -d ${POSTGRES_DB:-dashbi}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1G
+    networks: [dashbi]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: >
+      redis-server
+        --maxmemory 512mb
+        --maxmemory-policy allkeys-lru
+        --appendonly yes
+        --requirepass ${REDIS_PASSWORD:-redis_password}
+    volumes:
+      - redis-data:/var/lib/redis/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis_password}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 600M
+    networks: [dashbi]
+
+volumes:
+  pgdata:
+  exports:
+  redis-data:
+
+networks:
+  dashbi:
+    driver: bridge
