@@ -23,7 +23,7 @@ import { useToast } from '@/hooks/use-toast';
 interface DataSourceItem {
   id: string;
   name: string;
-  type: 'postgres' | 'stripe' | 'sheets';
+  type: 'postgres' | 'stripe' | 'sheets' | 'mysql';
   lastTestedAt: string | null;
   lastTestOk: boolean | null;
   details: string;
@@ -52,7 +52,9 @@ async function fetchDataSources(): Promise<DataSourceItem[]> {
         ? 'sk_live_••••••••(cifrada)'
         : row.type === 'sheets'
           ? 'OAuth Google Sheets'
-          : 'PostgreSQL (host cifrado)',
+          : row.type === 'mysql'
+            ? 'MySQL (host cifrado)'
+            : 'PostgreSQL (host cifrado)',
   }));
 }
 
@@ -61,12 +63,13 @@ export default function DataSourcesPage() {
   const queryClient = useQueryClient();
   const [testingId, setTestingId] = useState<string | null>(null);
   const [showConnectModal, setShowConnectModal] = useState(false);
-  const [selectedType, setSelectedType] = useState<'postgres' | 'stripe' | 'sheets'>('postgres');
+  const [selectedType, setSelectedType] = useState<'postgres' | 'stripe' | 'sheets' | 'mysql'>('postgres');
   const [submitting, setSubmitting] = useState(false);
 
   // Form State
   const [name, setName] = useState('');
   const [host, setHost] = useState('');
+  const [port, setPort] = useState('');
   const [database, setDatabase] = useState('');
   const [user, setUser] = useState('');
   const [password, setPassword] = useState('');
@@ -104,6 +107,7 @@ export default function DataSourcesPage() {
   const resetForm = () => {
     setName('');
     setHost('');
+    setPort('');
     setDatabase('');
     setUser('');
     setPassword('');
@@ -145,9 +149,9 @@ export default function DataSourcesPage() {
     e.preventDefault();
     setSubmitting(true);
     const config: Record<string, unknown> = {};
-    if (selectedType === 'postgres') {
+    if (selectedType === 'postgres' || selectedType === 'mysql') {
       config.host = host;
-      config.port = 5432;
+      config.port = port ? Number(port) : selectedType === 'mysql' ? 3306 : 5432;
       config.database = database;
       config.username = user;
       config.password = password;
@@ -177,7 +181,7 @@ export default function DataSourcesPage() {
             <span>Fuentes de Datos</span>
           </h1>
           <p className="text-xs text-slate-400 mt-1">
-            Gestioná las conexiones seguras a tus bases de datos, Stripe y Google Sheets.
+            Gestioná las conexiones seguras a tus bases de datos PostgreSQL, MySQL, Stripe y Google Sheets.
           </p>
         </div>
 
@@ -198,7 +202,7 @@ export default function DataSourcesPage() {
           <Inbox className="w-8 h-8 text-slate-500 mx-auto mb-3" />
           <h2 className="text-sm font-semibold text-white">Todavía no conectaste ninguna fuente</h2>
           <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
-            Conectá una base de datos PostgreSQL, Stripe o Google Sheets para empezar a generar dashboards.
+            Conectá una base de datos PostgreSQL, MySQL, Stripe o Google Sheets para empezar a generar dashboards.
           </p>
         </div>
       )}
@@ -216,57 +220,74 @@ export default function DataSourcesPage() {
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-indigo-400 font-bold">
                       {ds.type === 'postgres' && <Server className="w-5 h-5" />}
+                      {ds.type === 'mysql' && <Database className="w-5 h-5 text-amber-400" />}
                       {ds.type === 'stripe' && <Key className="w-5 h-5 text-purple-400" />}
                       {ds.type === 'sheets' && <FileSpreadsheet className="w-5 h-5 text-emerald-400" />}
                     </div>
                     <div>
-                      <CardTitle className="text-base font-bold text-white">{ds.name}</CardTitle>
-                      <span className="text-[10px] text-slate-500 font-mono block mt-0.5">{ds.details}</span>
+                      <CardTitle className="text-sm font-bold text-white leading-tight">
+                        {ds.name}
+                      </CardTitle>
+                      <p className="text-[11px] text-slate-400 font-mono mt-0.5">{ds.details}</p>
                     </div>
                   </div>
+
+                  <Badge
+                    variant="outline"
+                    className={`text-[10px] uppercase font-semibold ${
+                      ds.type === 'postgres'
+                        ? 'border-indigo-500/30 text-indigo-400 bg-indigo-500/10'
+                        : ds.type === 'mysql'
+                          ? 'border-amber-500/30 text-amber-400 bg-amber-500/10'
+                          : ds.type === 'stripe'
+                            ? 'border-purple-500/30 text-purple-400 bg-purple-500/10'
+                            : 'border-emerald-500/30 text-emerald-400 bg-emerald-500/10'
+                    }`}
+                  >
+                    {ds.type}
+                  </Badge>
                 </div>
               </CardHeader>
 
-              <CardContent className="p-5 pt-3 space-y-4">
-                <div className="flex items-center justify-between border-t border-slate-800/80 pt-3 text-xs">
-                  {ds.lastTestOk === false ? (
-                    <Badge variant="outline" className="bg-red-500/10 text-red-400 border-red-500/20 text-[10px] gap-1">
-                      <AlertCircle className="w-3 h-3" />
-                      Error de conexión
-                    </Badge>
-                  ) : (
-                    <Badge variant="outline" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-[10px] gap-1">
-                      <CheckCircle2 className="w-3 h-3" />
-                      Conexión Activa
-                    </Badge>
-                  )}
+              <CardContent className="p-5 pt-0">
+                <div className="pt-3 border-t border-slate-800/60 flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    {ds.lastTestOk === true ? (
+                      <>
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                        <span className="text-[11px] text-slate-300">Conexión verificada</span>
+                      </>
+                    ) : ds.lastTestOk === false ? (
+                      <>
+                        <AlertCircle className="w-3.5 h-3.5 text-red-400" />
+                        <span className="text-[11px] text-red-400">Error de conexión</span>
+                      </>
+                    ) : (
+                      <span className="text-[11px] text-slate-500">Sin probar</span>
+                    )}
+                  </div>
 
-                  <span className="text-slate-500 text-[11px]">
-                    {ds.lastTestedAt ? `Probado: ${new Date(ds.lastTestedAt).toLocaleString()}` : 'Sin probar'}
-                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={testingId === ds.id}
+                    onClick={() => handleTestConnection(ds.id)}
+                    className="h-7 text-xs text-slate-300 hover:text-white hover:bg-slate-800 px-2.5 gap-1"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${testingId === ds.id ? 'animate-spin' : ''}`} />
+                    <span>{testingId === ds.id ? 'Probando…' : 'Probar'}</span>
+                  </Button>
                 </div>
-
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleTestConnection(ds.id)}
-                  disabled={testingId === ds.id}
-                  className="w-full bg-slate-800 border-slate-700 hover:bg-slate-700 text-slate-200 text-xs gap-1.5"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${testingId === ds.id ? 'animate-spin text-indigo-400' : ''}`} />
-                  <span>{testingId === ds.id ? 'Probando...' : 'Probar Conexión'}</span>
-                </Button>
               </CardContent>
             </Card>
           ))}
         </div>
       )}
 
-      {/* Connect Modal */}
       {showConnectModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
-          <Card className="w-full max-w-md bg-slate-900 border-slate-800 text-white shadow-2xl">
-            <CardHeader>
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <Card className="bg-slate-900 border-slate-800 w-full max-w-lg shadow-2xl">
+            <CardHeader className="p-5 pb-3">
               <CardTitle className="text-lg font-bold">Conectar Fuente de Datos</CardTitle>
               <CardDescription className="text-xs text-slate-400">
                 Seleccioná el tipo de conector e ingresá las credenciales cifradas (AES-256).
@@ -274,7 +295,7 @@ export default function DataSourcesPage() {
             </CardHeader>
 
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-4 gap-2">
                 <button
                   type="button"
                   onClick={() => setSelectedType('postgres')}
@@ -286,6 +307,19 @@ export default function DataSourcesPage() {
                 >
                   <Server className="w-5 h-5" />
                   <span>PostgreSQL</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedType('mysql')}
+                  className={`p-3 rounded-lg border flex flex-col items-center gap-1.5 text-xs font-medium transition ${
+                    selectedType === 'mysql'
+                      ? 'bg-amber-600/20 border-amber-500 text-amber-300'
+                      : 'bg-slate-800/60 border-slate-700 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Database className="w-5 h-5 text-amber-400" />
+                  <span>MySQL</span>
                 </button>
 
                 <button
@@ -319,7 +353,7 @@ export default function DataSourcesPage() {
                 <div className="space-y-1">
                   <Label className="text-xs text-slate-300">Nombre Descriptivo</Label>
                   <Input
-                    placeholder="Ej: Base Producción Postgres"
+                    placeholder={`Ej: Base Producción ${selectedType.toUpperCase()}`}
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     required
@@ -327,16 +361,61 @@ export default function DataSourcesPage() {
                   />
                 </div>
 
-                {selectedType === 'postgres' && (
+                {(selectedType === 'postgres' || selectedType === 'mysql') && (
                   <>
                     <div className="grid grid-cols-2 gap-2">
                       <div className="space-y-1">
                         <Label className="text-xs text-slate-300">Host</Label>
-                        <Input placeholder="localhost" value={host} onChange={(e) => setHost(e.target.value)} className="bg-slate-950 border-slate-800 text-xs" />
+                        <Input
+                          placeholder="db.ejemplo.com"
+                          value={host}
+                          onChange={(e) => setHost(e.target.value)}
+                          required
+                          className="bg-slate-950 border-slate-800 text-xs"
+                        />
                       </div>
                       <div className="space-y-1">
+                        <Label className="text-xs text-slate-300">Puerto</Label>
+                        <Input
+                          placeholder={selectedType === 'mysql' ? '3306' : '5432'}
+                          value={port}
+                          onChange={(e) => setPort(e.target.value)}
+                          className="bg-slate-950 border-slate-800 text-xs font-mono"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="space-y-1">
                         <Label className="text-xs text-slate-300">Base de Datos</Label>
-                        <Input placeholder="main" value={database} onChange={(e) => setDatabase(e.target.value)} className="bg-slate-950 border-slate-800 text-xs" />
+                        <Input
+                          placeholder="main"
+                          value={database}
+                          onChange={(e) => setDatabase(e.target.value)}
+                          required
+                          className="bg-slate-950 border-slate-800 text-xs"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs text-slate-300">Usuario</Label>
+                        <Input
+                          placeholder="readonly_user"
+                          value={user}
+                          onChange={(e) => setUser(e.target.value)}
+                          required
+                          className="bg-slate-950 border-slate-800 text-xs"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs text-slate-300">Contraseña</Label>
+                        <Input
+                          type="password"
+                          placeholder="••••••••"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          required
+                          className="bg-slate-950 border-slate-800 text-xs"
+                        />
                       </div>
                     </div>
                   </>
@@ -345,7 +424,14 @@ export default function DataSourcesPage() {
                 {selectedType === 'stripe' && (
                   <div className="space-y-1">
                     <Label className="text-xs text-slate-300">Stripe Secret Key (sk_live_...)</Label>
-                    <Input type="password" placeholder="sk_live_••••••••••••" value={stripeKey} onChange={(e) => setStripeKey(e.target.value)} className="bg-slate-950 border-slate-800 text-xs" />
+                    <Input
+                      type="password"
+                      placeholder="sk_live_••••••••••••"
+                      value={stripeKey}
+                      onChange={(e) => setStripeKey(e.target.value)}
+                      required
+                      className="bg-slate-950 border-slate-800 text-xs"
+                    />
                   </div>
                 )}
 
@@ -357,6 +443,7 @@ export default function DataSourcesPage() {
                         placeholder="1BxiMVs0XRAb4NcF4..."
                         value={spreadsheetId}
                         onChange={(e) => setSpreadsheetId(e.target.value)}
+                        required
                         className="bg-slate-950 border-slate-800 text-xs font-mono"
                       />
                       <p className="text-[10px] text-slate-500 leading-relaxed">

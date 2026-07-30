@@ -71,6 +71,7 @@
     "html2canvas": "^1.4.1",
     "ioredis": "^5.4.2",
     "lucide-react": "^0.469.0",
+    "mysql2": "^3.23.2",
     "next": "^16.0.0",
     "papaparse": "^5.5.4",
     "pino": "^9.6.0",

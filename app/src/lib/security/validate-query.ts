@@ -25,9 +25,9 @@ export function validateQuery(
   dataSourceType: ConnectorType,
   role?: OrgRole,
 ): void {
-  if (dataSourceType === 'postgres') {
+  if (dataSourceType === 'postgres' || dataSourceType === 'mysql') {
     if (query.kind !== 'sql') {
-      throw new ValidationError('Postgres expects SQL query');
+      throw new ValidationError(`${dataSourceType} expects SQL query`);
     }
 
     const sql = query.sql.trim();
@@ -45,10 +45,10 @@ export function validateQuery(
       throw new ValidationError('Multi-statement queries not allowed');
     }
 
-    // Prohibir DML/DDL
-    const forbidden = /\b(INSERT|UPDATE|DELETE|DROP|TRUNCATE|ALTER|CREATE|GRANT|REVOKE)\b/i;
+    // Prohibir DML/DDL y funciones potencialmente peligrosas (SLEEP, BENCHMARK, etc.)
+    const forbidden = /\b(INSERT|UPDATE|DELETE|DROP|TRUNCATE|ALTER|CREATE|GRANT|REVOKE|SLEEP|BENCHMARK|LOAD_FILE|OUTFILE)\b/i;
     if (forbidden.test(sql)) {
-      throw new ValidationError('DML/DDL statements not allowed');
+      throw new ValidationError('DML/DDL or forbidden function statements not allowed');
     }
 
     // Role-based filter: viewer no puede acceder a columnas PII (Sprint 1 v0.2)

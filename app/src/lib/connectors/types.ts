@@ -1,4 +1,4 @@
-export type ConnectorType = 'postgres' | 'stripe' | 'sheets' | 'csv' | 'excel' | 'spreadsheet' | 'shopify' | 'meta-ads' | 'notion';
+export type ConnectorType = 'postgres' | 'stripe' | 'sheets' | 'csv' | 'excel' | 'spreadsheet' | 'shopify' | 'meta-ads' | 'notion' | 'mysql';
 
 export type ConnectorConfig = {
   id: string;
