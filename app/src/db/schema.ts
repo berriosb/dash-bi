@@ -519,3 +519,64 @@ export const nlqaMessages = pgTable(
     createdAtIdx: index('nlqa_messages_created_at_idx').on(t.createdAt),
   }),
 );
+
+// ─────────────────────────────────────────────────────────────────
+// Scheduled Reports (tenant-scoped)
+// ─────────────────────────────────────────────────────────────────
+
+export const scheduledReports = pgTable(
+  'scheduled_reports',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+    dashboardId: uuid('dashboard_id').notNull().references(() => dashboards.id, { onDelete: 'cascade' }),
+    createdBy: uuid('created_by').notNull().references(() => users.id),
+
+    cron: text('cron').notNull(),
+    timezone: text('timezone').notNull().default('America/Santiago'),
+
+    format: text('format').$type<'pdf' | 'png-link'>().notNull().default('pdf'),
+    includeBranding: boolean('include_branding').notNull().default(true),
+
+    recipients: jsonb('recipients').$type<Array<{ email: string; name?: string }>>().notNull(),
+
+    enabled: boolean('enabled').notNull().default(true),
+
+    lastRunAt: timestamp('last_run_at', { withTimezone: true }),
+    lastRunStatus: text('last_run_status').$type<'success' | 'failed' | 'skipped'>(),
+    lastRunErrorCode: text('last_run_error_code'),
+    lastRunCorrelationId: text('last_run_correlation_id'),
+    nextRunAt: timestamp('next_run_at', { withTimezone: true }).notNull(),
+
+    title: text('title'),
+    description: text('description'),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    orgIdx: index('scheduled_reports_org_idx').on(t.orgId),
+    nextRunIdx: index('scheduled_reports_next_run_idx').on(t.nextRunAt),
+  }),
+);
+
+export const scheduledReportRuns = pgTable(
+  'scheduled_report_runs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+    scheduledReportId: uuid('scheduled_report_id').notNull().references(() => scheduledReports.id, { onDelete: 'cascade' }),
+
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    status: text('status').$type<'running' | 'success' | 'failed' | 'skipped'>().notNull(),
+
+    fileUrl: text('file_url'),
+    errorCode: text('error_code'),
+    errorMessage: text('error_message'),
+    correlationId: text('correlation_id'),
+  },
+  (t) => ({
+    scheduledReportIdx: index('scheduled_report_runs_report_idx').on(t.scheduledReportId),
+  }),
+);

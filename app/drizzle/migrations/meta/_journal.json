@@ -64,6 +64,13 @@
       "when": 1764720000000,
       "tag": "0008_connector_type_csv_excel",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1785431168651,
+      "tag": "0009_scheduled_reports",
+      "breakpoints": true
     }
   ]
 }
