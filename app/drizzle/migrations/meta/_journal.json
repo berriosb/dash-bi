@@ -22,6 +22,48 @@
       "when": 1753564800000,
       "tag": "0002_nlqa",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1764288000000,
+      "tag": "0003_onboarding",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1764374400000,
+      "tag": "0004_rls_null_safe",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1764460800000,
+      "tag": "0005_dashboard_archetype",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1764547200000,
+      "tag": "0006_users_updated_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1764633600000,
+      "tag": "0007_uploaded_files",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1764720000000,
+      "tag": "0008_connector_type_csv_excel",
+      "breakpoints": true
     }
   ]
 }
