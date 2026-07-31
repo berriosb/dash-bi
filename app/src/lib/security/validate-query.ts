@@ -79,6 +79,16 @@ export function validateQuery(
     }
   }
 
+  if (dataSourceType === 'shopify') {
+    if (query.kind === 'sql') {
+      const sql = query.sql.trim();
+      const upper = sql.toUpperCase();
+      if (!/^(SELECT|WITH|EXPLAIN)/.test(upper)) {
+        throw new ValidationError('Only SELECT queries allowed');
+      }
+    }
+  }
+
   if (dataSourceType === 'spreadsheet' || dataSourceType === 'csv' || dataSourceType === 'excel') {
     if (query.kind !== 'spreadsheet') {
       throw new ValidationError('Spreadsheet expects spreadsheet query');

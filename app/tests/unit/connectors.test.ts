@@ -53,9 +53,9 @@ describe('Connectors System', () => {
     const config: ConnectorConfig = {
       id: 'ds-3',
       orgId: 'org-1',
-      type: 'shopify' as never,
-      name: 'Shopify Store',
-      configEncrypted: 'mock',
+      type: 'unsupported_type' as never,
+      name: 'Unsupported Service',
+      configEncrypted: encryptApiKey(JSON.stringify({ host: 'example.com' })),
     };
 
     expect(() => createConnector(config)).toThrow('Unsupported or un-implemented connector type');

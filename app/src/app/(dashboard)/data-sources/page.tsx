@@ -17,13 +17,14 @@ import {
   FileSpreadsheet,
   Server,
   Inbox,
+  ShoppingBag,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 interface DataSourceItem {
   id: string;
   name: string;
-  type: 'postgres' | 'stripe' | 'sheets' | 'mysql';
+  type: 'postgres' | 'stripe' | 'sheets' | 'mysql' | 'shopify';
   lastTestedAt: string | null;
   lastTestOk: boolean | null;
   details: string;
@@ -44,7 +45,7 @@ async function fetchDataSources(): Promise<DataSourceItem[]> {
   }) => ({
     id: row.id,
     name: row.name,
-    type: row.type,
+    type: row.type as DataSourceItem['type'],
     lastTestedAt: row.lastTestedAt,
     lastTestOk: row.lastTestOk,
     details:
@@ -52,9 +53,11 @@ async function fetchDataSources(): Promise<DataSourceItem[]> {
         ? 'sk_live_••••••••(cifrada)'
         : row.type === 'sheets'
           ? 'OAuth Google Sheets'
-          : row.type === 'mysql'
-            ? 'MySQL (host cifrado)'
-            : 'PostgreSQL (host cifrado)',
+          : row.type === 'shopify'
+            ? 'Shopify Admin API (shpat_...)'
+            : row.type === 'mysql'
+              ? 'MySQL (host cifrado)'
+              : 'PostgreSQL (host cifrado)',
   }));
 }
 
@@ -63,7 +66,7 @@ export default function DataSourcesPage() {
   const queryClient = useQueryClient();
   const [testingId, setTestingId] = useState<string | null>(null);
   const [showConnectModal, setShowConnectModal] = useState(false);
-  const [selectedType, setSelectedType] = useState<'postgres' | 'stripe' | 'sheets' | 'mysql'>('postgres');
+  const [selectedType, setSelectedType] = useState<'postgres' | 'stripe' | 'sheets' | 'mysql' | 'shopify'>('postgres');
   const [submitting, setSubmitting] = useState(false);
 
   // Form State
@@ -75,6 +78,8 @@ export default function DataSourcesPage() {
   const [password, setPassword] = useState('');
   const [stripeKey, setStripeKey] = useState('');
   const [spreadsheetId, setSpreadsheetId] = useState('');
+  const [shopifyUrl, setShopifyUrl] = useState('');
+  const [shopifyToken, setShopifyToken] = useState('');
 
   const { data: dataSources = [], isLoading } = useQuery({
     queryKey: ['data-sources'],
@@ -113,6 +118,8 @@ export default function DataSourcesPage() {
     setPassword('');
     setStripeKey('');
     setSpreadsheetId('');
+    setShopifyUrl('');
+    setShopifyToken('');
   };
 
   const create = useMutation({
@@ -161,6 +168,9 @@ export default function DataSourcesPage() {
       config.spreadsheetId = spreadsheetId;
       config.refreshTokenEncrypted = '';
       config.sheetNames = [];
+    } else if (selectedType === 'shopify') {
+      config.shopUrl = shopifyUrl;
+      config.accessToken = shopifyToken;
     }
     create.mutate(
       {
@@ -181,7 +191,7 @@ export default function DataSourcesPage() {
             <span>Fuentes de Datos</span>
           </h1>
           <p className="text-xs text-slate-400 mt-1">
-            Gestioná las conexiones seguras a tus bases de datos PostgreSQL, MySQL, Stripe y Google Sheets.
+            Gestioná las conexiones seguras a tus bases de datos PostgreSQL, MySQL, Shopify, Stripe y Google Sheets.
           </p>
         </div>
 
@@ -202,7 +212,7 @@ export default function DataSourcesPage() {
           <Inbox className="w-8 h-8 text-slate-500 mx-auto mb-3" />
           <h2 className="text-sm font-semibold text-white">Todavía no conectaste ninguna fuente</h2>
           <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
-            Conectá una base de datos PostgreSQL, MySQL, Stripe o Google Sheets para empezar a generar dashboards.
+            Conectá una base de datos PostgreSQL, MySQL, Shopify, Stripe o Google Sheets para empezar a generar dashboards.
           </p>
         </div>
       )}
@@ -221,8 +231,9 @@ export default function DataSourcesPage() {
                     <div className="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-indigo-400 font-bold">
                       {ds.type === 'postgres' && <Server className="w-5 h-5" />}
                       {ds.type === 'mysql' && <Database className="w-5 h-5 text-amber-400" />}
+                      {ds.type === 'shopify' && <ShoppingBag className="w-5 h-5 text-emerald-400" />}
                       {ds.type === 'stripe' && <Key className="w-5 h-5 text-purple-400" />}
-                      {ds.type === 'sheets' && <FileSpreadsheet className="w-5 h-5 text-emerald-400" />}
+                      {ds.type === 'sheets' && <FileSpreadsheet className="w-5 h-5 text-teal-400" />}
                     </div>
                     <div>
                       <CardTitle className="text-sm font-bold text-white leading-tight">
@@ -239,9 +250,11 @@ export default function DataSourcesPage() {
                         ? 'border-indigo-500/30 text-indigo-400 bg-indigo-500/10'
                         : ds.type === 'mysql'
                           ? 'border-amber-500/30 text-amber-400 bg-amber-500/10'
-                          : ds.type === 'stripe'
-                            ? 'border-purple-500/30 text-purple-400 bg-purple-500/10'
-                            : 'border-emerald-500/30 text-emerald-400 bg-emerald-500/10'
+                          : ds.type === 'shopify'
+                            ? 'border-emerald-500/30 text-emerald-400 bg-emerald-500/10'
+                            : ds.type === 'stripe'
+                              ? 'border-purple-500/30 text-purple-400 bg-purple-500/10'
+                              : 'border-teal-500/30 text-teal-400 bg-teal-500/10'
                     }`}
                   >
                     {ds.type}
@@ -286,33 +299,33 @@ export default function DataSourcesPage() {
 
       {showConnectModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <Card className="bg-slate-900 border-slate-800 w-full max-w-lg shadow-2xl">
+          <Card className="bg-slate-900 border-slate-800 w-full max-w-xl shadow-2xl">
             <CardHeader className="p-5 pb-3">
               <CardTitle className="text-lg font-bold">Conectar Fuente de Datos</CardTitle>
               <CardDescription className="text-xs text-slate-400">
-                Seleccioná el tipo de conector e ingresá las credenciales cifradas (AES-256).
+                Seleccioná el conector e ingresá las credenciales cifradas (AES-256).
               </CardDescription>
             </CardHeader>
 
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-4 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                 <button
                   type="button"
                   onClick={() => setSelectedType('postgres')}
-                  className={`p-3 rounded-lg border flex flex-col items-center gap-1.5 text-xs font-medium transition ${
+                  className={`p-2.5 rounded-lg border flex flex-col items-center gap-1.5 text-xs font-medium transition ${
                     selectedType === 'postgres'
                       ? 'bg-indigo-600/20 border-indigo-500 text-indigo-300'
                       : 'bg-slate-800/60 border-slate-700 text-slate-400 hover:text-white'
                   }`}
                 >
                   <Server className="w-5 h-5" />
-                  <span>PostgreSQL</span>
+                  <span>Postgres</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setSelectedType('mysql')}
-                  className={`p-3 rounded-lg border flex flex-col items-center gap-1.5 text-xs font-medium transition ${
+                  className={`p-2.5 rounded-lg border flex flex-col items-center gap-1.5 text-xs font-medium transition ${
                     selectedType === 'mysql'
                       ? 'bg-amber-600/20 border-amber-500 text-amber-300'
                       : 'bg-slate-800/60 border-slate-700 text-slate-400 hover:text-white'
@@ -324,27 +337,40 @@ export default function DataSourcesPage() {
 
                 <button
                   type="button"
+                  onClick={() => setSelectedType('shopify')}
+                  className={`p-2.5 rounded-lg border flex flex-col items-center gap-1.5 text-xs font-medium transition ${
+                    selectedType === 'shopify'
+                      ? 'bg-emerald-600/20 border-emerald-500 text-emerald-300'
+                      : 'bg-slate-800/60 border-slate-700 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <ShoppingBag className="w-5 h-5 text-emerald-400" />
+                  <span>Shopify</span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={() => setSelectedType('stripe')}
-                  className={`p-3 rounded-lg border flex flex-col items-center gap-1.5 text-xs font-medium transition ${
+                  className={`p-2.5 rounded-lg border flex flex-col items-center gap-1.5 text-xs font-medium transition ${
                     selectedType === 'stripe'
                       ? 'bg-purple-600/20 border-purple-500 text-purple-300'
                       : 'bg-slate-800/60 border-slate-700 text-slate-400 hover:text-white'
                   }`}
                 >
-                  <Key className="w-5 h-5" />
-                  <span>Stripe API</span>
+                  <Key className="w-5 h-5 text-purple-400" />
+                  <span>Stripe</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setSelectedType('sheets')}
-                  className={`p-3 rounded-lg border flex flex-col items-center gap-1.5 text-xs font-medium transition ${
+                  className={`p-2.5 rounded-lg border flex flex-col items-center gap-1.5 text-xs font-medium transition ${
                     selectedType === 'sheets'
-                      ? 'bg-emerald-600/20 border-emerald-500 text-emerald-300'
+                      ? 'bg-teal-600/20 border-teal-500 text-teal-300'
                       : 'bg-slate-800/60 border-slate-700 text-slate-400 hover:text-white'
                   }`}
                 >
-                  <FileSpreadsheet className="w-5 h-5" />
+                  <FileSpreadsheet className="w-5 h-5 text-teal-400" />
                   <span>Sheets</span>
                 </button>
               </div>
@@ -353,7 +379,7 @@ export default function DataSourcesPage() {
                 <div className="space-y-1">
                   <Label className="text-xs text-slate-300">Nombre Descriptivo</Label>
                   <Input
-                    placeholder={`Ej: Base Producción ${selectedType.toUpperCase()}`}
+                    placeholder={`Ej: Tienda ${selectedType.toUpperCase()}`}
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     required
@@ -421,6 +447,32 @@ export default function DataSourcesPage() {
                   </>
                 )}
 
+                {selectedType === 'shopify' && (
+                  <>
+                    <div className="space-y-1">
+                      <Label className="text-xs text-slate-300">Shop URL (ej: mi-tienda.myshopify.com)</Label>
+                      <Input
+                        placeholder="mi-tienda.myshopify.com"
+                        value={shopifyUrl}
+                        onChange={(e) => setShopifyUrl(e.target.value)}
+                        required
+                        className="bg-slate-950 border-slate-800 text-xs font-mono"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs text-slate-300">Admin API Access Token (shpat_...)</Label>
+                      <Input
+                        type="password"
+                        placeholder="shpat_••••••••••••••••"
+                        value={shopifyToken}
+                        onChange={(e) => setShopifyToken(e.target.value)}
+                        required
+                        className="bg-slate-950 border-slate-800 text-xs font-mono"
+                      />
+                    </div>
+                  </>
+                )}
+
                 {selectedType === 'stripe' && (
                   <div className="space-y-1">
                     <Label className="text-xs text-slate-300">Stripe Secret Key (sk_live_...)</Label>
@@ -446,13 +498,7 @@ export default function DataSourcesPage() {
                         required
                         className="bg-slate-950 border-slate-800 text-xs font-mono"
                       />
-                      <p className="text-[10px] text-slate-500 leading-relaxed">
-                        Lo encontrás en la URL de Google Sheets entre <code>/d/</code> y <code>/edit</code>.
-                      </p>
                     </div>
-                    <p className="text-xs text-slate-400 bg-slate-950 p-3 rounded-lg border border-slate-800">
-                      Al guardar, serás redirigido al flujo OAuth oficial de Google para otorgar acceso de lectura a tus planillas de cálculo.
-                    </p>
                   </>
                 )}
 

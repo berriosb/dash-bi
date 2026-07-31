@@ -22,6 +22,7 @@ export const connectorTypeEnum = pgEnum('connector_type', [
   'csv',
   'excel',
   'mysql',
+  'shopify',
 ]);
 
 export const themeEnum = pgEnum('theme', ['moderno-saas', 'corporate']);

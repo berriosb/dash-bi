@@ -3,6 +3,7 @@ import { StripeConnector } from './implementations/stripe';
 import { SheetsConnector } from './implementations/sheets';
 import { SpreadsheetConnector } from './implementations/spreadsheet';
 import { MysqlConnector } from './implementations/mysql';
+import { ShopifyConnector } from './implementations/shopify';
 import type { Connector, ConnectorConfig, ConnectorType } from './types';
 
 // Registry of supported MVP connector implementations. Sprint 1.5 adds
@@ -10,7 +11,7 @@ import type { Connector, ConnectorConfig, ConnectorType } from './types';
 // SpreadsheetConnector class — the difference is format metadata stored
 // in the data_sources row (see `app/src/lib/connectors/types.ts`).
 const registry: Record<
-  Extract<ConnectorType, 'postgres' | 'stripe' | 'sheets' | 'csv' | 'excel' | 'spreadsheet' | 'mysql'>,
+  Extract<ConnectorType, 'postgres' | 'stripe' | 'sheets' | 'csv' | 'excel' | 'spreadsheet' | 'mysql' | 'shopify'>,
   new (config: ConnectorConfig) => Connector
 > = {
   postgres: PostgresConnector,
@@ -20,6 +21,7 @@ const registry: Record<
   excel: SpreadsheetConnector,
   spreadsheet: SpreadsheetConnector,
   mysql: MysqlConnector,
+  shopify: ShopifyConnector,
 };
 
 export function createConnector(config: ConnectorConfig): Connector {
