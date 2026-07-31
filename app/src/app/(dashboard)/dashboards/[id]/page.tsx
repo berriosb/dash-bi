@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
+import { useShallow } from 'zustand/react/shallow';
 import { DashboardGrid } from '@/components/dashboard/DashboardGrid';
 import { DashboardControls } from '@/components/dashboard/DashboardControls';
 import { DashboardStatusBar } from '@/components/dashboard/DashboardStatusBar';
@@ -60,15 +61,25 @@ export default function DashboardDetailPage() {
 
   const setDashboard = useDashboardStore((s) => s.setDashboard);
   const updateArchetype = useDashboardStore((s) => s.updateArchetype);
-  const storeState = useDashboardStore((s) => ({
-    id: s.id,
-    title: s.title,
-    description: s.description,
-    theme: s.theme,
-    widgets: s.widgets,
-    archetype: s.archetype,
-    archetypeVariant: s.archetypeVariant,
-  }));
+  // Sprint 1.5 fix: wrap the aggregate selector in `useShallow` so
+  // individual field updates don't return a brand-new object literal
+  // on every render. Without this, the default `Object.is` equality
+  // fails on the new object reference and zustand triggers a
+  // re-render, which fires the useEffects below, which call
+  // `setDashboard` and invalidate the `['dashboard', id]` query,
+  // producing the "Maximum update depth" infinite loop observed in
+  // CI (`dashboardGrid` test, Chromium project).
+  const storeState = useDashboardStore(
+    useShallow((s) => ({
+      id: s.id,
+      title: s.title,
+      description: s.description,
+      theme: s.theme,
+      widgets: s.widgets,
+      archetype: s.archetype,
+      archetypeVariant: s.archetypeVariant,
+    })),
+  );
   const dashboard: Dashboard = useMemo(
     () => ({
       title: storeState.title,
