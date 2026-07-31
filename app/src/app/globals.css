@@ -1,21 +1,51 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@import "tw-animate-css";
 
-/* CSS variables (default theme: moderno-saas, light mode) */
+/* ─────────────────────────────────────────────────────────────────
+   Design tokens — exposed to Tailwind v4 via @theme inline.
+   We keep HSL components (no hsl() wrapper) in :root so dark mode
+   and corporate theme can override them at runtime. The @theme inline
+   block re-exposes them as full hsl(...) values so Tailwind generates
+   utilities (bg-primary, text-foreground, border-border, etc).
+   ───────────────────────────────────────────────────────────────── */
+
+@theme inline {
+  --color-primary: hsl(var(--color-primary-hsl));
+  --color-secondary: hsl(var(--color-secondary-hsl));
+  --color-success: hsl(var(--color-success-hsl));
+  --color-warning: hsl(var(--color-warning-hsl));
+  --color-danger: hsl(var(--color-danger-hsl));
+  --color-muted: hsl(var(--color-muted-hsl));
+  --color-accent: hsl(var(--color-accent-hsl));
+  --color-background: hsl(var(--color-background-hsl));
+  --color-surface: hsl(var(--color-surface-hsl));
+  --color-border: hsl(var(--color-border-hsl));
+  --color-text: hsl(var(--color-text-hsl));
+  --color-text-muted: hsl(var(--color-text-muted-hsl));
+  --color-foreground: hsl(var(--color-text-hsl));
+
+  --radius-lg: var(--spacing-border-radius);
+  --radius-md: calc(var(--spacing-border-radius) * 0.75);
+  --radius-sm: calc(var(--spacing-border-radius) * 0.5);
+
+  --font-sans: var(--font-family), 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-mono: var(--font-family-mono), 'JetBrains Mono', ui-monospace, monospace;
+}
+
+/* ─── Runtime theme tokens (overridable per [data-theme] / dark mode) ─── */
 :root {
-  --color-primary: 239 84% 67%;        /* indigo-500 */
-  --color-secondary: 258 90% 66%;      /* violet-500 */
-  --color-success: 160 84% 39%;        /* emerald-500 */
-  --color-warning: 38 92% 50%;         /* amber-500 */
-  --color-danger: 0 84% 60%;           /* red-500 */
-  --color-muted: 220 9% 46%;           /* gray-500 */
-  --color-accent: 330 81% 60%;         /* pink-500 */
-  --color-background: 0 0% 100%;
-  --color-surface: 220 14% 96%;        /* gray-50 */
-  --color-border: 220 13% 91%;         /* gray-200 */
-  --color-text: 222 47% 11%;           /* gray-900 */
-  --color-text-muted: 220 9% 46%;      /* gray-500 */
+  --color-primary-hsl: 239 84% 67%;        /* indigo-500 */
+  --color-secondary-hsl: 258 90% 66%;      /* violet-500 */
+  --color-success-hsl: 160 84% 39%;        /* emerald-500 */
+  --color-warning-hsl: 38 92% 50%;         /* amber-500 */
+  --color-danger-hsl: 0 84% 60%;           /* red-500 */
+  --color-muted-hsl: 220 9% 46%;           /* gray-500 */
+  --color-accent-hsl: 330 81% 60%;         /* pink-500 */
+  --color-background-hsl: 0 0% 100%;
+  --color-surface-hsl: 220 14% 96%;        /* gray-50 */
+  --color-border-hsl: 220 13% 91%;         /* gray-200 */
+  --color-text-hsl: 222 47% 11%;           /* gray-900 */
+  --color-text-muted-hsl: 220 9% 46%;      /* gray-500 */
 
   --font-family: 'IBM Plex Sans', 'Segoe UI', system-ui, -apple-system, sans-serif;
   --font-family-mono: 'IBM Plex Mono', 'JetBrains Mono', ui-monospace, monospace;
@@ -34,53 +64,53 @@
 /* Dark mode override: opt-in via [data-mode="dark"] o media query */
 @media (prefers-color-scheme: dark) {
   :root:not([data-mode="light"]) {
-    --color-primary: 234 89% 74%;        /* indigo-400 — más claro para contraste */
-    --color-secondary: 258 90% 76%;      /* violet-400 */
-    --color-success: 160 84% 55%;        /* emerald-400 */
-    --color-warning: 38 92% 60%;         /* amber-400 */
-    --color-danger: 0 84% 70%;           /* red-400 */
-    --color-muted: 220 9% 64%;           /* gray-400 */
-    --color-accent: 330 81% 70%;         /* pink-400 */
-    --color-background: 222 47% 7%;      /* slate-950 */
-    --color-surface: 222 40% 12%;        /* slate-900 */
-    --color-border: 215 25% 22%;         /* slate-800 */
-    --color-text: 210 20% 98%;           /* slate-50 — AAA sobre bg */
-    --color-text-muted: 215 16% 75%;     /* slate-300 — AA sobre bg */
+    --color-primary-hsl: 234 89% 74%;        /* indigo-400 — más claro para contraste */
+    --color-secondary-hsl: 258 90% 76%;      /* violet-400 */
+    --color-success-hsl: 160 84% 55%;        /* emerald-400 */
+    --color-warning-hsl: 38 92% 60%;         /* amber-400 */
+    --color-danger-hsl: 0 84% 70%;           /* red-400 */
+    --color-muted-hsl: 220 9% 64%;           /* gray-400 */
+    --color-accent-hsl: 330 81% 70%;         /* pink-400 */
+    --color-background-hsl: 222 47% 7%;      /* slate-950 */
+    --color-surface-hsl: 222 40% 12%;        /* slate-900 */
+    --color-border-hsl: 215 25% 22%;         /* slate-800 */
+    --color-text-hsl: 210 20% 98%;           /* slate-50 — AAA sobre bg */
+    --color-text-muted-hsl: 215 16% 75%;     /* slate-300 — AA sobre bg */
     --shadow-card: 0 1px 3px 0 rgb(0 0 0 / 0.4), 0 1px 2px -1px rgb(0 0 0 / 0.3);
   }
 }
 
 /* Override via JS — fuerza dark o light ignorando media query */
 [data-mode="dark"] {
-  --color-primary: 234 89% 74%;
-  --color-secondary: 258 90% 76%;
-  --color-success: 160 84% 55%;
-  --color-warning: 38 92% 60%;
-  --color-danger: 0 84% 70%;
-  --color-muted: 220 9% 64%;
-  --color-accent: 330 81% 70%;
-  --color-background: 222 47% 7%;
-  --color-surface: 222 40% 12%;
-  --color-border: 215 25% 22%;
-  --color-text: 210 20% 98%;
-  --color-text-muted: 215 16% 75%;
+  --color-primary-hsl: 234 89% 74%;
+  --color-secondary-hsl: 258 90% 76%;
+  --color-success-hsl: 160 84% 55%;
+  --color-warning-hsl: 38 92% 60%;
+  --color-danger-hsl: 0 84% 70%;
+  --color-muted-hsl: 220 9% 64%;
+  --color-accent-hsl: 330 81% 70%;
+  --color-background-hsl: 222 47% 7%;
+  --color-surface-hsl: 222 40% 12%;
+  --color-border-hsl: 215 25% 22%;
+  --color-text-hsl: 210 20% 98%;
+  --color-text-muted-hsl: 215 16% 75%;
   --shadow-card: 0 1px 3px 0 rgb(0 0 0 / 0.4), 0 1px 2px -1px rgb(0 0 0 / 0.3);
 }
 
 /* Corporate theme (light) */
 [data-theme="corporate"] {
-  --color-primary: 224 76% 40%;       /* blue-800 */
-  --color-secondary: 215 19% 35%;     /* slate-600 */
-  --color-success: 142 71% 30%;       /* green-700 */
-  --color-warning: 32 81% 36%;        /* amber-700 */
-  --color-danger: 0 70% 42%;          /* red-700 */
-  --color-muted: 215 16% 47%;         /* slate-500 */
-  --color-accent: 192 91% 30%;        /* cyan-700 */
-  --color-background: 0 0% 100%;
-  --color-surface: 210 40% 98%;       /* slate-50 */
-  --color-border: 215 20% 75%;        /* slate-300 */
-  --color-text: 222 47% 11%;
-  --color-text-muted: 215 19% 35%;
+  --color-primary-hsl: 224 76% 40%;       /* blue-800 */
+  --color-secondary-hsl: 215 19% 35%;     /* slate-600 */
+  --color-success-hsl: 142 71% 30%;       /* green-700 */
+  --color-warning-hsl: 32 81% 36%;        /* amber-700 */
+  --color-danger-hsl: 0 70% 42%;          /* red-700 */
+  --color-muted-hsl: 215 16% 47%;         /* slate-500 */
+  --color-accent-hsl: 192 91% 30%;        /* cyan-700 */
+  --color-background-hsl: 0 0% 100%;
+  --color-surface-hsl: 210 40% 98%;       /* slate-50 */
+  --color-border-hsl: 215 20% 75%;        /* slate-300 */
+  --color-text-hsl: 222 47% 11%;
+  --color-text-muted-hsl: 215 19% 35%;
 
   --font-heading-weight: 700;
   --spacing-card-padding: 16px;
@@ -93,48 +123,48 @@
 [data-theme="corporate"][data-mode="dark"],
 [data-theme="corporate"]:not([data-mode="light"]) {
   @media (prefers-color-scheme: dark) {
-    --color-primary: 224 76% 60%;       /* blue-400 */
-    --color-secondary: 215 19% 65%;     /* slate-400 */
-    --color-success: 142 71% 50%;       /* green-400 */
-    --color-warning: 32 81% 56%;        /* amber-400 */
-    --color-danger: 0 70% 65%;          /* red-400 */
-    --color-muted: 215 16% 60%;         /* slate-400 */
-    --color-accent: 192 91% 50%;        /* cyan-400 */
-    --color-background: 222 47% 7%;
-    --color-surface: 215 35% 14%;
-    --color-border: 215 20% 30%;
-    --color-text: 210 20% 98%;
-    --color-text-muted: 215 16% 75%;
+    --color-primary-hsl: 224 76% 60%;       /* blue-400 */
+    --color-secondary-hsl: 215 19% 65%;     /* slate-400 */
+    --color-success-hsl: 142 71% 50%;       /* green-400 */
+    --color-warning-hsl: 32 81% 56%;        /* amber-400 */
+    --color-danger-hsl: 0 70% 65%;          /* red-400 */
+    --color-muted-hsl: 215 16% 60%;         /* slate-400 */
+    --color-accent-hsl: 192 91% 50%;        /* cyan-400 */
+    --color-background-hsl: 222 47% 7%;
+    --color-surface-hsl: 215 35% 14%;
+    --color-border-hsl: 215 20% 30%;
+    --color-text-hsl: 210 20% 98%;
+    --color-text-muted-hsl: 215 16% 75%;
     --shadow-card: none;
   }
 }
 
 [data-theme="corporate"][data-mode="dark"] {
-  --color-primary: 224 76% 60%;
-  --color-secondary: 215 19% 65%;
-  --color-success: 142 71% 50%;
-  --color-warning: 32 81% 56%;
-  --color-danger: 0 70% 65%;
-  --color-muted: 215 16% 60%;
-  --color-accent: 192 91% 50%;
-  --color-background: 222 47% 7%;
-  --color-surface: 215 35% 14%;
-  --color-border: 215 20% 30%;
-  --color-text: 210 20% 98%;
-  --color-text-muted: 215 16% 75%;
+  --color-primary-hsl: 224 76% 60%;
+  --color-secondary-hsl: 215 19% 65%;
+  --color-success-hsl: 142 71% 50%;
+  --color-warning-hsl: 32 81% 56%;
+  --color-danger-hsl: 0 70% 65%;
+  --color-muted-hsl: 215 16% 60%;
+  --color-accent-hsl: 192 91% 50%;
+  --color-background-hsl: 222 47% 7%;
+  --color-surface-hsl: 215 35% 14%;
+  --color-border-hsl: 215 20% 30%;
+  --color-text-hsl: 210 20% 98%;
+  --color-text-muted-hsl: 215 16% 75%;
   --shadow-card: none;
 }
 
 @layer base {
   * {
-    @apply border-border;
+    border-color: var(--color-border);
   }
-  
+
   body {
     font-family: var(--font-family);
     font-weight: var(--font-body-weight);
   }
-  
+
   h1, h2, h3, h4, h5, h6 {
     font-weight: var(--font-heading-weight);
   }
@@ -142,22 +172,22 @@
 
 @layer components {
   .widget-wrapper {
-    background: hsl(var(--color-surface));
-    border: 1px solid hsl(var(--color-border));
+    background: hsl(var(--color-surface-hsl));
+    border: 1px solid hsl(var(--color-border-hsl));
     border-radius: var(--spacing-border-radius);
     padding: var(--spacing-card-padding);
     box-shadow: var(--shadow-card);
   }
-  
+
   .widget-wrapper[data-editing="true"] {
-    border: 2px dashed hsl(var(--color-primary));
+    border: 2px dashed hsl(var(--color-primary-hsl));
     cursor: move;
   }
 
   .dashboard-surface {
     min-height: 100%;
-    background: hsl(var(--color-surface));
-    color: hsl(var(--color-text));
+    background: hsl(var(--color-surface-hsl));
+    color: hsl(var(--color-text-hsl));
   }
 
   .dashboard-header {
@@ -174,7 +204,7 @@
 
   .dashboard-eyebrow {
     margin: 0 0 6px;
-    color: hsl(var(--color-primary));
+    color: hsl(var(--color-primary-hsl));
     font-size: 0.75rem;
     font-weight: 600;
     letter-spacing: 0.08em;
@@ -183,7 +213,7 @@
 
   .dashboard-title {
     margin: 0;
-    color: hsl(var(--color-text));
+    color: hsl(var(--color-text-hsl));
     font-size: clamp(1.75rem, 3vw, 2.5rem);
     font-weight: 650;
     letter-spacing: -0.03em;
@@ -193,7 +223,7 @@
   .dashboard-description {
     max-width: 70ch;
     margin: 10px 0 0;
-    color: hsl(var(--color-text-muted));
+    color: hsl(var(--color-text-muted-hsl));
     font-size: 0.875rem;
     line-height: 1.5;
   }
@@ -213,7 +243,7 @@
   }
 
   .dashboard-context dt {
-    color: hsl(var(--color-text-muted));
+    color: hsl(var(--color-text-muted-hsl));
     font-size: 0.6875rem;
     font-weight: 600;
     letter-spacing: 0.06em;
@@ -222,13 +252,13 @@
 
   .dashboard-context dd {
     margin: 0;
-    color: hsl(var(--color-text));
+    color: hsl(var(--color-text-hsl));
     font-size: 0.8125rem;
     font-weight: 600;
   }
 
   .dashboard-edit-status dd {
-    color: hsl(var(--color-primary));
+    color: hsl(var(--color-primary-hsl));
   }
 
   .dashboard-grid {
@@ -268,7 +298,7 @@
     position: relative;
     height: 100%;
     border-radius: var(--spacing-border-radius);
-    outline: 1px dashed hsl(var(--color-primary) / 0.45);
+    outline: 1px dashed hsl(var(--color-primary-hsl) / 0.45);
     outline-offset: 4px;
     transition: opacity 150ms ease, box-shadow 150ms ease;
   }
@@ -291,10 +321,10 @@
     justify-content: center;
     gap: 6px;
     padding: 8px 10px;
-    border: 1px solid hsl(var(--color-border));
+    border: 1px solid hsl(var(--color-border-hsl));
     border-radius: 8px;
-    background: hsl(var(--color-background));
-    color: hsl(var(--color-text-muted));
+    background: hsl(var(--color-background-hsl));
+    color: hsl(var(--color-text-muted-hsl));
     font-size: 0.75rem;
     font-weight: 600;
     cursor: grab;
@@ -302,7 +332,7 @@
   }
 
   .dashboard-drag-handle:hover {
-    color: hsl(var(--color-text));
+    color: hsl(var(--color-text-hsl));
   }
 
   .dashboard-drag-handle:active {
@@ -310,7 +340,7 @@
   }
 
   .dashboard-drag-handle:focus-visible {
-    outline: 2px solid hsl(var(--color-primary));
+    outline: 2px solid hsl(var(--color-primary-hsl));
     outline-offset: 2px;
   }
 
@@ -322,16 +352,16 @@
     min-height: 420px;
     margin: 24px;
     padding: 32px;
-    border: 1px dashed hsl(var(--color-border));
+    border: 1px dashed hsl(var(--color-border-hsl));
     border-radius: var(--spacing-border-radius);
-    background: hsl(var(--color-background));
+    background: hsl(var(--color-background-hsl));
     text-align: center;
   }
 
   .dashboard-empty p {
     max-width: 50ch;
     margin: 0;
-    color: hsl(var(--color-text-muted));
+    color: hsl(var(--color-text-muted-hsl));
   }
 
   .widget-wrapper {
@@ -339,13 +369,13 @@
     min-height: 100%;
     flex-direction: column;
     gap: 16px;
-    background: hsl(var(--color-background));
-    color: hsl(var(--color-text));
+    background: hsl(var(--color-background-hsl));
+    color: hsl(var(--color-text-hsl));
   }
 
   .widget-title {
     margin: 0;
-    color: hsl(var(--color-text));
+    color: hsl(var(--color-text-hsl));
     font-size: 0.875rem;
     font-weight: 600;
     letter-spacing: -0.005em;
@@ -363,7 +393,7 @@
     place-items: center;
     align-content: center;
     gap: 8px;
-    color: hsl(var(--color-text-muted));
+    color: hsl(var(--color-text-muted-hsl));
     text-align: center;
   }
 
@@ -372,7 +402,7 @@
     width: 40px;
     height: 40px;
     place-items: center;
-    border: 1px solid hsl(var(--color-border));
+    border: 1px solid hsl(var(--color-border-hsl));
     border-radius: 50%;
   }
 
@@ -387,7 +417,7 @@
   }
 
   .widget-kpi-value {
-    color: hsl(var(--color-text));
+    color: hsl(var(--color-text-hsl));
     font-size: clamp(1.8rem, 4vw, 2.5rem);
     font-weight: var(--font-kpi-weight);
     letter-spacing: -0.035em;
@@ -404,11 +434,11 @@
   }
 
   .widget-kpi-delta[data-direction="positive"] {
-    color: hsl(var(--color-success));
+    color: hsl(var(--color-success-hsl));
   }
 
   .widget-kpi-delta[data-direction="negative"] {
-    color: hsl(var(--color-danger));
+    color: hsl(var(--color-danger-hsl));
   }
 
   .widget-table-container {
@@ -420,7 +450,7 @@
   .widget-table {
     width: 100%;
     border-collapse: collapse;
-    color: hsl(var(--color-text-muted));
+    color: hsl(var(--color-text-muted-hsl));
     font-size: 0.75rem;
     text-align: left;
   }
@@ -429,25 +459,25 @@
     position: sticky;
     top: 0;
     z-index: 1;
-    background: hsl(var(--color-surface));
-    color: hsl(var(--color-text));
+    background: hsl(var(--color-surface-hsl));
+    color: hsl(var(--color-text-hsl));
   }
 
   .widget-table th {
     padding: 10px 12px;
-    border-bottom: 1px solid hsl(var(--color-border));
+    border-bottom: 1px solid hsl(var(--color-border-hsl));
     font-weight: 600;
     letter-spacing: 0.02em;
   }
 
   .widget-table td {
     padding: 10px 12px;
-    border-bottom: 1px solid hsl(var(--color-border) / 0.65);
+    border-bottom: 1px solid hsl(var(--color-border-hsl) / 0.65);
     white-space: nowrap;
   }
 
   .widget-table tbody tr:hover {
-    background: hsl(var(--color-surface));
+    background: hsl(var(--color-surface-hsl));
   }
 
   .widget-unsupported {
@@ -456,10 +486,10 @@
     min-height: 180px;
     place-content: center;
     padding: 16px;
-    border: 1px solid hsl(var(--color-danger) / 0.35);
+    border: 1px solid hsl(var(--color-danger-hsl) / 0.35);
     border-radius: 8px;
-    background: hsl(var(--color-danger) / 0.06);
-    color: hsl(var(--color-danger));
+    background: hsl(var(--color-danger-hsl) / 0.06);
+    color: hsl(var(--color-danger-hsl));
     text-align: center;
   }
 
