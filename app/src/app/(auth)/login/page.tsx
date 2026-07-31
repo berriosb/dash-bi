@@ -2,7 +2,7 @@
 
 import { Suspense, useState } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { signIn } from '@/lib/auth/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,6 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useToast } from '@/hooks/use-toast';
 
 function LoginForm() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const redirect = searchParams.get('redirect') || '/dashboards';
   const { toast } = useToast();
@@ -51,19 +52,14 @@ function LoginForm() {
           if (resumeRes.ok) {
             const body = (await resumeRes.json()) as { resumePath: string | null };
             if (body.resumePath) {
-              // Full reload (not router.push): forces the browser to send
-              // the session cookie set by better-auth's sign-in response.
-              // Without this, mobile-safari + Strict cookie policies can
-              // race with the client-side navigation and bounce the
-              // user back to /login via the auth middleware.
-              window.location.href = body.resumePath;
+              router.push(body.resumePath);
               return;
             }
           }
         } catch {
           // ignore — fall through to default redirect
         }
-        window.location.href = redirect;
+        router.push(redirect);
       } else {
         const res = await signIn.magicLink({
           email,
