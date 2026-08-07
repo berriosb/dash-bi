@@ -2,7 +2,7 @@
 
 import { Suspense, useState } from 'react';
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { signIn } from '@/lib/auth/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,7 +11,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useToast } from '@/hooks/use-toast';
 
 function LoginForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const redirect = searchParams.get('redirect') || '/dashboards';
   const { toast } = useToast();
@@ -52,14 +51,14 @@ function LoginForm() {
           if (resumeRes.ok) {
             const body = (await resumeRes.json()) as { resumePath: string | null };
             if (body.resumePath) {
-              router.push(body.resumePath);
+              window.location.href = body.resumePath;
               return;
             }
           }
         } catch {
           // ignore — fall through to default redirect
         }
-        router.push(redirect);
+        window.location.href = redirect;
       } else {
         const res = await signIn.magicLink({
           email,

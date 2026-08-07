@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { signUp, signIn } from '@/lib/auth/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,7 +10,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useToast } from '@/hooks/use-toast';
 
 export default function SignupPage() {
-  const router = useRouter();
   const { toast } = useToast();
   const [orgName, setOrgName] = useState('');
   const [name, setName] = useState('');
@@ -45,7 +43,7 @@ export default function SignupPage() {
         title: 'Cuenta creada',
         description: 'Revisá tu email para verificar la cuenta antes de continuar.',
       });
-      router.push('/onboarding');
+      window.location.href = '/onboarding';
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Error al procesar el registro';
       setError(message);

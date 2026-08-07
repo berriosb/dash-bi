@@ -218,7 +218,7 @@ function DashboardsContent() {
                   </CardTitle>
                   {dash.archetype !== 'custom' && (
                     <Badge variant="secondary" className="platform-dashboard-item__badge">
-                      Generado
+                      ✨ IA
                     </Badge>
                   )}
                 </div>
