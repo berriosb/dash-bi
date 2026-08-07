@@ -233,19 +233,19 @@ export default function DashboardDetailPage() {
 
   const showPropertyPanel = isEditing && selectedWidgetId !== null;
   const layoutClass = useMemo(
-    () => `space-y-6 ${showPropertyPanel ? 'dashboard-detail-layout-wrapper' : ''}`,
+    () => `platform-editor-page ${showPropertyPanel ? 'dashboard-detail-layout-wrapper' : ''}`,
     [showPropertyPanel],
   );
 
   return (
     <div className={layoutClass}>
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-800/80 pb-4">
+      <div className="platform-editor-header">
         <div className="flex items-center gap-3">
           <Button
             variant="ghost"
             size="icon"
             onClick={() => router.push('/dashboards')}
-            className="text-slate-400 hover:text-white hover:bg-slate-800"
+            className="platform-editor-back"
             aria-label="Volver al listado"
           >
             <ArrowLeft className="w-5 h-5" />
@@ -253,13 +253,13 @@ export default function DashboardDetailPage() {
 
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-xl font-extrabold tracking-tight text-white">{dashboard.title}</h1>
-              <Badge variant="outline" className="text-[10px] border-slate-700 text-indigo-400">
+              <h1 className="platform-editor-title">{dashboard.title}</h1>
+              <Badge variant="outline" className="platform-editor-theme-badge">
                 {activeTheme === 'moderno-saas' ? 'Tema Moderno' : 'Tema Corporate'}
               </Badge>
               <DashboardStatusBar status={status} isEditing={isEditing} />
             </div>
-            <p className="text-xs text-slate-400 mt-0.5 max-w-2xl">{dashboard.description}</p>
+            <p className="platform-editor-description">{dashboard.description}</p>
           </div>
         </div>
 
@@ -273,7 +273,7 @@ export default function DashboardDetailPage() {
                 disabled={!canUndo}
                 aria-label="Deshacer (Ctrl+Z)"
                 title="Deshacer (Ctrl+Z)"
-                className="bg-slate-900 border-slate-800 hover:bg-slate-800 text-slate-300"
+                className="platform-editor-icon-action"
               >
                 <Undo2 className="w-3.5 h-3.5" />
               </Button>
@@ -284,7 +284,7 @@ export default function DashboardDetailPage() {
                 disabled={!canRedo}
                 aria-label="Rehacer (Ctrl+Shift+Z)"
                 title="Rehacer (Ctrl+Shift+Z)"
-                className="bg-slate-900 border-slate-800 hover:bg-slate-800 text-slate-300"
+                className="platform-editor-icon-action"
               >
                 <Redo2 className="w-3.5 h-3.5" />
               </Button>
@@ -305,7 +305,7 @@ export default function DashboardDetailPage() {
             variant="outline"
             size="sm"
             onClick={handleShareLink}
-            className="bg-slate-900 border-slate-800 hover:bg-slate-800 text-slate-300 text-xs gap-1.5"
+            className="platform-editor-action text-xs gap-1.5"
           >
             {copiedShare ? <span>¡Enlace copiado!</span> : <><Share2 className="w-3.5 h-3.5" /> Compartir</>}
           </Button>
@@ -316,7 +316,7 @@ export default function DashboardDetailPage() {
             onClick={toggleNlqa}
             aria-pressed={isNlqaOpen}
             aria-label="Abrir chat con datos"
-            className="bg-slate-900 border-slate-800 hover:bg-slate-800 text-slate-300 text-xs gap-1.5"
+            className="platform-editor-action text-xs gap-1.5"
           >
             <MessageSquare className="w-3.5 h-3.5 text-violet-400" />
             Preguntar
@@ -327,7 +327,7 @@ export default function DashboardDetailPage() {
             size="sm"
             onClick={handleExportPdf}
             disabled={isExporting}
-            className="bg-slate-900 border-slate-800 hover:bg-slate-800 text-slate-300 text-xs gap-1.5"
+            className="platform-editor-action text-xs gap-1.5"
           >
             <Download className="w-3.5 h-3.5" />
             {isExporting ? 'Exportando...' : 'Exportar PDF'}
@@ -338,8 +338,8 @@ export default function DashboardDetailPage() {
             onClick={handleToggleEdit}
             className={
               isEditing
-                ? 'bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs gap-1.5'
-                : 'bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs gap-1.5'
+                ? 'platform-editor-finish text-xs gap-1.5'
+                : 'platform-editor-primary text-xs gap-1.5'
             }
           >
             {isEditing ? (

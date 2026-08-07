@@ -33,7 +33,7 @@ export const useUIStore = create<UIState>()(
       isEditing: false,
       isNlqaOpen: false,
       activeTheme: 'moderno-saas',
-      activeMode: 'system',
+      activeMode: 'light',
       selectedWidgetId: null,
 
       setActiveOrgId: (orgId) => set({ activeOrgId: orgId }),

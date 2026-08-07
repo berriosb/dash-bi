@@ -103,10 +103,10 @@ function LoginForm() {
   };
 
   return (
-    <Card className="bg-slate-900/80 border-slate-800 text-slate-100 backdrop-blur-xl shadow-2xl">
+    <Card className="auth-platform-card">
       <CardHeader className="space-y-1 text-center">
-        <CardTitle className="text-2xl font-bold tracking-tight text-white">Iniciar Sesión</CardTitle>
-        <CardDescription className="text-slate-400">
+        <CardTitle className="auth-platform-title">Iniciar Sesión</CardTitle>
+        <CardDescription className="auth-platform-description">
           Ingresá a tu cuenta de dash-bi para gestionar tus dashboards
         </CardDescription>
       </CardHeader>
@@ -116,7 +116,7 @@ function LoginForm() {
         <Button
           type="button"
           variant="outline"
-          className="w-full bg-slate-800/80 border-slate-700 hover:bg-slate-700 text-slate-200"
+          className="auth-platform-secondary w-full"
           onClick={handleGoogleLogin}
           disabled={loading}
         >
@@ -143,19 +143,19 @@ function LoginForm() {
 
         <div className="relative my-4">
           <div className="absolute inset-0 flex items-center">
-            <span className="w-full border-t border-slate-800" />
+            <span className="w-full border-t border-border" />
           </div>
           <div className="relative flex justify-center text-xs uppercase">
-            <span className="bg-slate-900 px-2 text-slate-500">O continuá con email</span>
+            <span className="auth-platform-divider-label">O continuá con email</span>
           </div>
         </div>
 
         {/* Tab switch mode */}
-        <div className="flex rounded-lg bg-slate-800/60 p-1 text-xs">
+        <div className="auth-platform-mode-tabs">
           <button
             type="button"
             className={`flex-1 rounded-md py-1.5 font-medium transition ${
-              mode === 'password' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
+              mode === 'password' ? 'auth-platform-mode-tab auth-platform-mode-tab--active' : 'auth-platform-mode-tab'
             }`}
             onClick={() => setMode('password')}
           >
@@ -164,11 +164,11 @@ function LoginForm() {
           <button
             type="button"
             className={`flex-1 rounded-md py-1.5 font-medium transition ${
-              mode === 'magic-link' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
+              mode === 'magic-link' ? 'auth-platform-mode-tab auth-platform-mode-tab--active' : 'auth-platform-mode-tab'
             }`}
             onClick={() => setMode('magic-link')}
           >
-            Magic Link ✨
+            Magic Link
           </button>
         </div>
 
@@ -186,7 +186,7 @@ function LoginForm() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="email" className="text-slate-300">Correo Electrónico</Label>
+            <Label htmlFor="email">Correo Electrónico</Label>
             <Input
               id="email"
               type="email"
@@ -194,15 +194,15 @@ function LoginForm() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              className="bg-slate-800/80 border-slate-700 text-white placeholder:text-slate-500"
+              className="auth-platform-input"
             />
           </div>
 
           {mode === 'password' && (
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label htmlFor="password" className="text-slate-300">Contraseña</Label>
-                <Link href="/forgot-password" className="text-xs text-indigo-400 hover:underline">
+                <Label htmlFor="password">Contraseña</Label>
+                    <Link href="/forgot-password" className="text-xs text-primary hover:underline">
                   ¿Olvidaste tu contraseña?
                 </Link>
               </div>
@@ -213,19 +213,19 @@ function LoginForm() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                className="bg-slate-800/80 border-slate-700 text-white placeholder:text-slate-500"
+                className="auth-platform-input"
               />
             </div>
           )}
 
-          <Button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-medium" disabled={loading}>
-            {loading ? 'Procesando...' : mode === 'password' ? 'Iniciar Sesión' : 'Enviar Magic Link ✨'}
+          <Button type="submit" className="auth-platform-primary" disabled={loading}>
+            {loading ? 'Procesando...' : mode === 'password' ? 'Iniciar Sesión' : 'Enviar Magic Link'}
           </Button>
         </form>
 
-        <div className="text-center text-xs text-slate-400 pt-2">
+        <div className="auth-platform-description text-center pt-2">
           ¿No tenés una cuenta aún?{' '}
-          <Link href="/signup" className="text-indigo-400 hover:underline font-semibold">
+          <Link href="/signup" className="text-primary hover:underline font-semibold">
             Creá tu organización
           </Link>
         </div>
