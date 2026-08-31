@@ -8,7 +8,7 @@ services:
     image: dashbi/app:${VERSION:-latest}
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "${APP_PORT:-3000}:3000"
     environment:
       - NODE_ENV=production
       - DATABASE_URL=postgres://${POSTGRES_USER:-dashbi}:${POSTGRES_PASSWORD:-dashbi_password}@postgres:5432/${POSTGRES_DB:-dashbi}
@@ -75,7 +75,7 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-dashbi}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-dashbi_password}
@@ -104,7 +104,7 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     command: >
       redis-server
         --maxmemory 512mb
