@@ -286,7 +286,7 @@ export function DemoDashboardViewer() {
           </button>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <ExportShareDialog dashboardId="demo" dashboardTitle={currentDashboard.title} />
           <Button asChild size="sm" className="gap-1.5">
             <Link href="/signup">
