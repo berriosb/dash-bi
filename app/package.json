@@ -138,5 +138,15 @@
     "*.{json,md,yaml,yml}": [
       "prettier --write"
     ]
+  },
+  "pnpm": {
+    "overrides": {
+      "undici": "^6.24.0",
+      "sharp": "^0.35.0",
+      "postcss": "^8.5.23",
+      "js-yaml": "^4.3.1",
+      "fast-uri": "^3.1.5",
+      "nanoid": "^3.3.18"
+    }
   }
 }
