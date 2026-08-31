@@ -24,7 +24,7 @@ import { useToast } from '@/hooks/use-toast';
 interface DataSourceItem {
   id: string;
   name: string;
-  type: 'postgres' | 'stripe' | 'sheets' | 'mysql' | 'shopify';
+  type: 'postgres' | 'stripe' | 'sheets' | 'mysql' | 'shopify' | 'csv' | 'excel';
   lastTestedAt: string | null;
   lastTestOk: boolean | null;
   details: string;
@@ -57,7 +57,11 @@ async function fetchDataSources(): Promise<DataSourceItem[]> {
             ? 'Shopify Admin API (shpat_...)'
             : row.type === 'mysql'
               ? 'MySQL (host cifrado)'
-              : 'PostgreSQL (host cifrado)',
+              : row.type === 'csv'
+                ? 'Archivo CSV cargado'
+                : row.type === 'excel'
+                  ? 'Planilla Excel cargada'
+                  : 'PostgreSQL (host cifrado)',
   }));
 }
 
@@ -254,7 +258,9 @@ export default function DataSourcesPage() {
                             ? 'border-emerald-500/30 text-emerald-400 bg-emerald-500/10'
                             : ds.type === 'stripe'
                               ? 'border-purple-500/30 text-purple-400 bg-purple-500/10'
-                              : 'border-teal-500/30 text-teal-400 bg-teal-500/10'
+                              : ds.type === 'csv' || ds.type === 'excel'
+                                ? 'border-emerald-500/30 text-emerald-400 bg-emerald-500/10'
+                                : 'border-teal-500/30 text-teal-400 bg-teal-500/10'
                     }`}
                   >
                     {ds.type}

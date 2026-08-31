@@ -1,43 +1,82 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { useUIStore } from '@/stores/uiStore';
-import { Building2, ChevronDown, Check } from 'lucide-react';
+import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useUIStore } from "@/stores/uiStore";
+import { Building2, ChevronDown, Check } from "lucide-react";
 
 interface Org {
   id: string;
   name: string;
   slug: string;
-  plan: 'free' | 'pro' | 'enterprise';
+  plan: "free" | "pro" | "enterprise";
+  role: "admin" | "editor" | "viewer";
 }
 
-async function fetchMyOrgs(): Promise<Org[]> {
-  // Sprint 1.5: reuses the audit endpoint to confirm there is at least
-  // one org for the session. A dedicated /api/orgs/index endpoint is
-  // tracked as a follow-up — for the MVP we render the current org from
-  // better-auth's activeOrgId cookie + a single fallback "Mi organización"
-  // when we don't have a list endpoint yet.
-  const res = await fetch('/api/audit?limit=1');
-  if (!res.ok) return [];
-  return [];
+interface OrganizationsResponse {
+  organizations: Org[];
+  activeOrgId: string;
+}
+
+async function fetchMyOrgs(): Promise<OrganizationsResponse> {
+  const res = await fetch("/api/organizations");
+  if (!res.ok) throw new Error("No pudimos cargar las organizaciones.");
+  return res.json() as Promise<OrganizationsResponse>;
 }
 
 export function OrgSwitcher() {
-  const { activeOrgId } = useUIStore();
+  const { activeOrgId, setActiveOrgId } = useUIStore();
   const [open, setOpen] = useState(false);
+  const [switchingId, setSwitchingId] = useState<string | null>(null);
+  const [switchError, setSwitchError] = useState<string | null>(null);
 
-  // The OrgSwitcher is a placeholder for a future real implementation.
-  // Today it just shows the active org from the session cookie.
-  // Calling fetchMyOrgs() here warms the React Query cache so a future
-  // dedicated `/api/orgs` endpoint can plug in without UI changes.
-  useQuery({ queryKey: ['my-orgs'], queryFn: fetchMyOrgs, enabled: false });
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["my-orgs"],
+    queryFn: fetchMyOrgs,
+    staleTime: 60_000,
+  });
 
-  const currentOrg: Org = {
-    id: activeOrgId ?? 'default',
-    name: 'Mi organización',
-    slug: 'mi-org',
-    plan: 'free',
+  useEffect(() => {
+    if (data?.activeOrgId && data.activeOrgId !== activeOrgId) {
+      setActiveOrgId(data.activeOrgId);
+    }
+  }, [activeOrgId, data?.activeOrgId, setActiveOrgId]);
+
+  const organizations = data?.organizations ?? [];
+  const currentOrg =
+    organizations.find(
+      (org) => org.id === (activeOrgId ?? data?.activeOrgId),
+    ) ?? organizations[0];
+
+  const handleSwitch = async (org: Org) => {
+    if (org.id === currentOrg?.id) {
+      setOpen(false);
+      return;
+    }
+
+    setSwitchingId(org.id);
+    setSwitchError(null);
+    try {
+      const res = await fetch("/api/organizations", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ orgId: org.id }),
+      });
+      if (!res.ok) throw new Error("No pudimos cambiar de organización.");
+      setActiveOrgId(org.id);
+      setOpen(false);
+      // A tenant switch must replace every server and client cache boundary.
+      // A router refresh alone leaves TanStack Query data from the old org.
+      window.location.reload();
+    } catch (error) {
+      setSwitchError(
+        error instanceof Error
+          ? error.message
+          : "No pudimos cambiar de organización.",
+      );
+    } finally {
+      setSwitchingId(null);
+    }
   };
 
   return (
@@ -52,10 +91,13 @@ export function OrgSwitcher() {
         </div>
         <div className="flex flex-col text-left">
           <span className="text-sm font-semibold leading-tight truncate max-w-[130px]">
-            {currentOrg.name}
+            {isLoading
+              ? "Cargando…"
+              : (currentOrg?.name ??
+                (isError ? "Organización" : "Sin organización"))}
           </span>
           <span className="text-[11px] text-muted-foreground font-medium tracking-wide">
-            Workspace · Plan {currentOrg.plan}
+            Workspace · Plan {currentOrg?.plan ?? "free"}
           </span>
         </div>
         <ChevronDown className="w-3.5 h-3.5 text-slate-400 ml-1" />
@@ -71,16 +113,41 @@ export function OrgSwitcher() {
             onClick={() => setOpen(false)}
           />
           <div className="platform-org-menu">
-            <div className="platform-org-menu__label">
-              Organizaciones
-            </div>
-            <div className="platform-org-menu__option">
-              <div className="platform-org-menu__option-icon">
-                <Building2 className="h-3.5 w-3.5" />
+            <div className="platform-org-menu__label">Organizaciones</div>
+            {switchError && (
+              <div
+                className="platform-org-menu__option text-destructive"
+                role="alert"
+              >
+                {switchError}
               </div>
-              <span className="truncate flex-1">{currentOrg.name}</span>
-              <Check className="w-3.5 h-3.5 text-indigo-400" />
-            </div>
+            )}
+            {organizations.map((org) => (
+              <button
+                type="button"
+                key={org.id}
+                className="platform-org-menu__option w-full border-0 bg-transparent text-left"
+                onClick={() => void handleSwitch(org)}
+                disabled={switchingId !== null}
+              >
+                <div className="platform-org-menu__option-icon">
+                  <Building2 className="h-3.5 w-3.5" />
+                </div>
+                <span className="truncate flex-1">{org.name}</span>
+                {switchingId === org.id ? (
+                  <span className="text-xs text-muted-foreground">
+                    Cambiando…
+                  </span>
+                ) : org.id === currentOrg?.id ? (
+                  <Check className="w-3.5 h-3.5 text-indigo-400" />
+                ) : null}
+              </button>
+            ))}
+            {organizations.length === 0 && (
+              <div className="platform-org-menu__option text-muted-foreground">
+                {isError ? "No disponible" : "Sin organizaciones"}
+              </div>
+            )}
           </div>
         </>
       )}
@@ -89,4 +156,4 @@ export function OrgSwitcher() {
 }
 
 // Local Button import to keep the file dependency-light.
-import { Button } from '@/components/ui/button';
+import { Button } from "@/components/ui/button";

@@ -46,8 +46,11 @@ export function GeneratingStep() {
           setError(body.error ?? `HTTP ${res.status}`);
           return;
         }
-        const body = (await res.json()) as { dashboardId: string };
-        setDashboardId(body.dashboardId);
+        const body = (await res.json()) as { dashboardId?: string; dashboard?: { id: string } };
+        const generatedId = body.dashboardId ?? body.dashboard?.id ?? '';
+        if (generatedId) {
+          setDashboardId(generatedId);
+        }
         goToStep('success');
       } catch (err) {
         if (cancelled) return;
@@ -81,15 +84,33 @@ export function GeneratingStep() {
   }
 
   return (
-    <div className="mx-auto max-w-md space-y-6 p-6 text-center">
+    <div className="mx-auto max-w-lg space-y-6 p-6 text-center">
       <Loader2
-        className="mx-auto h-10 w-10 animate-spin text-primary"
+        className="mx-auto h-9 w-9 animate-spin text-primary"
         data-testid="generating-spinner"
       />
-      <h1 className="text-xl font-semibold">Generando tu primer dashboard…</h1>
-      <p className="text-sm text-muted-foreground">
-        Estamos consultando tu fuente y armando los widgets. Tardá entre 5 y 30 segundos.
-      </p>
+      <div>
+        <h1 className="text-xl font-semibold">Generando tu primer dashboard…</h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          Estamos consultando tu fuente y armando los widgets con datos reales.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 pt-2 text-left opacity-60">
+        <div className="p-3 border border-border/60 rounded-lg bg-surface/40 space-y-2">
+          <div className="skeleton-bar w-16 h-3 rounded" />
+          <div className="skeleton-bar w-24 h-6 rounded" />
+        </div>
+        <div className="p-3 border border-border/60 rounded-lg bg-surface/40 space-y-2">
+          <div className="skeleton-bar w-20 h-3 rounded" />
+          <div className="skeleton-bar w-20 h-6 rounded" />
+        </div>
+        <div className="col-span-2 p-3 border border-border/60 rounded-lg bg-surface/40 space-y-2">
+          <div className="skeleton-bar w-28 h-3 rounded" />
+          <div className="skeleton-bar w-full h-16 rounded" />
+        </div>
+      </div>
+
       {dashboardId && (
         <p className="text-xs text-muted-foreground">id: {dashboardId}</p>
       )}

@@ -57,17 +57,15 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
   try {
     const ctx = await requireAuth(req, 'dashboard.view');
-    const dashboard = await withOrgContext(ctx.orgId, ctx.userId, ctx.role, async (tx) =>
-      tx.query.dashboards.findFirst({
-        where: and(eq(dashboards.id, id), eq(dashboards.orgId, ctx.orgId)),
-      })
+    const [dashboard] = await withOrgContext(ctx.orgId, ctx.userId, ctx.role, async (tx) =>
+      tx.select().from(dashboards).where(and(eq(dashboards.id, id), eq(dashboards.orgId, ctx.orgId))).limit(1)
     );
 
     if (!dashboard) {
       return NextResponse.json({ error: 'Dashboard not found' }, { status: 404 });
     }
 
-    const hydratedWidgets = await hydrateDashboard(ctx.orgId, ctx.userId, dashboard.widgets as Parameters<typeof hydrateDashboard>[2]);
+    const hydratedWidgets = await hydrateDashboard(ctx.orgId, ctx.userId, (dashboard.widgets ?? []) as Parameters<typeof hydrateDashboard>[2]);
 
     return NextResponse.json({
       dashboard: {
@@ -88,9 +86,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const body = UpdateDashboardSchema.parse(await req.json());
 
     await withOrgContext(ctx.orgId, ctx.userId, ctx.role, async (tx) => {
-      const current = await tx.query.dashboards.findFirst({
-        where: and(eq(dashboards.id, id), eq(dashboards.orgId, ctx.orgId)),
-      });
+      const [current] = await tx.select().from(dashboards).where(and(eq(dashboards.id, id), eq(dashboards.orgId, ctx.orgId))).limit(1);
 
       if (!current) {
         throw Object.assign(new Error('Dashboard not found'), { __code: 'not_found' });

@@ -6,7 +6,11 @@ import { WidgetSurface } from './WidgetSurface';
 
 export function KPIWidget({ widget }: { widget: KPIWidgetType }) {
   const { config, data } = widget;
-  const kpiData = data as { value?: number; delta?: { value?: number; percent?: number; isPositive?: boolean } } | null;
+  const kpiData = data as {
+    value?: number;
+    delta?: number | { value?: number; percent?: number; isPositive?: boolean };
+  } | null;
+
   const hasValue = typeof kpiData?.value === 'number' && Number.isFinite(kpiData.value);
   const value = hasValue ? kpiData.value! : 0;
   const delta = kpiData?.delta;
@@ -28,6 +32,52 @@ export function KPIWidget({ widget }: { widget: KPIWidgetType }) {
     return new Intl.NumberFormat('es-CL').format(value);
   }, [value, config.format]);
 
+  const deltaInfo = React.useMemo(() => {
+    if (delta === undefined || delta === null) return null;
+
+    if (typeof delta === 'number' && Number.isFinite(delta)) {
+      return {
+        numeric: delta,
+        formatted: `${Math.abs(delta).toFixed(1)}%`,
+        isPositive: delta >= 0,
+      };
+    }
+
+    if (typeof delta === 'object') {
+      if (typeof delta.percent === 'number' && Number.isFinite(delta.percent)) {
+        return {
+          numeric: delta.percent,
+          formatted: `${Math.abs(delta.percent).toFixed(1)}%`,
+          isPositive: delta.isPositive ?? delta.percent >= 0,
+        };
+      }
+      if (typeof delta.value === 'number' && Number.isFinite(delta.value)) {
+        const sign = delta.value >= 0 ? '+' : '-';
+        return {
+          numeric: delta.value,
+          formatted: `${sign}${Math.abs(delta.value)}`,
+          isPositive: delta.isPositive ?? delta.value >= 0,
+        };
+      }
+    }
+
+    return null;
+  }, [delta]);
+
+  const periodLabel = React.useMemo(() => {
+    switch (config.comparisonPeriod) {
+      case 'last_year':
+        return 'vs año anterior';
+      case 'last_month':
+        return 'vs mes anterior';
+      case 'last_week':
+        return 'vs semana anterior';
+      case 'previous':
+      default:
+        return 'vs período anterior';
+    }
+  }, [config.comparisonPeriod]);
+
   return (
     <WidgetSurface
       widgetId={widget.id}
@@ -35,14 +85,16 @@ export function KPIWidget({ widget }: { widget: KPIWidgetType }) {
       isEmpty={!hasValue}
       emptyMessage="La consulta no devolvió un valor para esta métrica."
     >
-      <div className="widget-kpi-value">{formattedValue}</div>
-      {config.showDelta !== false && typeof delta === 'number' && Number.isFinite(delta) && (
+      <div className="widget-kpi-value tabular-nums">{formattedValue}</div>
+      {config.showDelta !== false && deltaInfo !== null && (
         <div
-          className="widget-kpi-delta"
-          data-direction={delta >= 0 ? 'positive' : 'negative'}
+          className="widget-kpi-delta tabular-nums"
+          data-direction={deltaInfo.isPositive ? 'positive' : 'negative'}
         >
-          <span aria-hidden="true">{delta >= 0 ? '↑' : '↓'}</span>
-          <span>{Math.abs(delta).toFixed(1)}% vs período anterior</span>
+          <span aria-hidden="true">{deltaInfo.isPositive ? '↑' : '↓'}</span>
+          <span>
+            {deltaInfo.formatted} {periodLabel}
+          </span>
         </div>
       )}
     </WidgetSurface>

@@ -169,7 +169,11 @@ type DataSource = {
 ### 3.2 Cada widget type
 
 ```typescript
-// 1. KPI — un número grande con delta opcional
+// 1. KPI — un número grande con delta opcional y renderizado tabular-nums
+type KPIDelta = 
+  | number 
+  | { value?: number; percent?: number; isPositive?: boolean };
+
 type KPIWidget = {
   type: 'kpi';
   id: string;
@@ -184,7 +188,7 @@ type KPIWidget = {
   };
   data: {
     value: number;
-    delta?: number;
+    delta?: KPIDelta;
     target?: number;
   };
   source: DataSource;

@@ -16,9 +16,22 @@ vi.mock('@/lib/auth/config', () => ({
 
 vi.mock('@/db/client', () => ({
   db: {
-    query: {
-      orgMembers: { findFirst: mockMembership },
-    },
+    transaction: vi.fn(async (cb) => {
+      const tx = {
+        execute: vi.fn().mockResolvedValue(undefined),
+        select: vi.fn(() => ({
+          from: vi.fn(() => ({
+            where: vi.fn((whereClause) => ({
+              limit: vi.fn(async () => {
+                const res = await mockMembership(whereClause);
+                return res ? [res] : [];
+              }),
+            })),
+          })),
+        })),
+      };
+      return cb(tx);
+    }),
   },
 }));
 
@@ -80,13 +93,9 @@ describe('getAuthContext (Sprint 1.5 — session-based identity)', () => {
     mockGetSession.mockResolvedValue({ user: { id: 'user-1', email: 'a@b.com' } });
     mockMembership.mockResolvedValue({ orgId: 'org-explicit', role: 'editor' });
 
-    await getAuthContext(makeReq({ orgIdHeader: 'org-explicit' }));
-
-    expect(mockMembership).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.anything(),
-      }),
-    );
+    const ctx = await getAuthContext(makeReq({ orgIdHeader: 'org-explicit' }));
+    expect(ctx.orgId).toBe('org-explicit');
+    expect(mockMembership).toHaveBeenCalledTimes(1);
   });
 
   it('throws ForbiddenError when user is not a member of any org', async () => {

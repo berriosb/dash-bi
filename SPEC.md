@@ -2,9 +2,11 @@
 
 > Especificación completa del producto. Single source of truth.
 
-**Última actualización:** 2026-07-21 (design diversity + post-auditoría + sync de inconsistencias)
-**Estado:** Draft v0.4
+**Última actualización:** 2026-08-18 (estabilización y cierre del MVP funcional)
+**Estado:** v0.6.1 (MVP funcional consolidado)
 **Responsable:** codehak
+
+**Cambios v0.6.1:** Sincronización completa con el código implementado: conectores CSV/Excel (`uploaded_files`), MySQL y Shopify operativos; backend de Scheduled Reports (`scheduled-reports.md`) integrado; soporte de modelos LLM rápidos (`gpt-4o-mini`, `gemini-1.5-flash`, `claude-3-5-haiku`) para NLQA (<5s); unificación de formatos delta en widgets KPI con `tabular-nums`.
 
 **Cambios v0.4:** Dashboard archetypes (8 curados + 7 patrones atómicos + 4 axes de variación → ~1.400 layouts visualmente distintos). Ver `specs/dashboard-archetypes.md`.
 
@@ -17,15 +19,15 @@
 ## 1. Visión
 
 Plataforma open source de Business Intelligence que reemplaza Power BI con:
-- Diseños SaaS modernos (no UI legacy de 2010)
+- Diseños SaaS modernos (no UI legacy de 2010, filosofía "The Decision Desk")
 - IA generativa que compone dashboards desde prompts en lenguaje natural, **con datos reales del data source conectado**
 - **Design diversity** — 8 archetypes + 7 patrones atómicos + 4 axes de variación garantizan que cada dashboard se ve distinto (~1.400 combinaciones)
 - Multi-provider LLM switch (3 providers oficiales: OpenAI, Anthropic, Gemini) configurables por organización
-- Conectores API-first (Postgres, Stripe, Google Sheets) — setup en minutos
-- Self-hosted via Docker Compose (Postgres incluido) — deployable on-prem en cualquier empresa
-- Export presentable (PDF con branding via Puppeteer, PNG, link público sin auth)
+- Conectores API-first & Database (Postgres, MySQL, Stripe, Google Sheets, CSV/Excel upload, Shopify) — setup en minutos
+- Self-hosted via Docker Compose (Postgres + Redis + App + PDF Worker incluidos) — deployable on-prem en cualquier empresa
+- Export presentable (PDF con branding via Puppeteer en worker aislado, PNG, link público sin auth)
 - Multi-tenant con Row Level Security + RBAC (admin/editor/viewer)
-- **Edición manual preservada** — el archetype es punto de partida, el usuario puede editar libremente después (drag-drop, agregar/quitar widgets)
+- **Edición manual preservada** — el archetype es punto de partida, el usuario puede editar libremente después (drag-drop con dnd-kit, property panel, agregar/quitar widgets)
 
 ## 2. Usuario objetivo
 
@@ -44,133 +46,120 @@ Ver specs completos:
 - `specs/dashboard-archetypes.md` — vocabulario de patrones + 8 archetypes + 4 axes
 - `specs/query-engine.md` — pipeline de ejecución, validación, cache, hidratación de widgets
 - `specs/manual-editing.md` — edit mode preserva el archetype, permite cambiarlo y editar libremente
+- `specs/nlqa.md` — Natural-Language Q&A universal con generación de consultas y charts puntuales
 
 ## 4. Stack técnico
 
 ### Frontend
-- **Next.js 16** (App Router) + **React 19.2**
-- **TypeScript strict**
-- **Tailwind CSS 4**
-- **shadcn/ui** (componentes base)
-- **Tremor** (charts corporativos, look SaaS moderno)
+- **Next.js 16** (App Router) + **React 19.2** con `--webpack`
+- **TypeScript strict** 5.7+
+- **Tailwind CSS 4** + CSS variables semánticas (`@theme inline`)
+- **shadcn/ui + Radix UI** (componentes base)
+- **Tremor / Recharts** (charts interactivos corporativos, look SaaS moderno)
+- **dnd-kit** (drag-and-drop accesible y fluido)
 
 ### Backend
 - **Next.js API routes** + **Server Actions**
 - **better-auth** (auth + multi-tenant orgs)
-- **Drizzle ORM** (typesafe, liviano, edge-friendly)
+- **Drizzle ORM** (typesafe, SQL-first, edge-friendly)
+- **BullMQ 5 + Redis 7** (colas asíncronas para reportes programados y PDF)
 
 ### Database
 - **PostgreSQL 16** (deployable on-prem)
-- Schema multi-tenant con `org_id` en cada tabla
+- Schema multi-tenant con `org_id` y RLS activo en cada tabla tenant-scoped
+- Conexión obligatoria mediante wrapper `withOrgContext()`
 
 ### AI
 - **Vercel AI SDK v6** con multi-provider router
-- Streaming responses para chat
-- **LLM providers activos:** OpenAI (`gpt-4o` family), Anthropic (`claude-3-5-sonnet-latest`), Google (`gemini-1.5-pro`)
+- Streaming responses para chat y NLQA
+- **LLM providers activos:** 
+  - OpenAI (`gpt-4o`, `gpt-4o-mini`)
+  - Anthropic (`claude-3-5-sonnet-latest`, `claude-3-5-haiku-latest`)
+  - Google Gemini (`gemini-1.5-pro`, `gemini-1.5-flash`)
 - Costos en tracking: tabla `MODEL_COSTS` en `multi-llm-router.md` §7.3, editable vía env var
 
-### Export
-- **Puppeteer** headless Chrome (PDF con branding de la org, renderiza HTML real)
+### Export & Reports
+- **Puppeteer** headless Chrome en servicio worker aislado (`pdf-worker` container)
 - **html2canvas** (PNG client-side)
-- Link público con token random (sin password)
+- Link público con token criptográfico random (sin password)
+- Scheduled reports programados vía cron y entregados por email
 
 ### Deploy
-- **Docker Compose** único (Postgres + Next.js + Puppeteer Chrome incluido)
+- **Docker Compose** multi-servicio (Postgres 16 + Redis 7 + Next.js App + PDF Worker)
 
 ## 5. Internacionalización (i18n)
 
-**Decisión MVP v0.3:** aplicación monolingüe en **español**. Toda la copy de UI, mensajes de error, emails y docs en español.
+**Decisión MVP:** aplicación monolingüe en **español**. Toda la copy de UI, mensajes de error, emails y docs de usuario en español estándar.
 
 **Justificación:**
 - Target primario es Bastián en su próximo trabajo en Chile/LatAm
-- Reducir scope (STACK-AUDIT §Frontend)
-- next-intl removido del middleware (desbloqueaba dev con código no instalado)
+- Reducción de complejidad y consistencia de copy
+- Catálogo de errores unificado en `specs/errors-ux.md` con mensajes en español claros y orientados al usuario de negocio
 
-**Roadmap Fase 2:** agregar i18n completo (es + en) usando `next-intl` cuando haya tracción. La copy debería estar centralizada desde día 1 en archivos `messages/es.json` para facilitar la migración futura.
-
-**Inconsistencias a corregir en specs:** varios specs tienen copy mezclada en español/inglés. Specs en español, código/tipos de DB en inglés.
+**Roadmap Fase 2:** agregar i18n completo (es + en) usando `next-intl` cuando haya tracción internacional.
 
 ---
 
 ## 6. Conectores
 
-### MVP (Semana 2)
+### Disponibles en MVP
 
-| Conector | Tipo | Auth | Notas |
-|----------|------|------|-------|
-| **PostgreSQL genérico** | Database | Connection string | Universal, el más usado |
-| **Stripe** | API REST | API key | Casos reales: MRR, churn, revenue |
-| **Google Sheets** | API REST | OAuth | Casos reales: data operacional |
+| Conector | Tipo | Auth | Estado |
+|----------|------|------|--------|
+| **PostgreSQL genérico** | Database | Connection string | Implementado y testeado |
+| **MySQL genérico** | Database | Connection string / credenciales | Implementado y testeado |
+| **Stripe** | API REST | API key cifrada (BYOK) | Implementado y testeado |
+| **Google Sheets** | API REST | OAuth / Service Account | Implementado y testeado |
+| **CSV / Excel upload** | Archivos | Upload directo a tabla tenant-scoped | Implementado y testeado |
+| **Shopify** | API REST | Store Domain + Access Token | Implementado y testeado |
 
 ### Fase 2 (Post-MVP)
 
 | Conector | Tipo | Notas |
 |----------|------|-------|
-| Shopify | API REST | E-commerce |
-| Meta Ads | API REST | Marketing spend |
-| Notion | API REST | Content/ops |
-| MySQL | Database | Alternativa a Postgres |
+| Meta Ads | API REST | Marketing spend y atribución |
+| Notion | API REST | Bases de datos de operaciones |
 
 ## 7. Multi-tenancy
 
-- Cada `organization` tiene su propio set de: data sources, dashboards, users, LLM provider config, branding
-- Row Level Security en Postgres: cada query filtra por `org_id`
-- Auth via better-auth con sesiones por org
+- Cada `organization` tiene su propio set de: data sources, dashboards, users, LLM provider config, branding, uploaded files y audit logs.
+- Row Level Security en Postgres: cada query a tablas de tenant exige `app.current_org_id`.
+- Auth via better-auth con aislamiento estricto y selector dinámico de organización activa.
 
-## 8. Plan de implementación
+## 8. Plan de implementación consolidado
 
-### Semana 1 — Foundation
-- Repo público + scaffolding Next.js 16
-- Drizzle schema + migraciones iniciales
-- better-auth con multi-tenant orgs + RLS setup
-- UI base con shadcn/ui + Tremor + 2 themes
-- Docker Compose con Postgres + Next.js + Puppeteer
+### Semana 1 — Foundation (Cerrado)
+- Repo + scaffolding Next.js 16 + TypeScript strict
+- Drizzle schema + migraciones + RLS policies
+- better-auth con multi-tenant orgs + permissions RBAC
+- UI base con shadcn/ui + temas `moderno-saas` y `corporate`
+- Docker Compose multi-container
 
-### Semana 2 — Conectores + Query engine
-- 3 conectores P0 (Postgres, Stripe, Google Sheets)
-- Query validation pipeline (read-only check para Postgres)
-- 7 widgets con Tremor/Recharts
-- Sistema de layouts (2 temas: moderno-saas + corporate)
+### Semana 2 — Conectores + Query engine (Cerrado)
+- Conectores Postgres, MySQL, Stripe, Sheets, CSV/Excel, Shopify
+- Query validation pipeline (`validate-query` SELECT-only, SSRF prevention)
+- 7 widgets con Tremor/Recharts y HighDensityChart
+- Sistema de layouts y responsive grid
 
-### Semana 3 — AI layer
-- Multi-LLM router funcional (3 providers: OpenAI, Anthropic, Gemini)
-- AI-genera-dashboards con queries REALES (no data ficticia)
-- Chat panel persistente
-- Edit iterativo in-place
+### Semana 3 — AI layer + NLQA (Cerrado)
+- Multi-LLM router funcional (OpenAI, Anthropic, Gemini) con BYOK
+- AI-genera-dashboards con queries reales
+- Endpoint `/api/nlqa/ask` para consultas conversacionales directas
+- Edit iterativo in-place y auto-save con debounce
 
-### Semana 4 — Polish + reports + launch
-- Export PDF con Puppeteer (HTML real, fidelidad 100%)
-- Export PNG + link público (sin password)
-- Onboarding: "pega tu API key de Stripe, ya tienes dashboard"
-- README con screenshots
-- Post LinkedIn launch
+### Semana 4 — Export + Polish + Operaciones (Cerrado)
+- Worker PDF Puppeteer aislado + colas BullMQ
+- Export PNG + Links públicos auditables
+- Cron de Scheduled Reports y delivery de email
+- Onboarding interactivo y catálogo de templates
 
 ## 9. Diferenciadores vs competencia
 
-**Cuadrante único:** OSS + AI que compone dashboards + multi-LLM + self-hosted + look SaaS moderno.
+**Cuadrante único:** OSS + AI que compone dashboards con datos reales + multi-LLM router + self-hosted + look SaaS moderno "The Decision Desk".
 
-Análisis de competidores OSS (Metabase, Superset, Lightdash, Grafana, OpenBB, Briefer, Wren AI, Evidence) y SaaS con free tier (Looker Studio) vivido durante el planning phase. Conclusión: nadie combina OSS + self-host + AI generativa de dashboards completos + multi-LLM + look SaaS moderno.
+## 10. Métricas de éxito
 
-## 10. Riesgos identificados
-
-| Riesgo | Mitigación |
-|--------|-----------|
-| Chocar con features de Metabase | Metabase no tiene AI generativa ni multi-LLM, ese es el gap |
-| Scope creep | Mantener 3 conectores MVP, no 10 |
-| LLM devuelve JSON inconsistente | Schema validation + retry + fallback templates |
-| Tiempo real 4 semanas → 8 | MVP funcional en semana 3, polish en 4 es bonus |
-| Deploy on-prem complicado | Docker Compose bien documentado, Cloudflare como alternativa |
-
-## 11. Métricas de éxito (portfolio)
-
-- Repo público con README decente
-- Demo live deployada
+- Repositorio con calidad estricta (0 warnings, tests verdes)
+- Demo interactivo con datos sintéticos (SaaS, E-commerce, Agencia)
 - Video demo 60s
-- Post LinkedIn con 100+ likes
-- 10+ stars en GitHub
-- 1 caso de uso real (Bastian lo usa en su próximo trabajo)
-
----
-
-**Cambios recientes:**
-- 2026-07-21: v0.1 — Spec inicial creada, competencia mapeada, stack definido
+- Export de reportes PDF de alta fidelidad con branding listo para clientes/jefes

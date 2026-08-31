@@ -1,4 +1,16 @@
 import { defineConfig, devices } from '@playwright/test';
+import fs from 'node:fs';
+import path from 'node:path';
+
+// Automatically load .env.local for local E2E runs
+const envLocal = path.resolve(__dirname, '.env.local');
+if (fs.existsSync(envLocal) && typeof process.loadEnvFile === 'function') {
+  try {
+    process.loadEnvFile(envLocal);
+  } catch {
+    // Ignore if already loaded
+  }
+}
 
 export default defineConfig({
   testDir: './tests/e2e',

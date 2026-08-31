@@ -43,13 +43,19 @@ vi.mock('@/lib/logger', () => ({
 }));
 
 
-import { POST } from '@/app/api/dashboards/[id]/share/route';
+import { POST, GET } from '@/app/api/dashboards/[id]/share/route';
 
 function makeReq(body: unknown): Request {
   return new Request('http://localhost/api/dashboards/dash-123/share', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
+  });
+}
+
+function makeGetReq(): Request {
+  return new Request('http://localhost/api/dashboards/dash-123/share', {
+    method: 'GET',
   });
 }
 
@@ -154,5 +160,66 @@ describe('POST /api/dashboards/[id]/share', () => {
     const res = await POST(req, { params: Promise.resolve({ id: 'dash-123' }) });
     expect(res.status).toBe(403);
     expect(mockDbInsert).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET /api/dashboards/[id]/share', () => {
+  const mockFindMany = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockRequireAuth.mockReset();
+    mockWithOrgContext.mockReset();
+    mockFindMany.mockReset();
+
+    mockRequireAuth.mockResolvedValue({
+      userId: 'user-test',
+      email: 'a@b.com',
+      orgId: 'org-test',
+      role: 'admin',
+    });
+
+    (mockWithOrgContext as unknown as { mockImplementation: (impl: (...args: unknown[]) => Promise<unknown>) => void }).mockImplementation((...args: unknown[]) => {
+      const fn = args[3] as (t: unknown) => Promise<unknown>;
+      return fn({
+        query: {
+          publicLinks: {
+            findMany: mockFindMany,
+          },
+        },
+      });
+    });
+
+    process.env.NEXT_PUBLIC_APP_URL = 'http://localhost:3000';
+  });
+
+  it('lists active public links for the dashboard', async () => {
+    mockFindMany.mockResolvedValue([
+      {
+        id: 'link-1',
+        token: 'token-123456789012345678901234',
+        expiresAt: new Date('2030-01-01T00:00:00Z'),
+        viewCount: 5,
+        lastViewedAt: new Date('2026-08-01T00:00:00Z'),
+        createdAt: new Date('2026-07-01T00:00:00Z'),
+      },
+    ]);
+
+    const req = makeGetReq();
+    const res = await GET(req, { params: Promise.resolve({ id: 'dash-123' }) });
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.links).toHaveLength(1);
+    expect(json.links[0].url).toBe('http://localhost:3000/share/token-123456789012345678901234');
+    expect(json.links[0].viewCount).toBe(5);
+    expect(mockRequireAuth).toHaveBeenCalledWith(req, 'dashboard.view');
+  });
+
+  it('returns 401 when session is invalid on GET', async () => {
+    mockRequireAuth.mockRejectedValueOnce(new UnauthorizedError());
+    const req = makeGetReq();
+    const res = await GET(req, { params: Promise.resolve({ id: 'dash-123' }) });
+    expect(res.status).toBe(401);
   });
 });

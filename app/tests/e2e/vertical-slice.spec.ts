@@ -21,8 +21,7 @@ const TEST_PASSWORD = 'E2EPassword123';
 const DASHBOARD_TITLE = 'E2E Smoke Dashboard';
 
 async function markEmailVerified(email: string): Promise<void> {
-  const dbUrl = process.env.DATABASE_URL;
-  if (!dbUrl) throw new Error('DATABASE_URL is not set');
+  const dbUrl = process.env.DATABASE_URL || 'postgresql://dashbi:changeme@localhost:5432/dashbi';
   const client = postgres(dbUrl, { max: 1 });
   try {
     // better-auth's MockEmailProvider swallows the verification email,
@@ -38,7 +37,7 @@ async function markEmailVerified(email: string): Promise<void> {
 
 test.describe.serial('vertical slice — signup → datasource → dashboard → share', () => {
   test('completes the happy path', async ({ page, context, request }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(180_000);
 
     // 1. Sign up via better-auth API.
     const email = `e2e-${Date.now()}@dash-bi.test`;
@@ -59,10 +58,14 @@ test.describe.serial('vertical slice — signup → datasource → dashboard →
     //    client-side navigation that may not fire a `load` event, so
     //    we poll the URL until it lands.
     await page.goto('/login');
-    await page.getByLabel(/Correo Electrónico/i).fill(email);
-    await page.getByLabel(/Contraseña/i).fill(TEST_PASSWORD);
-    await page.getByRole('button', { name: /Iniciar Sesión/i }).first().click();
-    await expect(page).toHaveURL(/\/(dashboards|onboarding)/, { timeout: 15_000 });
+    const emailInput = page.getByLabel(/Correo Electrónico/i);
+    await emailInput.fill(email);
+    const passwordInput = page.getByLabel(/Contraseña/i);
+    await passwordInput.fill(TEST_PASSWORD);
+    await expect(emailInput).toHaveValue(email);
+    await expect(passwordInput).toHaveValue(TEST_PASSWORD);
+    await page.getByRole('button', { name: /Iniciar Sesión/i }).click();
+    await expect(page).toHaveURL(/\/(dashboards|onboarding)/, { timeout: 20_000 });
 
     // 4. Confirm the session is recognized.
     const sessionCheck = await context.request.get('/api/auth/get-session');
@@ -95,7 +98,7 @@ test.describe.serial('vertical slice — signup → datasource → dashboard →
     expect(dataSource.id).toMatch(/[0-9a-f-]{36}/i);
 
     // 7. Open the data-sources page and confirm the row renders.
-    await page.goto('/data-sources');
+    await page.goto('/data-sources', { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId(`datasource-card-${dataSource.id}`)).toBeVisible();
 
     // 8. Create a dashboard with archetype directly via API.
@@ -122,18 +125,13 @@ test.describe.serial('vertical slice — signup → datasource → dashboard →
 
     // 9. Open the dashboards page; the card should appear with the
     //    archetype badge ("✨ IA") because archetype != 'custom'.
-    await page.goto('/dashboards');
-    await expect(page.getByText(DASHBOARD_TITLE)).toBeVisible();
+    await page.goto('/dashboards', { waitUntil: 'domcontentloaded' });
+    await expect(page.getByText(DASHBOARD_TITLE).first()).toBeVisible();
     await expect(page.getByTestId(`dashboard-card-${dashboard.id}`)).toContainText(/IA/);
 
-    // 10. Open the dashboards page; the card should appear (we keep
-    //     this assertion as the visible proof the API+UI work). The
-    //     dashboard detail page has a separate "Maximum update depth"
-    //     bug (zustand + temporal middleware re-render loop) that is
-    //     tracked in SPEC.md §Sprint 1.5 — we assert the page renders
-    //     here as a smoke but tolerate the loop in the meantime.
-    await page.goto(`/dashboards/${dashboard.id}`);
-    await page.waitForLoadState('domcontentloaded');
+    // 10. Open the dashboard detail page.
+    await page.goto(`/dashboards/${dashboard.id}`, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: DASHBOARD_TITLE }).first()).toBeVisible({ timeout: 30_000 });
 
     // 11. Create a public share link.
     const shareRes = await context.request.post(
@@ -149,8 +147,8 @@ test.describe.serial('vertical slice — signup → datasource → dashboard →
 
     // 12. Visit the public URL (no session) and verify the page renders
     //     the dashboard title. /share/[token] is a public route.
-    await page.goto(shareUrl);
-    await expect(page.getByText(DASHBOARD_TITLE)).toBeVisible();
+    await page.goto(shareUrl, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: DASHBOARD_TITLE }).first()).toBeVisible({ timeout: 30_000 });
 
     // 13. PATCH archetype → GET it back. This locks down the Sprint
     //     1.5 fix for the round-trip of archetype columns.

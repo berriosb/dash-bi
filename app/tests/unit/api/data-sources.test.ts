@@ -207,6 +207,56 @@ describe('POST /api/data-sources — validation', () => {
     expect(res.status).toBe(201);
   });
 
+  it('accepts valid mysql config', async () => {
+    const res = await POST(
+      makeReq({
+        name: 'MySQL Production',
+        type: 'mysql',
+        config: {
+          host: 'mysql.acme.com',
+          port: 3306,
+          database: 'shop_db',
+          username: 'app_user',
+          password: 'secret_password_123',
+        },
+      }),
+    );
+    expect(res.status).toBe(201);
+  });
+
+  it('rejects mysql config with localhost (SSRF)', async () => {
+    const res = await POST(
+      makeReq({
+        name: 'MySQL Local',
+        type: 'mysql',
+        config: {
+          host: 'localhost',
+          port: 3306,
+          database: 'shop_db',
+          username: 'root',
+          password: 'password',
+        },
+      }),
+    );
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.code).toBe('connector.ssrf_blocked');
+  });
+
+  it('accepts valid shopify config', async () => {
+    const res = await POST(
+      makeReq({
+        name: 'Shopify Tienda',
+        type: 'shopify',
+        config: {
+          shopUrl: 'tienda-demo.myshopify.com',
+          accessToken: 'shpat_1234567890abcdef1234567890',
+        },
+      }),
+    );
+    expect(res.status).toBe(201);
+  });
+
   it('writes audit log entry on success', async () => {
     const { audit } = await import('@/lib/audit/log');
     await POST(

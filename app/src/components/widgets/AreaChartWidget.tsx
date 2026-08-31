@@ -1,15 +1,38 @@
 'use client';
 
 import React from 'react';
-import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
+import {
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+} from 'recharts';
 import type { AreaChartWidget as AreaChartWidgetType } from '@/lib/widgets/types';
 import { WidgetSurface } from './WidgetSurface';
 import { HighDensityChart, HIGH_DENSITY_THRESHOLD } from './HighDensityChart';
+import {
+  CHART_COLORS,
+  chartTooltipContentStyle,
+  chartTooltipItemStyle,
+  chartAxisTickStyle,
+  chartGridStyle,
+} from './chartTheme';
 
 export function AreaChartWidget({ widget }: { widget: AreaChartWidgetType }) {
   const { config, data } = widget;
   const series = React.useMemo(() => {
-    return (data as { series?: Array<{ name: string; data: Array<{ x: string | number; y: number }> }> } | null)?.series ?? [];
+    return (
+      (data as {
+        series?: Array<{
+          name: string;
+          data: Array<{ x: string | number; y: number }>;
+        }>;
+      } | null)?.series ?? []
+    );
   }, [data]);
 
   const hasData = series.some((item) => item.data.length > 0);
@@ -25,8 +48,6 @@ export function AreaChartWidget({ widget }: { widget: AreaChartWidgetType }) {
     });
     return Array.from(map.values());
   }, [series]);
-
-  const colors = ['hsl(var(--color-primary))', 'hsl(var(--color-secondary))', 'hsl(var(--color-success))', 'hsl(var(--color-warning))', 'hsl(var(--color-accent))'];
 
   if (chartData.length >= HIGH_DENSITY_THRESHOLD) {
     const seriesKeys = series.map((s) => s.name);
@@ -47,22 +68,37 @@ export function AreaChartWidget({ widget }: { widget: AreaChartWidgetType }) {
 
   return (
     <WidgetSurface widgetId={widget.id} title={config.title} isEmpty={!hasData}>
-      <div className="widget-content" role="img" aria-label={`Gráfico de área${config.title ? `: ${config.title}` : ''}`}>
+      <div
+        className="widget-content"
+        role="img"
+        aria-label={`Gráfico de área${config.title ? `: ${config.title}` : ''}`}
+      >
         <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={chartData}>
-            {config.showGrid !== false && <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--color-border))" />}
-            <XAxis dataKey="x" stroke="hsl(var(--color-text-muted))" fontSize={12} />
-            <YAxis stroke="hsl(var(--color-text-muted))" fontSize={12} />
-            <Tooltip />
-            {config.showLegend !== false && <Legend />}
+          <AreaChart data={chartData} margin={{ top: 8, right: 12, left: 0, bottom: 4 }}>
+            {config.showGrid !== false && <CartesianGrid {...chartGridStyle} />}
+            <XAxis
+              dataKey="x"
+              tick={chartAxisTickStyle}
+              stroke="hsl(var(--color-border-hsl))"
+            />
+            <YAxis
+              tick={chartAxisTickStyle}
+              stroke="hsl(var(--color-border-hsl))"
+            />
+            <Tooltip
+              contentStyle={chartTooltipContentStyle}
+              itemStyle={chartTooltipItemStyle}
+            />
+            {config.showLegend !== false && <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '8px' }} />}
             {series.map((item, index) => (
               <Area
                 key={item.name}
                 type={config.smooth ? 'monotone' : 'linear'}
                 dataKey={item.name}
-                stroke={colors[index % colors.length]}
-                fill={colors[index % colors.length]}
-                fillOpacity={0.14}
+                stroke={CHART_COLORS[index % CHART_COLORS.length]}
+                fill={CHART_COLORS[index % CHART_COLORS.length]}
+                fillOpacity={0.16}
+                strokeWidth={2}
                 stackId={config.stacked ? '1' : undefined}
               />
             ))}

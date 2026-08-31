@@ -91,7 +91,11 @@ app/
 
 ## Status actual
 
-**Sprint 1 — Foundation (~60% completo):**
+**MVP funcional — estabilización y cierre:**
+
+La base Foundation y el vertical slice principal ya están implementados. El
+estado detallado, incluyendo qué está probado y qué depende de Docker/E2E, vive
+en [`../docs/MVP-STATUS.md`](../docs/MVP-STATUS.md).
 
 - [x] Scaffolding Next.js 16 + configs
 - [x] Schema Drizzle (12 tablas: orgs, users, accounts, sessions, verifications, org_members, data_sources, dashboards, dashboard_versions, public_links, llm_usage, audit_log)
@@ -111,30 +115,21 @@ app/
 - [x] 3 conectores (Postgres, Stripe, Sheets)
 - [x] Dashboard archetypes (8 curados + 7 patrones atómicos + 4 axes de variación)
 - [x] Auth flows: /login, /signup, magic link, Google OAuth
-- [x] App shell: Header + Sidebar + OrgSwitcher + theme switcher
+- [x] App shell: Header + Sidebar + selector real de organizaciones + theme switcher
 - [x] Logger Pino con redaction + Sentry setup
 - [x] Docker Compose (Postgres + Redis + app + PDF worker)
 - [x] CI: lint + typecheck + unit + security + e2e + audit
-- [x] **386 tests passing** (unit + security)
+- [x] Tests unitarios y de seguridad para API, seguridad, conectores y UI
 - [x] ESLint 9 flat config + custom rule
 - [x] ErrorState + WidgetErrorState components
 - [x] Demo dashboard público en `/demo/dashboard`
 
-**Pendiente Sprint 1 (Semana 1):**
+**Pendiente para declarar el MVP listo:**
 
-- [ ] Wire `toast()` en actions (signup, login, save dashboard)
-- [ ] Templates pre-hechos (5-10 dashboards por industria)
-- [ ] Onboarding conectores wizards (UI forms)
-- [ ] Dark mode + contraste tuning
-- [ ] E2E tests de auth flow completo
-
-**Próximo Sprint 2 — Conectores + Widgets:**
-
-- [ ] Wizard de conexión Postgres/Stripe/Sheets (UI)
-- [ ] Tremor/Recharts reales en widgets (ya parcialmente hecho con Recharts)
-- [ ] TanStack Query setup para caching de queries/dashboards (Provider ya existe)
-- [ ] Property panel (sidebar derecho)
-- [ ] Add widget dialog
+- [ ] Ejecutar integración RLS y E2E con Docker real
+- [ ] Validar signup → onboarding → fuente → generación → edición → exportación → sharing
+- [ ] Completar UI de scheduled reports y las superficies parciales de NLQA/demo mode
+- [ ] Actualizar las acceptance criteria con evidencia de pruebas
 
 ## Cómo arrancar
 

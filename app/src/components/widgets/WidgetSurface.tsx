@@ -8,6 +8,7 @@ type WidgetSurfaceProps = {
   children: ReactNode;
   isEmpty?: boolean;
   emptyMessage?: string;
+  isLoading?: boolean;
   className?: string;
 };
 
@@ -18,6 +19,7 @@ export function WidgetSurface({
   children,
   isEmpty = false,
   emptyMessage = 'No hay datos disponibles para este widget.',
+  isLoading = false,
   className = '',
 }: WidgetSurfaceProps) {
   const titleId = `widget-title-${widgetId.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
@@ -26,6 +28,7 @@ export function WidgetSurface({
     <section
       className={`widget-wrapper ${className}`.trim()}
       aria-labelledby={title ? titleId : undefined}
+      aria-busy={isLoading}
       data-widget-id={widgetId}
     >
       {title && (
@@ -33,7 +36,11 @@ export function WidgetSurface({
           {title}
         </h3>
       )}
-      {isEmpty ? (
+      {isLoading ? (
+        <div className="widget-skeleton-body animate-pulse" role="status" aria-label="Cargando...">
+          <div className="skeleton-bar w-full h-32 rounded-md" />
+        </div>
+      ) : isEmpty ? (
         <div className="widget-empty" role="status">
           <span className="widget-empty-mark" aria-hidden="true">
             —

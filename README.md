@@ -7,7 +7,7 @@
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Stack: Next.js 16](https://img.shields.io/badge/Next.js-16-black)](https://nextjs.org)
 [![TypeScript: strict](https://img.shields.io/badge/TypeScript-strict-blue)](https://www.typescriptlang.org)
-[![Tests: 553](https://img.shields.io/badge/tests-553%20passing-brightgreen)](./app/tests)
+[![Tests: 594](https://img.shields.io/badge/tests-594%20unit%20and%20security-brightgreen)](./app/tests)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](./CONTRIBUTING.md)
 
 > **NOTA:** Este es el directorio de trabajo local del proyecto. El código de la aplicación vive en `./app/`.
@@ -74,13 +74,17 @@ dash-bi/
     ├── src/                        ← Next.js App Router + componentes
     ├── drizzle/migrations/         ← SQL migrations
     ├── scripts/                    ← setup-rls + init-readonly
-    ├── tests/                      ← 553 tests passing (unit + security)
+    ├── tests/                      ← unit + security + integración + E2E
     └── ...
 ```
 
 ## Status actual
 
-**Sprint 1 — Foundation (~60% completo):**
+**MVP funcional — etapa de estabilización y cierre:**
+
+El proyecto ya superó la fase Foundation y contiene el vertical slice principal.
+El estado verificable y las limitaciones de entorno están en
+[`docs/MVP-STATUS.md`](./docs/MVP-STATUS.md).
 
 Ver [`app/README.md`](./app/README.md) para detalle completo.
 
@@ -92,7 +96,7 @@ Ver [`app/README.md`](./app/README.md) para detalle completo.
 - [x] RLS policies + script de setup
 - [x] `withOrgContext()` wrapper + ESLint rule anti-data-leak v1.1
 - [x] Security utilities (encryption, validate-query, validate-connection)
-- [x] **553 tests passing** (unit + security, sin DB)
+- [x] Suite amplia de tests unitarios y de seguridad
 - [x] Docker Compose (Postgres + Redis + app + PDF worker)
 - [x] CI/CD (lint + typecheck + unit + security + e2e + audit)
 - [x] Logger con redaction (Pino) + Sentry
@@ -106,13 +110,12 @@ Ver [`app/README.md`](./app/README.md) para detalle completo.
 - [x] 3 conectores (Postgres, Stripe, Sheets)
 - [x] Demo dashboard público en `/demo/dashboard`
 
-**Próximo (cierre Sprint 1):**
+**Siguiente objetivo — release readiness:**
 
-- [ ] Toast wiring en actions
-- [ ] Templates pre-hechos
-- [ ] Wizards de conectores
-- [ ] Dark mode
-- [ ] E2E tests auth flow completo
+- [ ] Ejecutar integración RLS y E2E con Docker real
+- [ ] Validar vertical slice completo con datos reales
+- [ ] Completar superficies parciales de NLQA, demo mode y scheduled reports
+- [ ] Sincronizar acceptance criteria de las specs con pruebas reales
 
 ## Cómo arrancar
 
@@ -135,6 +138,7 @@ App corre en http://localhost:3000.
 Ver `docs/IMPLEMENTATION-PLAN-v1.0.md` para el plan consolidado.
 
 **Cambios clave vs v0.1:**
+
 - AI SDK v6 (no v4)
 - dnd-kit (no react-grid-layout)
 - TanStack Query (separado de Zustand)

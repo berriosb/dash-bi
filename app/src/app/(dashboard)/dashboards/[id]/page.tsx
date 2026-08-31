@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { useShallow } from 'zustand/react/shallow';
@@ -9,6 +9,7 @@ import { DashboardControls } from '@/components/dashboard/DashboardControls';
 import { DashboardStatusBar } from '@/components/dashboard/DashboardStatusBar';
 import { PropertyPanel } from '@/components/properties/PropertyPanel';
 import { AddWidgetDialog } from '@/components/widgets/dialogs/AddWidgetDialog';
+import { ExportShareDialog } from '@/components/dashboard/ExportShareDialog';
 import { NlqaPanel } from '@/components/nlqa/NlqaPanel';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -22,8 +23,6 @@ import {
   ArrowLeft,
   Edit3,
   Eye,
-  Download,
-  Share2,
   Undo2,
   Redo2,
   MessageSquare,
@@ -36,8 +35,6 @@ async function fetchDashboard(id: string): Promise<Dashboard> {
     throw Object.assign(new Error(err?.error ?? `HTTP ${res.status}`), { status: res.status });
   }
   const data = await res.json();
-  // The backend stores archetype + variant as top-level columns; fold
-  // them into the Dashboard shape so callers see a single object.
   const d = data.dashboard as Dashboard & {
     archetype?: ArchetypeId;
     archetypeVariant?: ArchetypeVariant;
@@ -55,7 +52,8 @@ async function fetchDashboard(id: string): Promise<Dashboard> {
 export default function DashboardDetailPage() {
   const router = useRouter();
   const params = useParams();
-  const dashboardId = (params?.id as string) ?? 'demo';
+  const rawId = params?.id;
+  const dashboardId: string = typeof rawId === 'string' ? rawId : (Array.isArray(rawId) && rawId[0] ? rawId[0] : 'demo');
   const { isEditing, setEditMode, activeTheme, setActiveTheme, selectedWidgetId, setSelectedWidgetId, isNlqaOpen, toggleNlqa } = useUIStore();
   const { toast } = useToast();
 
@@ -80,16 +78,27 @@ export default function DashboardDetailPage() {
       archetypeVariant: s.archetypeVariant,
     })),
   );
+  const dashboardGridRef = useRef<HTMLDivElement>(null);
+
+  const { data: remoteDashboard, isLoading, error } = useQuery({
+    queryKey: ['dashboard', dashboardId],
+    queryFn: () => fetchDashboard(dashboardId),
+    enabled: dashboardId !== 'demo',
+    retry: 1,
+  });
+
   const dashboard: Dashboard = useMemo(
     () => ({
-      title: storeState.title,
-      description: storeState.description,
-      theme: storeState.theme,
-      widgets: storeState.widgets,
-      archetype: storeState.archetype,
-      archetypeVariant: storeState.archetypeVariant,
+      title: isEditing ? storeState.title : (remoteDashboard?.title ?? storeState.title),
+      description: isEditing ? storeState.description : (remoteDashboard?.description ?? storeState.description),
+      theme: isEditing ? storeState.theme : (remoteDashboard?.theme ?? storeState.theme),
+      widgets: isEditing ? storeState.widgets : (remoteDashboard?.widgets ?? storeState.widgets),
+      archetype: isEditing ? storeState.archetype : (remoteDashboard?.archetype ?? storeState.archetype),
+      archetypeVariant: isEditing ? storeState.archetypeVariant : (remoteDashboard?.archetypeVariant ?? storeState.archetypeVariant),
     }),
     [
+      isEditing,
+      remoteDashboard,
       storeState.title,
       storeState.description,
       storeState.theme,
@@ -98,16 +107,6 @@ export default function DashboardDetailPage() {
       storeState.archetypeVariant,
     ],
   );
-
-  const [copiedShare, setCopiedShare] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
-
-  const { data: remoteDashboard, isLoading, error } = useQuery({
-    queryKey: ['dashboard', dashboardId],
-    queryFn: () => fetchDashboard(dashboardId),
-    enabled: dashboardId !== 'demo',
-    retry: 1,
-  });
 
   useEffect(() => {
     if (!remoteDashboard) return;
@@ -195,42 +194,6 @@ export default function DashboardDetailPage() {
     });
   };
 
-  const handleShareLink = async () => {
-    try {
-      const shareUrl = `${window.location.origin}/share/pub_${dashboardId}`;
-      await navigator.clipboard.writeText(shareUrl);
-      setCopiedShare(true);
-      toast({ title: 'Enlace copiado', description: shareUrl });
-      setTimeout(() => setCopiedShare(false), 2500);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Error al copiar';
-      toast({ variant: 'destructive', title: 'No pudimos copiar', description: message });
-    }
-  };
-
-  const handleExportPdf = async () => {
-    setIsExporting(true);
-    try {
-      const res = await fetch(`/api/dashboards/${dashboardId}/export/pdf`, { method: 'POST' });
-      if (res.ok) {
-        const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${dashboard.title}.pdf`;
-        a.click();
-        toast({ title: 'PDF generado', description: 'La descarga empezó automáticamente.' });
-      } else {
-        toast({ title: 'Generación de PDF encolada', description: 'Te avisamos cuando esté lista (Sprint 5).' });
-      }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Error al exportar';
-      toast({ variant: 'destructive', title: 'No pudimos exportar', description: message });
-    } finally {
-      setIsExporting(false);
-    }
-  };
-
   const showPropertyPanel = isEditing && selectedWidgetId !== null;
   const layoutClass = useMemo(
     () => `platform-editor-page ${showPropertyPanel ? 'dashboard-detail-layout-wrapper' : ''}`,
@@ -304,15 +267,6 @@ export default function DashboardDetailPage() {
           <Button
             variant="outline"
             size="sm"
-            onClick={handleShareLink}
-            className="platform-editor-action text-xs gap-1.5"
-          >
-            {copiedShare ? <span>¡Enlace copiado!</span> : <><Share2 className="w-3.5 h-3.5" /> Compartir</>}
-          </Button>
-
-          <Button
-            variant="outline"
-            size="sm"
             onClick={toggleNlqa}
             aria-pressed={isNlqaOpen}
             aria-label="Abrir chat con datos"
@@ -322,16 +276,11 @@ export default function DashboardDetailPage() {
             Preguntar
           </Button>
 
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleExportPdf}
-            disabled={isExporting}
-            className="platform-editor-action text-xs gap-1.5"
-          >
-            <Download className="w-3.5 h-3.5" />
-            {isExporting ? 'Exportando...' : 'Exportar PDF'}
-          </Button>
+          <ExportShareDialog
+            dashboardId={dashboardId}
+            dashboardTitle={dashboard.title}
+            targetRef={dashboardGridRef}
+          />
 
           <Button
             size="sm"
@@ -363,7 +312,7 @@ export default function DashboardDetailPage() {
         </div>
       )}
 
-      <div className="dashboard-detail-layout">
+      <div className="dashboard-detail-layout" ref={dashboardGridRef}>
         <DashboardGrid
           dashboard={{ ...dashboard, theme: activeTheme }}
           isEditing={isEditing}

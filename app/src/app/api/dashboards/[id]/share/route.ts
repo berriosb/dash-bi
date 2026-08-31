@@ -75,3 +75,41 @@ export async function POST(
     return errorResponse(error, req);
   }
 }
+
+export async function GET(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id: dashboardId } = await params;
+
+  try {
+    const ctx = await requireAuth(req, 'dashboard.view');
+
+    const links = await withOrgContext(ctx.orgId, ctx.userId, ctx.role, async (tx) =>
+      tx.query.publicLinks.findMany({
+        where: (t, { and, eq, isNull }) =>
+          and(
+            eq(t.orgId, ctx.orgId),
+            eq(t.dashboardId, dashboardId),
+            isNull(t.revokedAt),
+          ),
+        orderBy: (t, { desc }) => [desc(t.createdAt)],
+      })
+    );
+
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? '';
+    const formatted = links.map((l) => ({
+      id: l.id,
+      token: l.token,
+      url: `${baseUrl}/share/${l.token}`,
+      expiresAt: l.expiresAt,
+      viewCount: l.viewCount,
+      lastViewedAt: l.lastViewedAt,
+      createdAt: l.createdAt,
+    }));
+
+    return NextResponse.json({ links: formatted });
+  } catch (error) {
+    return errorResponse(error, req);
+  }
+}

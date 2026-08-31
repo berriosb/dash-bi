@@ -6,6 +6,9 @@ import { Input } from '@/components/ui/input';
 import { Sparkles, X, Loader2, MessageSquare, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/cn';
 
+import { useDashboardStore } from '@/stores/dashboardStore';
+import type { Widget, WidgetType } from '@/lib/widgets/types';
+
 export interface NlqaMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -26,6 +29,7 @@ interface NlqaPanelProps {
   dataSourceId?: string;
   open: boolean;
   onClose: () => void;
+  onSaveAsWidget?: (widget: Widget) => void;
 }
 
 const CHART_TYPE_LABEL: Record<string, string> = {
@@ -38,25 +42,39 @@ const CHART_TYPE_LABEL: Record<string, string> = {
   table: 'Tabla',
 };
 
-export function NlqaPanel({ dashboardId: _dashboardId, dataSourceId, open, onClose }: NlqaPanelProps) {
+const QUICK_SUGGESTIONS = [
+  '¿Cuáles son los 5 productos más vendidos?',
+  '¿Cuál fue el total de ingresos del último mes?',
+  '¿Cómo se distribuyen las ventas por categoría?',
+  '¿Cuál es la tasa de conversión promedio?',
+];
+
+export function NlqaPanel({
+  dashboardId: _dashboardId,
+  dataSourceId,
+  open,
+  onClose,
+  onSaveAsWidget,
+}: NlqaPanelProps) {
   const [messages, setMessages] = React.useState<NlqaMessage[]>([]);
   const [input, setInput] = React.useState('');
   const [conversationId, setConversationId] = React.useState<string | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
+  const inputRef = React.useRef<HTMLInputElement>(null);
 
   React.useEffect(() => {
     if (open) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      inputRef.current?.focus();
     }
   }, [messages, open]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || isLoading || !dataSourceId) return;
+  const handleAsk = async (questionText: string) => {
+    if (!questionText.trim() || isLoading || !dataSourceId) return;
 
-    const question = input.trim();
+    const question = questionText.trim();
     setInput('');
     setError(null);
     const userMessage: NlqaMessage = {
@@ -86,7 +104,6 @@ export function NlqaPanel({ dashboardId: _dashboardId, dataSourceId, open, onClo
         } else {
           setError(message);
         }
-        // Remove the optimistic user message on failure
         setMessages((prev) => prev.filter((m) => m.id !== userMessage.id));
         return;
       }
@@ -111,6 +128,11 @@ export function NlqaPanel({ dashboardId: _dashboardId, dataSourceId, open, onClo
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    void handleAsk(input);
   };
 
   const handleNewConversation = () => {
@@ -162,14 +184,32 @@ export function NlqaPanel({ dashboardId: _dashboardId, dataSourceId, open, onClo
           <div className="nlqa-panel__empty">
             <Sparkles className="w-6 h-6 text-violet-400 mb-2" />
             <p className="text-sm font-medium">Hacé tu primera pregunta</p>
-            <p className="text-xs text-muted-foreground mt-1">
-              Probá: &quot;¿Cuánto revenue hubo en julio?&quot; o &quot;Top 5 clientes del Q3&quot;.
+            <p className="text-xs text-muted-foreground mt-1 mb-4">
+              Preguntá en lenguaje natural sobre tus métricas o elegí una sugerencia:
             </p>
+            <div className="flex flex-col gap-1.5 w-full text-left">
+              {QUICK_SUGGESTIONS.map((suggestion) => (
+                <button
+                  key={suggestion}
+                  type="button"
+                  onClick={() => void handleAsk(suggestion)}
+                  disabled={!dataSourceId || isLoading}
+                  className="text-xs p-2 rounded border border-border/60 bg-surface/50 hover:bg-surface text-left text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+                >
+                  💬 {suggestion}
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
         {messages.map((message) => (
-          <NlqaBubble key={message.id} message={message} />
+          <NlqaBubble
+            key={message.id}
+            message={message}
+            dataSourceId={dataSourceId}
+            onSaveAsWidget={onSaveAsWidget}
+          />
         ))}
 
         {isLoading && (
@@ -190,6 +230,7 @@ export function NlqaPanel({ dashboardId: _dashboardId, dataSourceId, open, onClo
 
       <form className="nlqa-panel__form" onSubmit={handleSubmit}>
         <Input
+          ref={inputRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder={dataSourceId ? 'Preguntale a tus datos…' : 'Selecciona un data source primero'}
@@ -204,8 +245,60 @@ export function NlqaPanel({ dashboardId: _dashboardId, dataSourceId, open, onClo
   );
 }
 
-function NlqaBubble({ message }: { message: NlqaMessage }) {
+function NlqaBubble({
+  message,
+  dataSourceId,
+  onSaveAsWidget,
+}: {
+  message: NlqaMessage;
+  dataSourceId?: string;
+  onSaveAsWidget?: (widget: Widget) => void;
+}) {
   const isUser = message.role === 'user';
+  const [saved, setSaved] = React.useState(false);
+
+  const handleSaveWidget = () => {
+    if (!message.chartSuggestion || !dataSourceId) return;
+
+    const widgetType = message.chartSuggestion.type as WidgetType;
+    const storeWidgets = useDashboardStore.getState().widgets;
+    const maxRow = storeWidgets.reduce(
+      (max, w) => Math.max(max, (w.position?.row ?? 1) + (w.position?.rowSpan ?? 1)),
+      0,
+    );
+
+    const newWidget: Widget = {
+      id: `widget-nlqa-${Date.now()}`,
+      type: widgetType,
+      position: {
+        col: 1,
+        row: Math.max(1, maxRow),
+        colSpan: widgetType === 'kpi' ? 4 : 6,
+        rowSpan: widgetType === 'kpi' ? 1 : 2,
+      },
+      config: {
+        title: message.content.slice(0, 40) || 'Gráfico NLQA',
+        ...(message.chartSuggestion.config ?? {}),
+      },
+      data: null,
+      source: {
+        kind: 'query',
+        dataSourceId,
+        query: {
+          kind: 'sql',
+          sql: message.generatedSql || 'SELECT 1',
+        },
+      },
+    } as Widget;
+
+    if (onSaveAsWidget) {
+      onSaveAsWidget(newWidget);
+    } else {
+      useDashboardStore.getState().addWidget(newWidget);
+    }
+    setSaved(true);
+  };
+
   return (
     <div className={cn('nlqa-bubble', isUser ? 'nlqa-bubble--user' : 'nlqa-bubble--assistant')}>
       <p className="text-sm whitespace-pre-wrap">{message.content}</p>
@@ -225,8 +318,14 @@ function NlqaBubble({ message }: { message: NlqaMessage }) {
             📊 {CHART_TYPE_LABEL[message.chartSuggestion.type] ?? message.chartSuggestion.type}
           </span>
           <p className="text-xs text-muted-foreground">{message.chartSuggestion.rationale}</p>
-          <Button variant="outline" size="sm" disabled className="mt-2 text-xs">
-            Guardar como widget →
+          <Button
+            variant={saved ? 'default' : 'outline'}
+            size="sm"
+            disabled={saved || !dataSourceId}
+            onClick={handleSaveWidget}
+            className="mt-2 text-xs"
+          >
+            {saved ? '✓ Guardado como widget' : 'Guardar como widget →'}
           </Button>
         </div>
       )}

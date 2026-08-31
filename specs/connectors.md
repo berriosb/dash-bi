@@ -28,7 +28,7 @@ Permitir que cada `organization` en dash-bi:
 1. **Conecte fuentes de datos via UI** sin tocar código
 2. **Almacene credenciales cifradas** en DB (BYOK pattern)
 3. **Consulte datos de forma uniforme** vía una interfaz común `Connector`
-4. **Soporte 3 conectores en MVP**: PostgreSQL, Stripe API, Google Sheets
+4. **Soporte conectores en MVP**: PostgreSQL, MySQL, Stripe API, Google Sheets, CSV/Excel (tabla tenant-scoped) y Shopify
 5. **Testee la conexión** antes de guardar (UX inmediata)
 6. **Liste el schema** de cada fuente (tablas/columnas para el system prompt de la IA)
 
@@ -39,7 +39,17 @@ Permitir que cada `organization` en dash-bi:
 ```typescript
 // lib/connectors/types.ts
 
-export type ConnectorType = 'postgres' | 'stripe' | 'sheets' | 'shopify' | 'meta-ads' | 'notion';
+export type ConnectorType = 
+  | 'postgres' 
+  | 'stripe' 
+  | 'sheets' 
+  | 'csv' 
+  | 'excel' 
+  | 'spreadsheet' 
+  | 'shopify' 
+  | 'meta-ads' 
+  | 'notion' 
+  | 'mysql';
 
 export type ConnectorConfig = {
   id: string;
@@ -47,8 +57,8 @@ export type ConnectorConfig = {
   type: ConnectorType;
   name: string;                    // user-defined, ej: "Stripe producción"
   configEncrypted: string;        // JSON cifrado con credenciales
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt?: Date;
+  updatedAt?: Date;
 };
 
 // Cada connector implementa esta interfaz
@@ -64,21 +74,25 @@ export interface Connector {
   // Ejecuta una query/operación y devuelve data
   // Para SQL connectors: ejecuta SQL
   // Para API connectors: ejecuta una operación específica
-  executeQuery<T = unknown>(query: Query): Promise<QueryResult<T>>;
+  executeQuery<T = Record<string, unknown>>(query: Query): Promise<QueryResult<T>>;
 }
+
+export type ConnectorColumn = {
+  name: string;
+  type: string;        // 'string', 'number', 'boolean', 'date', 'datetime', 'json'
+  nullable?: boolean;
+  description?: string;
+};
+
+export type ConnectorTable = {
+  name: string;
+  description?: string;
+  columns: ConnectorColumn[];
+};
 
 export type ConnectorSchema = {
   // Estructura jerárquica que se inyecta al system prompt
-  tables: Array<{
-    name: string;
-    description?: string;
-    columns: Array<{
-      name: string;
-      type: string;        // 'string', 'number', 'date', etc.
-      nullable?: boolean;
-      description?: string;
-    }>;
-  }>;
+  tables: ConnectorTable[];
 };
 
 /**
@@ -87,7 +101,7 @@ export type ConnectorSchema = {
  * y relaciones de llaves foráneas para no desbordar la ventana de contexto de tokens.
  */
 export function pruneSchemaForPrompt(schema: ConnectorSchema, userPrompt: string, maxTables = 15): ConnectorSchema {
-  if (schema.tables.length <= maxTables) return schema;
+  if (!schema.tables || schema.tables.length <= maxTables) return schema;
   const keywords = userPrompt.toLowerCase().split(/\s+/).filter(w => w.length > 2);
   const scored = schema.tables.map(table => {
     let score = 0;
@@ -105,10 +119,11 @@ export function pruneSchemaForPrompt(schema: ConnectorSchema, userPrompt: string
 // Query discriminada por tipo de fuente
 export type Query = 
   | { kind: 'sql'; sql: string; params?: unknown[] }
-  | { kind: 'stripe'; operation: StripeOperation; params: unknown }
-  | { kind: 'sheets'; spreadsheetId: string; range: string };
+  | { kind: 'stripe'; operation: StripeOperation; params?: unknown }
+  | { kind: 'sheets'; spreadsheetId: string; range: string }
+  | { kind: 'spreadsheet'; fileId: string; sql: string; params?: unknown[] };
 
-export type QueryResult<T> = {
+export type QueryResult<T = Record<string, unknown>> = {
   rows: T[];
   rowCount: number;
   executionTimeMs: number;
@@ -121,15 +136,23 @@ export type QueryResult<T> = {
 ```typescript
 // lib/connectors/registry.ts
 import { PostgresConnector } from './implementations/postgres';
+import { MySQLConnector } from './implementations/mysql';
 import { StripeConnector } from './implementations/stripe';
 import { SheetsConnector } from './implementations/sheets';
+import { SpreadsheetConnector } from './implementations/spreadsheet';
+import { ShopifyConnector } from './implementations/shopify';
 
 const registry: Record<ConnectorType, new (config: ConnectorConfig) => Connector> = {
   postgres: PostgresConnector,
+  mysql: MySQLConnector,
   stripe: StripeConnector,
   sheets: SheetsConnector,
+  spreadsheet: SpreadsheetConnector,
+  shopify: ShopifyConnector,
+  // Alias de subida de archivos que delegan en spreadsheet:
+  csv: SpreadsheetConnector,
+  excel: SpreadsheetConnector,
   // Fase 2:
-  // shopify: ShopifyConnector,
   // 'meta-ads': MetaAdsConnector,
   // notion: NotionConnector,
 };

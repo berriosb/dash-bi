@@ -22,6 +22,15 @@ const PostgresConfigSchema = z.object({
   ssl: z.boolean().optional(),
 });
 
+const MysqlConfigSchema = z.object({
+  host: z.string().min(1).max(253),
+  port: z.number().int().positive().max(65535).default(3306),
+  database: z.string().min(1).max(63),
+  username: z.string().min(1).max(63),
+  password: z.string().min(1).max(256),
+  ssl: z.boolean().optional(),
+});
+
 const StripeConfigSchema = z.object({
   apiKey: z.string().regex(/^sk_(live|test)_[a-zA-Z0-9]{20,}$/, 'Formato de Stripe API key inválido'),
 });
@@ -32,9 +41,14 @@ const SheetsConfigSchema = z.object({
   sheetNames: z.array(z.string()).optional(),
 });
 
+const ShopifyConfigSchema = z.object({
+  shopUrl: z.string().min(3).max(253),
+  accessToken: z.string().min(10).max(256),
+});
+
 const CreateDataSourceSchema = z.object({
   name: z.string().min(1).max(200),
-  type: z.enum(['postgres', 'stripe', 'sheets']),
+  type: z.enum(['postgres', 'mysql', 'stripe', 'sheets', 'shopify']),
   config: z.unknown(),
 });
 
@@ -145,6 +159,36 @@ export async function POST(req: Request) {
         );
       }
       validatedConfig = result.data as Record<string, unknown>;
+    } else if (type === 'mysql') {
+      const result = MysqlConfigSchema.safeParse(config);
+      if (!result.success) {
+        const correlationId = getOrGenerateCorrelationId(req);
+        return NextResponse.json(
+          {
+            code: 'validation.invalid_format',
+            message: 'Revisá los campos marcados.',
+            correlationId,
+            retryable: false,
+            fieldErrors: flattenZod(result.error),
+          },
+          { status: 400, headers: { 'x-correlation-id': correlationId } },
+        );
+      }
+      try {
+        validatePostgresHost(result.data.host);
+      } catch (ssrfErr) {
+        const correlationId = getOrGenerateCorrelationId(req);
+        return NextResponse.json(
+          {
+            code: 'connector.ssrf_blocked',
+            message: ssrfErr instanceof Error ? ssrfErr.message : 'Host bloqueado',
+            correlationId,
+            retryable: false,
+          },
+          { status: 400, headers: { 'x-correlation-id': correlationId } },
+        );
+      }
+      validatedConfig = result.data as Record<string, unknown>;
     } else if (type === 'stripe') {
       const result = StripeConfigSchema.safeParse(config);
       if (!result.success) {
@@ -163,6 +207,22 @@ export async function POST(req: Request) {
       validatedConfig = result.data as Record<string, unknown>;
     } else if (type === 'sheets') {
       const result = SheetsConfigSchema.safeParse(config);
+      if (!result.success) {
+        const correlationId = getOrGenerateCorrelationId(req);
+        return NextResponse.json(
+          {
+            code: 'validation.invalid_format',
+            message: 'Revisá los campos marcados.',
+            correlationId,
+            retryable: false,
+            fieldErrors: flattenZod(result.error),
+          },
+          { status: 400, headers: { 'x-correlation-id': correlationId } },
+        );
+      }
+      validatedConfig = result.data as Record<string, unknown>;
+    } else if (type === 'shopify') {
+      const result = ShopifyConfigSchema.safeParse(config);
       if (!result.success) {
         const correlationId = getOrGenerateCorrelationId(req);
         return NextResponse.json(

@@ -1,7 +1,7 @@
 import type { NextRequest } from 'next/server';
 import { auth } from '@/lib/auth/config';
 import { db } from '@/db/client';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 import { orgMembers } from '@/db/schema';
 import { hasPermission, type OrgRole } from './permissions';
 import { UnauthorizedError, ForbiddenError } from './context';
@@ -48,10 +48,18 @@ export async function getAuthContext(
     (req as NextRequest).cookies?.get('dashbi.activeOrgId')?.value ??
     null;
 
-  const member = await db.query.orgMembers.findFirst({
-    where: requestedOrgId
-      ? and(eq(orgMembers.userId, userId), eq(orgMembers.orgId, requestedOrgId))
-      : eq(orgMembers.userId, userId),
+  const member = await db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT set_config('app.current_user_id', ${userId}, true)`);
+    const [row] = await tx
+      .select()
+      .from(orgMembers)
+      .where(
+        requestedOrgId
+          ? and(eq(orgMembers.userId, userId), eq(orgMembers.orgId, requestedOrgId))
+          : eq(orgMembers.userId, userId),
+      )
+      .limit(1);
+    return row;
   });
 
   if (!member) {

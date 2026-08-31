@@ -36,16 +36,20 @@ Permitir que cada `organization` en dash-bi:
 
 ## 2. Providers soportados (MVP = 3)
 
-| Provider | Modelos default | Costo (1M tokens) | Caso de uso |
-|----------|-----------------|--------------------|-------------|
-| **OpenAI** | `gpt-4o`, `gpt-4o-mini` | $2.50-15 input / $10-60 output | Default, mejor calidad general |
-| **Anthropic** | `claude-3-5-sonnet-latest`, `claude-3-5-haiku-latest` | $3-15 input / $15-75 output | Mejor para prompts largos, código |
-| **Google Gemini** | `gemini-1.5-pro`, `gemini-1.5-flash` | $1.25-10 input / $5-40 output | Más barato, default para plan free |
+| Provider | Modelos default | Modelos rápidos (NLQA / low latency) | Caso de uso principal |
+|----------|-----------------|--------------------------------------|-----------------------|
+| **OpenAI** | `gpt-4o` | `gpt-4o-mini` | Default balanceado, generación completa |
+| **Anthropic** | `claude-3-5-sonnet-latest` | `claude-3-5-haiku-latest` | Prompts estructurados largos y SQL complejo |
+| **Google Gemini** | `gemini-1.5-pro` | `gemini-1.5-flash` / `gemini-2.0-flash` | Más económico, excelente para NLQA y streaming |
+
+**Estrategia de ruteo por subsistema:**
+- **Generación de Dashboards (`/api/dashboards/generate`)**: Utiliza el modelo configurado por la organización (`gpt-4o`, `claude-3-5-sonnet`, `gemini-1.5-pro`) para asegurar la máxima calidad en selección de archetype y queries SQL complejas.
+- **Natural-Language Q&A (`/api/nlqa/ask`)**: Optimizado para latencia sub-5s utilizando tiers rápidos (`gpt-4o-mini`, `claude-3-5-haiku`, `gemini-1.5-flash`).
 
 **Por qué estos 3 y no 5:**
 - OpenAI: standard de la industria, default del usuario
 - Anthropic: alternativa seria con JSON mode excelente
-- Gemini: provider oficial de Google, más barato para default
+- Gemini: provider oficial de Google, más rápido y costo-eficiente
 - ❌ Ollama: requiere GPU + binario + modelos 4-70GB, retrasa MVP 2 semanas (Fase 2)
 - ❌ minimax: provider community sin garantía de mantenimiento (Fase 2 si aparece provider oficial)
 

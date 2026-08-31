@@ -2,7 +2,11 @@
 
 > Specs detalladas por feature. Cada spec es un entregable implementable.
 
-**Última actualización:** 2026-07-22 (gap fixes + 4 specs nuevos)
+**Última actualización:** 2026-08-10 (MVP funcional en estabilización)
+
+> Las casillas de esta lista indican que existe la spec, no que todos sus
+> criterios estén verificados. Para el estado de implementación consultar
+> [`docs/MVP-STATUS.md`](../docs/MVP-STATUS.md).
 
 ## Specs
 
@@ -61,6 +65,7 @@ Análisis competitivo post-auditoría v1.0 identificó features **que la compete
 
 **Completos (v0.5):** 13 core + 3 tier-1 = **16 specs**.
 **Pendientes Tier 2 (competitivo, no bloqueante):**
+
 - ~~Scheduled email/Slack reports (`scheduled-reports.md`, reusa PDF worker)~~ ✅ subido a MVP (v0.6)
 - Embed mode (`embed-mode.md`, iframe con token)
 - AI explica cada widget ("¿Por qué bajó revenue?")
