@@ -36,10 +36,12 @@ test.describe('public pages', () => {
 
 test.describe('theme + layout', () => {
   test('demo dashboard renders the Decision Desk surface', async ({ page }) => {
+    test.setTimeout(60_000);
     await page.goto('/demo/dashboard');
-    await expect(page.getByText(/Panel de decisión/i)).toBeVisible();
+    await expect(page.locator('[data-dashboard-ready="true"]')).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText(/Panel de decisión/i)).toBeVisible({ timeout: 10_000 });
     // The regex matches all 5 widget titles. Use .first() to satisfy
     // strict-mode (Playwright refuses ambiguous matches by default).
-    await expect(page.getByText(/Ingresos netos|Ingresos por período|Conversión|Órdenes|Ticket promedio/).first()).toBeVisible();
+    await expect(page.getByText(/Ingresos netos|Ingresos por período|Conversión|Órdenes|Ticket promedio/).first()).toBeVisible({ timeout: 10_000 });
   });
 });

@@ -22,7 +22,7 @@ export function WidgetSurface({
   isLoading = false,
   className = '',
 }: WidgetSurfaceProps) {
-  const titleId = `widget-title-${widgetId.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+  const titleId = widgetId ? `widget-title-${String(widgetId).replace(/[^a-zA-Z0-9_-]/g, '-')}` : undefined;
 
   return (
     <section

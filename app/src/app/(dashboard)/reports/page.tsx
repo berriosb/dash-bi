@@ -185,6 +185,7 @@ export default function ReportsPage() {
           </p>
         </div>
         <Button
+          data-testid="new-report-button"
           onClick={() => {
             setError(null);
             setShowForm((value) => !value);
@@ -204,7 +205,7 @@ export default function ReportsPage() {
       )}
 
       {showForm && (
-        <Card>
+        <Card data-testid="create-report-card">
           <CardHeader>
             <CardTitle>Programar un envío</CardTitle>
             <CardDescription>

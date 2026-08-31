@@ -3,6 +3,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { DashboardGrid } from '@/components/dashboard/DashboardGrid';
+import { ExportShareDialog } from '@/components/dashboard/ExportShareDialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Sparkles, ArrowRight, Palette } from 'lucide-react';
@@ -286,6 +287,7 @@ export function DemoDashboardViewer() {
         </div>
 
         <div className="flex items-center gap-2">
+          <ExportShareDialog dashboardId="demo" dashboardTitle={currentDashboard.title} />
           <Button asChild size="sm" className="gap-1.5">
             <Link href="/signup">
               <span>Crear mi dashboard gratis</span>

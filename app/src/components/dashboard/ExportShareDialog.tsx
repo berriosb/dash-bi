@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { createPortal } from 'react-dom';
 import html2canvas from 'html2canvas';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -296,13 +297,15 @@ export function ExportShareDialog({
         <span>Exportar & Compartir</span>
       </Button>
 
-      {open && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="export-share-dialog-title"
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in-0"
-        >
+      {open &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="export-share-dialog-title"
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in-0"
+          >
           <div className="w-full max-w-lg overflow-hidden rounded-xl border border-border bg-card shadow-2xl text-card-foreground">
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-border/70 px-6 py-4">
@@ -715,7 +718,8 @@ export function ExportShareDialog({
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );

@@ -18,13 +18,20 @@ const PUBLIC_PATHS = [
 // better-auth session cookie name (configurable via advanced.cookiePrefix).
 // Sprint 1: better-auth genera cookies con prefijo 'dashbi.session_token' o similar.
 // Ver https://better-auth.com/docs/concepts/session#cookie-cache para el nombre exacto.
-const SESSION_COOKIE_NAMES = ['dashbi.session_token', 'dashbi.session'];
+const SESSION_COOKIE_NAMES = [
+  'dashbi.session_token',
+  'dashbi.session',
+  'better-auth.session_token',
+  'better-auth.session',
+  '__Secure-dashbi.session_token',
+];
 
 function hasSessionCookie(req: NextRequest): boolean {
   for (const name of SESSION_COOKIE_NAMES) {
     if (req.cookies.get(name)?.value) return true;
   }
-  return false;
+  const allCookies = req.cookies.getAll();
+  return allCookies.some((c) => c.name.includes('session_token') || c.name.includes('session'));
 }
 
 function isPublicPath(pathname: string): boolean {

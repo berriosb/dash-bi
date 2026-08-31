@@ -44,6 +44,41 @@ export async function getEmbedDashboard(
 
   const { payload } = verification;
 
+  if (payload.dashboardId === 'demo') {
+    return {
+      status: 'ok',
+      dashboard: {
+        id: 'demo',
+        orgId: payload.orgId,
+        title: 'Ingresos y rendimiento (Demo)',
+        description: 'Dashboard de demostración para pruebas de integración.',
+        theme: payload.theme ?? 'moderno-saas',
+        widgets: [
+          {
+            type: 'kpi',
+            id: 'demo-revenue',
+            position: { col: 1, row: 1, colSpan: 6, rowSpan: 1 },
+            config: { title: 'Ingresos netos', format: 'currency', showDelta: true },
+            data: { value: 128400, delta: 8.4 },
+          },
+          {
+            type: 'kpi',
+            id: 'demo-orders',
+            position: { col: 7, row: 1, colSpan: 6, rowSpan: 1 },
+            config: { title: 'Órdenes', format: 'number', showDelta: true },
+            data: { value: 1842, delta: 4.1 },
+          },
+        ],
+      },
+      config: {
+        theme: payload.theme ?? 'moderno-saas',
+        hideTitle: Boolean(payload.hideTitle),
+        allowExport: Boolean(payload.allowExport),
+        cspHeader: getCspFrameAncestors(payload.allowedOrigins),
+      },
+    };
+  }
+
   const dashboard = await withOrgContext(payload.orgId, null, 'viewer', async (tx) =>
     tx.query.dashboards.findFirst({ where: eq(dashboards.id, payload.dashboardId) })
   );

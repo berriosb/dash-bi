@@ -183,7 +183,7 @@ function LoginForm() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} action="#" className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="email">Correo Electrónico</Label>
             <Input

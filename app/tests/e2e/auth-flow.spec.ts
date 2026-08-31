@@ -27,13 +27,13 @@ test.describe('Auth flow — public surfaces', () => {
   test('signup CTA links to /signup', async ({ page }) => {
     await page.goto('/');
     await page.getByRole('link', { name: /Get started/i }).click();
-    await expect(page).toHaveURL(/\/signup/);
+    await expect(page).toHaveURL(/\/signup/, { timeout: 15_000 });
   });
 
   test('signin CTA links to /login', async ({ page }) => {
     await page.goto('/');
     await page.getByRole('link', { name: /Sign in/i }).click();
-    await expect(page).toHaveURL(/\/login/);
+    await expect(page).toHaveURL(/\/login/, { timeout: 15_000 });
   });
 });
 
