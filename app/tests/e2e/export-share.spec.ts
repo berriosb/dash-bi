@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-test.describe('Export & Share Dialog E2E', () => {
+test.describe('Export & Share Dialog E2E', { tag: '@smoke' }, () => {
   test('opens export dialog and switches tabs on demo dashboard', async ({ page }) => {
     await page.goto('/demo/dashboard');
     await expect(page.locator('[data-dashboard-ready="true"]')).toBeVisible({ timeout: 20_000 });

@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { generateEmbedToken } from '../../src/lib/embed/token';
 
-test.describe('Embed Mode E2E', () => {
+test.describe('Embed Mode E2E', { tag: '@critical' }, () => {
   const secretKey = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 
   test.beforeAll(() => {

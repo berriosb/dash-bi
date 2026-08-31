@@ -19,7 +19,7 @@ import { signUpAndVerify, signInViaUI } from './helpers/auth';
 
 const DASHBOARD_TITLE = 'E2E Smoke Dashboard';
 
-test.describe.serial('vertical slice — signup → datasource → dashboard → share', () => {
+test.describe.serial('vertical slice — signup → datasource → dashboard → share', { tag: '@slow' }, () => {
   test('completes the happy path', async ({ page, context, request }) => {
     test.setTimeout(180_000);
 

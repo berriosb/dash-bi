@@ -17,7 +17,7 @@ import { LoginPage } from './pages/login.page';
  *     si no hay DB; en CI se mockean via Playwright's request interception (futuro).
  */
 
-test.describe('Auth flow — public surfaces', () => {
+test.describe('Auth flow — public surfaces', { tag: '@smoke' }, () => {
   test('home page renders Get started + Sign in CTAs', async ({ page }) => {
     await page.goto('/');
     await expect(page.getByRole('heading', { name: 'dash-bi' })).toBeVisible();
@@ -38,7 +38,7 @@ test.describe('Auth flow — public surfaces', () => {
   });
 });
 
-test.describe('Auth flow — login page', () => {
+test.describe('Auth flow — login page', { tag: '@smoke' }, () => {
   test('login exposes password and magic link tabs', async ({ page }) => {
     const login = new LoginPage(page);
     await login.goto();
@@ -74,7 +74,7 @@ test.describe('Auth flow — login page', () => {
   });
 });
 
-test.describe('Auth flow — signup page', () => {
+test.describe('Auth flow — signup page', { tag: '@smoke' }, () => {
   test('signup exposes organization, user name, email and password fields', async ({ page }) => {
     await page.goto('/signup');
     await expect(page.getByRole('heading', { name: /Crear Organización/i })).toBeVisible();
@@ -96,7 +96,7 @@ test.describe('Auth flow — signup page', () => {
   });
 });
 
-test.describe('Auth flow — protected routes', () => {
+test.describe('Auth flow — protected routes', { tag: '@critical' }, () => {
   test('redirects unauthenticated user from /dashboards to /login with redirect param', async ({ page }) => {
     await page.goto('/dashboards');
     await expect(page).toHaveURL(/\/login\?redirect=/);
@@ -118,7 +118,7 @@ test.describe('Auth flow — protected routes', () => {
   });
 });
 
-test.describe('Auth flow — accessibility', () => {
+test.describe('Auth flow — accessibility', { tag: '@smoke' }, () => {
   test('login page has proper language attribute', async ({ page }) => {
     await page.goto('/login');
     await expect(page.locator('html')).toHaveAttribute('lang', 'es');

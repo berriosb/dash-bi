@@ -7,7 +7,7 @@ import { test, expect } from '@playwright/test';
  * Sprint 1: smoke mínimo. Cobertura completa se expande en Semana 2+.
  */
 
-test.describe('public pages', () => {
+test.describe('public pages', { tag: '@smoke' }, () => {
   test('home page loads with branded content', async ({ page }) => {
     await page.goto('/');
     await expect(page.getByRole('heading', { name: 'dash-bi' })).toBeVisible();
@@ -34,7 +34,7 @@ test.describe('public pages', () => {
   });
 });
 
-test.describe('theme + layout', () => {
+test.describe('theme + layout', { tag: '@smoke' }, () => {
   test('demo dashboard renders the Decision Desk surface', async ({ page }) => {
     test.setTimeout(60_000);
     await page.goto('/demo/dashboard');

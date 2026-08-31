@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { signUpAndVerify, signInViaUI } from './helpers/auth';
 import { OnboardingPage } from './pages/onboarding.page';
 
-test.describe.serial('Onboarding Flow E2E', () => {
+test.describe.serial('Onboarding Flow E2E', { tag: '@slow' }, () => {
   test('navigates through the step-by-step onboarding wizard', async ({ page, request }) => {
     test.setTimeout(120_000);
 
