@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { LoginPage } from './pages/login.page';
 
 /**
  * Auth flow E2E — Sprint 1 v0.2:
@@ -39,33 +40,36 @@ test.describe('Auth flow — public surfaces', () => {
 
 test.describe('Auth flow — login page', () => {
   test('login exposes password and magic link tabs', async ({ page }) => {
-    await page.goto('/login');
-    await expect(page.getByRole('heading', { name: /Iniciar Sesión/i })).toBeVisible();
-    await expect(page.getByLabel(/Correo Electrónico/i)).toBeVisible();
-    await expect(page.getByRole('button', { name: /Contraseña/i })).toBeVisible();
-    await expect(page.getByRole('button', { name: /Magic Link/i })).toBeVisible();
+    const login = new LoginPage(page);
+    await login.goto();
+    await expect(login.heading).toBeVisible();
+    await expect(login.emailInput).toBeVisible();
+    await expect(login.passwordTab).toBeVisible();
+    await expect(login.magicLinkTab).toBeVisible();
   });
 
   test('email field is required', async ({ page }) => {
-    await page.goto('/login');
-    const emailInput = page.getByLabel(/Correo Electrónico/i);
-    await expect(emailInput).toHaveAttribute('required');
+    const login = new LoginPage(page);
+    await login.goto();
+    await expect(login.emailInput).toHaveAttribute('required');
   });
 
   test('magic link toggle hides password field', async ({ page }) => {
-    await page.goto('/login');
-    await page.getByRole('button', { name: /Magic Link/i }).click();
-    await expect(page.getByLabel(/Contraseña/i)).not.toBeVisible();
+    const login = new LoginPage(page);
+    await login.goto();
+    await login.switchToMagicLink();
   });
 
   test('Google OAuth button is present', async ({ page }) => {
-    await page.goto('/login');
-    await expect(page.getByRole('button', { name: /Continuar con Google/i })).toBeVisible();
+    const login = new LoginPage(page);
+    await login.goto();
+    await expect(login.googleButton).toBeVisible();
   });
 
   test('link to /signup is accessible', async ({ page }) => {
-    await page.goto('/login');
-    await page.getByRole('link', { name: /Creá tu organización/i }).click();
+    const login = new LoginPage(page);
+    await login.goto();
+    await login.signupLink.click();
     await expect(page).toHaveURL(/\/signup/);
   });
 });
@@ -126,8 +130,8 @@ test.describe('Auth flow — accessibility', () => {
   });
 
   test('login email input has accessible label', async ({ page }) => {
-    await page.goto('/login');
-    const email = page.getByLabel(/Correo Electrónico/i);
-    await expect(email).toHaveAccessibleName(/Correo Electrónico/i);
+    const login = new LoginPage(page);
+    await login.goto();
+    await expect(login.emailInput).toHaveAccessibleName(/Correo Electrónico/i);
   });
 });
