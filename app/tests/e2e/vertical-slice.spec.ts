@@ -1,5 +1,5 @@
-import { test, expect, type Page, type BrowserContext } from '@playwright/test';
-import postgres from 'postgres';
+import { test, expect } from '@playwright/test';
+import { signUpAndVerify, signInViaUI } from './helpers/auth';
 
 /**
  * Vertical-slice E2E for Sprint 1.5.
@@ -17,68 +17,29 @@ import postgres from 'postgres';
  *   - Variables de entorno (DATABASE_URL, BETTER_AUTH_SECRET, etc.)
  */
 
-const TEST_PASSWORD = 'E2EPassword123';
 const DASHBOARD_TITLE = 'E2E Smoke Dashboard';
-
-async function markEmailVerified(email: string): Promise<void> {
-  const dbUrl = process.env.DATABASE_URL || 'postgresql://dashbi:changeme@localhost:5432/dashbi';
-  const client = postgres(dbUrl, { max: 1 });
-  try {
-    // better-auth's MockEmailProvider swallows the verification email,
-    // so we mark the user as verified directly. This is the dev
-    // equivalent of clicking the link in the inbox.
-    await client`
-      UPDATE users SET email_verified = true WHERE email = ${email}
-    `;
-  } finally {
-    await client.end({ timeout: 5 });
-  }
-}
 
 test.describe.serial('vertical slice — signup → datasource → dashboard → share', () => {
   test('completes the happy path', async ({ page, context, request }) => {
     test.setTimeout(180_000);
 
-    // 1. Sign up via better-auth API.
-    const email = `e2e-${Date.now()}@dash-bi.test`;
-    const signup = await request.post('/api/auth/sign-up/email', {
-      headers: { 'content-type': 'application/json' },
-      data: { email, password: TEST_PASSWORD, name: 'E2E Tester' },
-    });
-    expect(signup.ok()).toBeTruthy();
-    const signupBody = await signup.json();
-    expect(signupBody.user.id).toMatch(/[0-9a-f-]{36}/i);
+    // 1. Sign up + verify + sign in via shared helper.
+    const { email, password, userId } = await signUpAndVerify(request);
 
-    // 2. Mark email as verified (MockEmailProvider doesn't actually
-    //    deliver — see `email/index.ts`).
-    await markEmailVerified(email);
+    await signInViaUI(page, email, password);
 
-    // 3. Sign in via UI. The login form does a `router.push(redirect)`
-    //    where `redirect = '/dashboards'` by default. The push is a
-    //    client-side navigation that may not fire a `load` event, so
-    //    we poll the URL until it lands.
-    await page.goto('/login');
-    const emailInput = page.getByLabel(/Correo Electrónico/i);
-    await emailInput.fill(email);
-    const passwordInput = page.getByLabel(/Contraseña/i);
-    await passwordInput.fill(TEST_PASSWORD);
-    await expect(emailInput).toHaveValue(email);
-    await expect(passwordInput).toHaveValue(TEST_PASSWORD);
-    await page.getByRole('button', { name: /Iniciar Sesión/i }).click();
-    await expect(page).toHaveURL(/\/(dashboards|onboarding)/, { timeout: 45_000 });
-
-    // 4. Confirm the session is recognized.
+    // 2. Confirm the session is recognized.
     const sessionCheck = await context.request.get('/api/auth/get-session');
     expect(sessionCheck.ok()).toBeTruthy();
     const sessionData = await sessionCheck.json();
-    expect(sessionData?.user?.id).toBe(signupBody.user.id);
+    expect(sessionData?.user?.id).toBe(userId);
 
-    // 5. List data sources — should be empty for the new org.
+    // 3. List data sources — should be empty for the new org.
     const initialList = await context.request.get('/api/data-sources');
     expect(initialList.ok()).toBeTruthy();
     expect((await initialList.json()).dataSources).toEqual([]);
 
-    // 6. Create a Postgres data source via API.
+    // 4. Create a Postgres data source via API.
     const dsRes = await context.request.post('/api/data-sources', {
       headers: { 'content-type': 'application/json' },
       data: {
@@ -97,11 +58,11 @@ test.describe.serial('vertical slice — signup → datasource → dashboard →
     const { dataSource } = await dsRes.json();
     expect(dataSource.id).toMatch(/[0-9a-f-]{36}/i);
 
-    // 7. Open the data-sources page and confirm the row renders.
+    // 5. Open the data-sources page and confirm the row renders.
     await page.goto('/data-sources', { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId(`datasource-card-${dataSource.id}`)).toBeVisible({ timeout: 20_000 });
 
-    // 8. Create a dashboard with archetype directly via API.
+    // 6. Create a dashboard with archetype directly via API.
     const dashRes = await context.request.post('/api/dashboards', {
       headers: { 'content-type': 'application/json' },
       data: {
@@ -122,17 +83,17 @@ test.describe.serial('vertical slice — signup → datasource → dashboard →
     const { dashboard } = await dashRes.json();
     expect(dashboard.id).toMatch(/[0-9a-f-]{36}/i);
 
-    // 9. Open the dashboards page; the card should appear with the
+    // 7. Open the dashboards page; the card should appear with the
     //    archetype badge ("✨ IA") because archetype != 'custom'.
     await page.goto('/dashboards', { waitUntil: 'domcontentloaded' });
     await expect(page.getByText(DASHBOARD_TITLE).first()).toBeVisible({ timeout: 20_000 });
     await expect(page.getByTestId(`dashboard-card-${dashboard.id}`)).toContainText(/IA/, { timeout: 20_000 });
 
-    // 10. Open the dashboard detail page.
+    // 8. Open the dashboard detail page.
     await page.goto(`/dashboards/${dashboard.id}`, { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('heading', { name: DASHBOARD_TITLE }).first()).toBeVisible({ timeout: 45_000 });
 
-    // 11. Create a public share link.
+    // 9. Create a public share link.
     const shareRes = await context.request.post(
       `/api/dashboards/${dashboard.id}/share`,
       {
@@ -144,12 +105,12 @@ test.describe.serial('vertical slice — signup → datasource → dashboard →
     const { url: shareUrl, token } = await shareRes.json();
     expect(shareUrl).toContain(`/share/${token}`);
 
-    // 12. Visit the public URL (no session) and verify the page renders
+    // 10. Visit the public URL (no session) and verify the page renders
     //     the dashboard title. /share/[token] is a public route.
     await page.goto(shareUrl, { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('heading', { name: DASHBOARD_TITLE }).first()).toBeVisible({ timeout: 45_000 });
 
-    // 13. PATCH archetype → GET it back. This locks down the Sprint
+    // 11. PATCH archetype → GET it back. This locks down the Sprint
     //     1.5 fix for the round-trip of archetype columns.
     const patchRes = await context.request.patch(
       `/api/dashboards/${dashboard.id}`,
