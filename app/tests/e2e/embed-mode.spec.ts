@@ -1,12 +1,13 @@
 import { test, expect } from '@playwright/test';
 import { generateEmbedToken } from '../../src/lib/embed/token';
 
-test.describe('Embed Mode E2E', { tag: '@critical' }, () => {
-  const secretKey = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
-
-  test.beforeAll(() => {
-    process.env.LLM_KEY_ENCRYPTION_KEY = secretKey;
-  });
+test.describe('Embed Mode E2E', () => {
+  // The test process and the playwright webServer (pnpm dev) inherit
+  // LLM_KEY_ENCRYPTION_KEY from the same parent environment, so we
+  // don't override it here. Overriding it in beforeAll would cause
+  // the dev server to validate tokens signed with a different key
+  // than the test process uses to generate them — every test would
+  // fail with `invalid_signature` because the HMAC would not match.
 
   test('renders zero-chrome embedded dashboard directly in browser', async ({ page }) => {
     const { token } = await generateEmbedToken({
