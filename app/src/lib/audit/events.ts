@@ -64,8 +64,10 @@ export type AuditEvent =
   | 'export.png_completed'
   | 'export.link_generated'
   | 'export.link_revoked'
-  // ───── Public link ─────
+  // ───── Public link & Embed ─────
   | 'public_link.viewed'
+  | 'embed.generated'
+  | 'embed.viewed'
   // ───── NLQA (Sprint 4) ─────
   | 'nlqa.question_asked'
   | 'nlqa.answer_generated'

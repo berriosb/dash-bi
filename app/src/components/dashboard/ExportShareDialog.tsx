@@ -12,6 +12,7 @@ import {
   FileText,
   Image as ImageIcon,
   Link2,
+  Code,
   Copy,
   Check,
   Trash2,
@@ -45,7 +46,7 @@ export function ExportShareDialog({
   defaultOpen = false,
 }: ExportShareDialogProps) {
   const [open, setOpen] = React.useState(defaultOpen);
-  const [activeTab, setActiveTab] = React.useState<'pdf' | 'png' | 'share'>('pdf');
+  const [activeTab, setActiveTab] = React.useState<'pdf' | 'png' | 'share' | 'embed'>('pdf');
   const { toast } = useToast();
 
   // PDF Export State
@@ -62,6 +63,14 @@ export function ExportShareDialog({
   const [activeLinks, setActiveLinks] = React.useState<PublicLinkItem[]>([]);
   const [isLoadingLinks, setIsLoadingLinks] = React.useState(false);
   const [copiedId, setCopiedId] = React.useState<string | null>(null);
+
+  // Embed State
+  const [embedOrigin, setEmbedOrigin] = React.useState<string>('*');
+  const [embedTheme, setEmbedTheme] = React.useState<'moderno-saas' | 'corporate' | 'transparent'>('moderno-saas');
+  const [embedHideTitle, setEmbedHideTitle] = React.useState(false);
+  const [isGeneratingEmbed, setIsGeneratingEmbed] = React.useState(false);
+  const [generatedSnippet, setGeneratedSnippet] = React.useState<string | null>(null);
+  const [copiedEmbed, setCopiedEmbed] = React.useState(false);
 
   const fetchLinks = React.useCallback(async () => {
     if (dashboardId === 'demo') return;
@@ -205,6 +214,51 @@ export function ExportShareDialog({
     }
   };
 
+  const handleGenerateEmbed = async () => {
+    setIsGeneratingEmbed(true);
+    try {
+      const allowedOrigins = embedOrigin
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+      const res = await fetch(`/api/dashboards/${dashboardId}/embed`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          allowedOrigins: allowedOrigins.length > 0 ? allowedOrigins : ['*'],
+          theme: embedTheme,
+          hideTitle: embedHideTitle,
+          expiresInDays,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || 'Error al generar código de embebido');
+      }
+
+      const data = await res.json();
+      setGeneratedSnippet(data.iframeSnippet);
+      await navigator.clipboard.writeText(data.iframeSnippet);
+      setCopiedEmbed(true);
+      setTimeout(() => setCopiedEmbed(false), 2500);
+      toast({
+        title: 'Código iframe generado y copiado',
+        description: 'Pega este código en tu aplicación para embeber el dashboard.',
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'No se pudo generar el código';
+      toast({
+        variant: 'destructive',
+        title: 'Error al generar código iframe',
+        description: message,
+      });
+    } finally {
+      setIsGeneratingEmbed(false);
+    }
+  };
+
   const copyToClipboard = async (url: string, id: string) => {
     try {
       await navigator.clipboard.writeText(url);
@@ -316,6 +370,21 @@ export function ExportShareDialog({
               >
                 <Link2 className="w-3.5 h-3.5" />
                 <span>Enlace Público</span>
+              </button>
+
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab === 'embed'}
+                onClick={() => setActiveTab('embed')}
+                className={`flex items-center gap-2 border-b-2 px-4 py-3 text-xs font-medium transition-colors ${
+                  activeTab === 'embed'
+                    ? 'border-primary text-primary'
+                    : 'border-transparent text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <Code className="w-3.5 h-3.5" />
+                <span>Embeber (Iframe)</span>
               </button>
             </div>
 
@@ -542,6 +611,106 @@ export function ExportShareDialog({
                       </div>
                     )}
                   </div>
+                </div>
+              )}
+
+              {/* TAB 4: EMBED (IFRAME) */}
+              {activeTab === 'embed' && (
+                <div className="space-y-4">
+                  <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs text-muted-foreground space-y-1">
+                    <p className="font-medium text-foreground">Integración en Plataformas & SaaS de Terceros</p>
+                    <p>
+                      Genera un token firmado con CSP para embeber este dashboard en tu propia app vía iframe sin mostrar controles administrativos.
+                    </p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-foreground font-medium">Dominios autorizados (CORS / CSP)</Label>
+                    <input
+                      type="text"
+                      value={embedOrigin}
+                      onChange={(e) => setEmbedOrigin(e.target.value)}
+                      placeholder="https://app.mi-empresa.com, https://portal.com (o * para todos)"
+                      className="w-full h-8 px-2.5 text-xs rounded-md border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary font-mono"
+                    />
+                    <p className="text-[10px] text-muted-foreground">
+                      Usa <code className="bg-muted px-1 py-0.5 rounded text-[10px]">*</code> para pruebas locales o especifica los dominios separados por coma.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-foreground font-medium">Tema Visual</Label>
+                      <select
+                        value={embedTheme}
+                        onChange={(e) => setEmbedTheme(e.target.value as 'moderno-saas' | 'corporate' | 'transparent')}
+                        className="w-full h-8 px-2 text-xs rounded-md border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                      >
+                        <option value="moderno-saas">Moderno SaaS</option>
+                        <option value="corporate">Corporate</option>
+                        <option value="transparent">Fondo Transparente</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1.5 flex flex-col justify-end pb-1">
+                      <label className="flex items-center gap-2 cursor-pointer text-xs text-foreground select-none">
+                        <input
+                          type="checkbox"
+                          checked={embedHideTitle}
+                          onChange={(e) => setEmbedHideTitle(e.target.checked)}
+                          className="rounded border-border text-primary focus:ring-primary h-3.5 w-3.5"
+                        />
+                        <span>Ocultar título</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <Button
+                    onClick={handleGenerateEmbed}
+                    disabled={isGeneratingEmbed}
+                    className="w-full gap-2 text-xs h-9 font-medium"
+                  >
+                    {isGeneratingEmbed ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Generando snippet...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Code className="w-3.5 h-3.5" />
+                        <span>Generar Código Iframe</span>
+                      </>
+                    )}
+                  </Button>
+
+                  {generatedSnippet && (
+                    <div className="space-y-1.5 pt-2 border-t border-border">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs text-foreground font-medium">Código Iframe Generado</Label>
+                        <span className="text-[10px] text-emerald-400 font-medium">
+                          {copiedEmbed ? '¡Copiado!' : 'Listo para insertar'}
+                        </span>
+                      </div>
+                      <div className="relative">
+                        <pre className="p-2.5 rounded-lg border border-border bg-muted/40 font-mono text-[11px] text-foreground overflow-x-auto whitespace-pre-wrap break-all">
+                          {generatedSnippet}
+                        </pre>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => {
+                            void navigator.clipboard.writeText(generatedSnippet);
+                            setCopiedEmbed(true);
+                            setTimeout(() => setCopiedEmbed(false), 2000);
+                          }}
+                          className="absolute top-2 right-2 h-7 px-2 text-xs gap-1"
+                        >
+                          {copiedEmbed ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                          <span>Copiar</span>
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

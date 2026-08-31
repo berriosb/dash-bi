@@ -16,6 +16,7 @@ const PERMISSIONS: Record<string, OrgRole[]> = {
   "dashboard.delete": ["admin", "editor"],
   "dashboard.view": ["admin", "editor", "viewer"],
   "dashboard.sharePublic": ["admin", "editor"],
+  "dashboard.embed": ["admin", "editor"],
 
   "query.execute": ["admin", "editor", "viewer"],
   "export.pdf": ["admin", "editor", "viewer"],

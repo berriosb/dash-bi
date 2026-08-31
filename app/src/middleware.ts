@@ -8,6 +8,7 @@ const PUBLIC_PATHS = [
   '/forgot-password',
   '/reset-password',
   '/share/',
+  '/embed/',
   '/demo/',
   '/api/auth',
   '/api/health',

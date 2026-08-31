@@ -35,6 +35,7 @@ describe('ExportShareDialog', () => {
     expect(screen.getByRole('tab', { name: /pdf/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /png/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /enlace público/i })).toBeDefined();
+    expect(screen.getByRole('tab', { name: /embeber/i })).toBeDefined();
   });
 
   it('switches between tabs and allows generating public share links', async () => {
@@ -80,6 +81,53 @@ describe('ExportShareDialog', () => {
         '/api/dashboards/dash-123/share',
         expect.objectContaining({ method: 'POST' })
       );
+    });
+  });
+
+  it('allows generating iframe embed snippet in the embed tab', async () => {
+    const mockEmbedFetch = vi.fn().mockImplementation((url: string, opts?: RequestInit) => {
+      if (url.includes('/embed') && opts?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          status: 201,
+          json: async () => ({
+            token: 'emb_123456',
+            embedUrl: 'http://localhost:3000/embed/emb_123456',
+            iframeSnippet: '<iframe src="http://localhost:3000/embed/emb_123456" width="100%"></iframe>',
+          }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({ links: [] }),
+      });
+    });
+
+    global.fetch = mockEmbedFetch;
+
+    render(
+      <ExportShareDialog
+        dashboardId="dash-123"
+        dashboardTitle="Ventas Q3"
+        defaultOpen={true}
+      />
+    );
+
+    const embedTab = screen.getByRole('tab', { name: /embeber/i });
+    fireEvent.click(embedTab);
+
+    const generateBtn = screen.getByRole('button', { name: /generar código iframe/i });
+    expect(generateBtn).toBeDefined();
+
+    fireEvent.click(generateBtn);
+
+    await waitFor(() => {
+      expect(mockEmbedFetch).toHaveBeenCalledWith(
+        '/api/dashboards/dash-123/embed',
+        expect.objectContaining({ method: 'POST' })
+      );
+      expect(screen.getByText(/<iframe/)).toBeDefined();
     });
   });
 });

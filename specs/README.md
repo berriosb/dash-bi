@@ -61,13 +61,17 @@ Análisis competitivo post-auditoría v1.0 identificó features **que la compete
 - ✅ `export.md` PDF en worker service separado (Puppeteer NO en Next.js principal)
 - ✅ `manual-editing.md` usa `@dnd-kit/core` (antes `react-grid-layout`)
 
+### Tier 2 competitive features (v1.1)
+
+- [x] `embed-mode.md` — Dashboards embebidos en SaaS externos vía iframe + signed token + CSP frame-ancestors
+
+---
+
 ## Spec status
 
-**Completos (v0.5):** 13 core + 3 tier-1 = **16 specs**.
+**Completos (v1.1):** 13 core + 3 tier-1 + 4 operational + 1 tier-2 = **21 specs**.
 **Pendientes Tier 2 (competitivo, no bloqueante):**
 
-- ~~Scheduled email/Slack reports (`scheduled-reports.md`, reusa PDF worker)~~ ✅ subido a MVP (v0.6)
-- Embed mode (`embed-mode.md`, iframe con token)
 - AI explica cada widget ("¿Por qué bajó revenue?")
 - Alertas y anomalías (thresholds → Slack/email)
 - Semantic metrics layer (definir "revenue" una vez)

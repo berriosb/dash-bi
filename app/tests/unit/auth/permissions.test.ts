@@ -29,6 +29,9 @@ describe('RBAC permissions matrix', () => {
     it('can share public link', () => {
       expect(hasPermission('admin', 'dashboard.sharePublic')).toBe(true);
     });
+    it('can create embed tokens', () => {
+      expect(hasPermission('admin', 'dashboard.embed')).toBe(true);
+    });
   });
 
   describe('editor role', () => {
@@ -56,11 +59,17 @@ describe('RBAC permissions matrix', () => {
     it('CAN share public link', () => {
       expect(hasPermission('editor', 'dashboard.sharePublic')).toBe(true);
     });
+    it('CAN create embed tokens', () => {
+      expect(hasPermission('editor', 'dashboard.embed')).toBe(true);
+    });
   });
 
   describe('viewer role', () => {
     it('CANNOT invite members', () => {
       expect(hasPermission('viewer', 'org.invite')).toBe(false);
+    });
+    it('CANNOT create embed tokens', () => {
+      expect(hasPermission('viewer', 'dashboard.embed')).toBe(false);
     });
     it('CANNOT connect data sources', () => {
       expect(hasPermission('viewer', 'datasource.create')).toBe(false);

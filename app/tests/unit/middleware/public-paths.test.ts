@@ -14,9 +14,10 @@ describe('middleware PUBLIC_PATHS (security boundary)', () => {
     ['/magic-link', true],
     ['/forgot-password', true],
     ['/reset-password', true],
-    // Public dashboard showcase / shared links — accessible to anonymous users.
+    // Public dashboard showcase / shared links / embedded — accessible to anonymous users.
     ['/demo/dashboard', true],
     ['/share/abc123', true],
+    ['/embed/emb_12345', true],
     // API endpoints that handle auth themselves or are explicitly public.
     ['/api/auth/sign-in', true],
     ['/api/health', true],
