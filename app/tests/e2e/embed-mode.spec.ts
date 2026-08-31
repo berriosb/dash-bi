@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { generateEmbedToken } from '../../src/lib/embed/token';
 
-test.describe('Embed Mode E2E', () => {
+test.describe('Embed Mode E2E', { tag: '@critical' }, () => {
   // The test process and the playwright webServer (pnpm dev) inherit
   // LLM_KEY_ENCRYPTION_KEY from the same parent environment, so we
   // don't override it here. Overriding it in beforeAll would cause
