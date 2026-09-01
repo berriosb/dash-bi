@@ -78,7 +78,18 @@ export type AuditEvent =
   | 'scheduled_report.executed'
   | 'scheduled_report.failed'
   | 'scheduled_report.paused'
-  | 'scheduled_report.resumed';
+  | 'scheduled_report.resumed'
+  // ───── Alerts (Sprint 7) ─────
+  | 'alert.created'
+  | 'alert.updated'
+  | 'alert.deleted'
+  | 'alert.paused'
+  | 'alert.resumed'
+  | 'alert.fired'
+  | 'alert.delivered'
+  | 'alert.delivery_failed'
+  | 'alert.evaluation_failed'
+  | 'alert.evaluation_suppressed';
 
 /**
  * Categorías de eventos. Útil para agrupar en queries / dashboards admin.
@@ -94,6 +105,7 @@ export const AUDIT_EVENT_CATEGORIES = {
   public_link: ['public_link.viewed'],
   nlqa: ['nlqa.question_asked', 'nlqa.answer_generated'],
   scheduled_report: ['scheduled_report.created', 'scheduled_report.updated', 'scheduled_report.deleted', 'scheduled_report.executed', 'scheduled_report.failed', 'scheduled_report.paused', 'scheduled_report.resumed'],
+  alert: ['alert.created', 'alert.updated', 'alert.deleted', 'alert.paused', 'alert.resumed', 'alert.fired', 'alert.delivered', 'alert.delivery_failed', 'alert.evaluation_failed', 'alert.evaluation_suppressed'],
 } as const satisfies Record<string, readonly AuditEvent[]>;
 
 export type AuditCategory = keyof typeof AUDIT_EVENT_CATEGORIES;

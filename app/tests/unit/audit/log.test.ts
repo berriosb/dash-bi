@@ -19,6 +19,7 @@ vi.mock('@/db/client', () => ({
 
 import { audit, _auditUnsafe } from '@/lib/audit/log';
 import { auditLog } from '@/db/schema';
+import type { AuditEvent } from '@/lib/audit/events';
 
 /** Helper to extract the first values() call payload from a mock. */
 function getInsertPayload(): Record<string, unknown> {
@@ -172,7 +173,18 @@ describe('Audit log helper', () => {
       'export.pdf_completed',
       'export.link_generated',
       'public_link.viewed',
-    ] as const;
+      // Sprint 7 — Alerts (spec/alerts.md §9.3)
+      'alert.created',
+      'alert.updated',
+      'alert.deleted',
+      'alert.paused',
+      'alert.resumed',
+      'alert.fired',
+      'alert.delivered',
+      'alert.delivery_failed',
+      'alert.evaluation_failed',
+      'alert.evaluation_suppressed',
+    ] as const satisfies readonly AuditEvent[];
 
     it.each(events)('supports event "%s"', async (event) => {
       await audit('org-1', 'user-1', event);

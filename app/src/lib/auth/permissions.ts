@@ -18,6 +18,9 @@ const PERMISSIONS: Record<string, OrgRole[]> = {
   "dashboard.sharePublic": ["admin", "editor"],
   "dashboard.embed": ["admin", "editor"],
 
+  "dashboard.alert": ["admin", "editor"],
+  "dashboard.viewAlerts": ["admin", "editor", "viewer"],
+
   "query.execute": ["admin", "editor", "viewer"],
   "export.pdf": ["admin", "editor", "viewer"],
 
