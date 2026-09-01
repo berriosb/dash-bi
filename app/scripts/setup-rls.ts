@@ -30,6 +30,8 @@ const TABLES = [
   'llm_usage',
   'audit_log',
   'org_members',
+  'alert_rules',
+  'alert_events',
 ];
 
 const POLICIES = [
@@ -82,6 +84,18 @@ const POLICIES = [
     name: 'audit_log_isolation',
     table: 'audit_log',
     sql: `CREATE POLICY audit_log_isolation ON audit_log
+      USING (org_id = current_setting('app.current_org_id', true)::uuid)`,
+  },
+  {
+    name: 'alert_rules_isolation',
+    table: 'alert_rules',
+    sql: `CREATE POLICY alert_rules_isolation ON alert_rules
+      USING (org_id = current_setting('app.current_org_id', true)::uuid)`,
+  },
+  {
+    name: 'alert_events_isolation',
+    table: 'alert_events',
+    sql: `CREATE POLICY alert_events_isolation ON alert_events
       USING (org_id = current_setting('app.current_org_id', true)::uuid)`,
   },
 ];
