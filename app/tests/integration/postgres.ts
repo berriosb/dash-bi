@@ -10,6 +10,8 @@ import { join } from 'node:path';
 import * as schema from '@/db/schema';
 
 const RESET_SQL = `
+DROP TABLE IF EXISTS alert_events CASCADE;
+DROP TABLE IF EXISTS alert_rules CASCADE;
 DROP TABLE IF EXISTS nlqa_messages CASCADE;
 DROP TABLE IF EXISTS nlqa_conversations CASCADE;
 DROP TABLE IF EXISTS audit_log CASCADE;
