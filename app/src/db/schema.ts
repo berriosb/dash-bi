@@ -582,3 +582,77 @@ export const scheduledReportRuns = pgTable(
     scheduledReportIdx: index('scheduled_report_runs_report_idx').on(t.scheduledReportId),
   }),
 );
+
+// ─────────────────────────────────────────────────────────────────
+// Alert Rules & Events (tenant-scoped) — spec/alerts.md
+// ─────────────────────────────────────────────────────────────────
+
+export const alertRules = pgTable(
+  'alert_rules',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+    dashboardId: uuid('dashboard_id').notNull().references(() => dashboards.id, { onDelete: 'cascade' }),
+    createdBy: uuid('created_by').notNull().references(() => users.id),
+
+    name: text('name').notNull(),
+    description: text('description'),
+
+    querySql: text('query_sql').notNull(),
+    queryColumns: jsonb('query_columns').$type<{ value: string; timestamp?: string }>().notNull(),
+
+    condition: jsonb('condition').$type<unknown>().notNull(),
+
+    evaluationIntervalMinutes: integer('evaluation_interval_minutes').notNull().default(5),
+    evaluationWindowMinutes: integer('evaluation_window_minutes').notNull().default(5),
+    consecutiveBreachesToFire: integer('consecutive_breaches_to_fire').notNull().default(1),
+
+    channels: jsonb('channels').$type<unknown>().notNull(),
+
+    enabled: boolean('enabled').notNull().default(true),
+
+    cooldownMinutes: integer('cooldown_minutes').notNull().default(60),
+
+    lastEvaluatedAt: timestamp('last_evaluated_at', { withTimezone: true }),
+    lastEvaluationStatus: text('last_evaluation_status').$type<'ok' | 'breached' | 'error'>(),
+    lastEvaluationError: text('last_evaluation_error'),
+    consecutiveBreaches: integer('consecutive_breaches').notNull().default(0),
+    lastFiredAt: timestamp('last_fired_at', { withTimezone: true }),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    orgIdx: index('alert_rules_org_idx').on(t.orgId),
+    dashboardIdx: index('alert_rules_dashboard_idx').on(t.dashboardId),
+    dueIdx: index('alert_rules_due_idx').on(t.enabled, t.lastEvaluatedAt),
+  }),
+);
+
+export const alertEvents = pgTable(
+  'alert_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+    alertRuleId: uuid('alert_rule_id').notNull().references(() => alertRules.id, { onDelete: 'cascade' }),
+
+    firedAt: timestamp('fired_at', { withTimezone: true }).notNull().defaultNow(),
+    breachedValue: jsonb('breached_value').$type<{ value: number | string | null; threshold: number | string }>().notNull(),
+
+    deliveryStatus: jsonb('delivery_status').$type<Array<{
+      channelType: 'slack' | 'email' | 'webhook';
+      status: 'success' | 'failed' | 'skipped';
+      error?: string;
+      providerMessageId?: string;
+    }>>().notNull(),
+
+    correlationId: text('correlation_id').notNull(),
+
+    title: text('title').notNull(),
+    dashboardTitle: text('dashboard_title').notNull(),
+  },
+  (t) => ({
+    ruleIdx: index('alert_events_rule_idx').on(t.alertRuleId, t.firedAt),
+    orgIdx: index('alert_events_org_idx').on(t.orgId, t.firedAt),
+  }),
+);

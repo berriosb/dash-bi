@@ -90,7 +90,9 @@ export const CreateAlertRuleSchema = z.object({
   cooldownMinutes: z.number().int().min(1).max(10080), // max 7 days
 });
 
-export const UpdateAlertRuleSchema = CreateAlertRuleSchema.partial();
+export const UpdateAlertRuleSchema = CreateAlertRuleSchema.partial().extend({
+  enabled: z.boolean().optional(),
+});
 
 // ─────────────────────────────────────────────────────────────────
 // Coercion + injection helpers
