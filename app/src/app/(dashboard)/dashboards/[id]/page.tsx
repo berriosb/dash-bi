@@ -11,6 +11,7 @@ import { PropertyPanel } from '@/components/properties/PropertyPanel';
 import { AddWidgetDialog } from '@/components/widgets/dialogs/AddWidgetDialog';
 import { ExportShareDialog } from '@/components/dashboard/ExportShareDialog';
 import { NlqaPanel } from '@/components/nlqa/NlqaPanel';
+import { AlertsSection } from '@/components/alerts/AlertsSection';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useUIStore } from '@/stores/uiStore';
@@ -319,6 +320,8 @@ export default function DashboardDetailPage() {
         />
         {showPropertyPanel && <PropertyPanel dashboardId={dashboardId} />}
       </div>
+
+      <AlertsSection dashboardId={dashboardId} canManage />
 
       <NlqaPanel
         dashboardId={dashboardId}

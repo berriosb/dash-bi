@@ -1,5 +1,6 @@
 import { Queue } from 'bullmq';
 import { Redis } from 'ioredis';
+import { logger } from '@/lib/logger';
 
 export const ALERT_DISPATCHER_QUEUE = 'alert-dispatcher';
 export const ALERT_EVALUATE_QUEUE = 'alert-evaluate';
