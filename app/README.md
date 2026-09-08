@@ -119,17 +119,15 @@ en [`../docs/MVP-STATUS.md`](../docs/MVP-STATUS.md).
 - [x] Logger Pino con redaction + Sentry setup
 - [x] Docker Compose (Postgres + Redis + app + PDF worker)
 - [x] CI: lint + typecheck + unit + security + e2e + audit
-- [x] Tests unitarios y de seguridad para API, seguridad, conectores y UI
-- [x] ESLint 9 flat config + custom rule
+- [x] Tests unitarios y de seguridad (89 suites / 714 tests pasando)
+- [x] ESLint 9 flat config + custom rule anti-data-leak
 - [x] ErrorState + WidgetErrorState components
-- [x] Demo dashboard público en `/demo/dashboard`
-
-**Pendiente para declarar el MVP listo:**
-
-- [ ] Ejecutar integración RLS y E2E con Docker real
-- [ ] Validar signup → onboarding → fuente → generación → edición → exportación → sharing
-- [ ] Completar UI de scheduled reports y las superficies parciales de NLQA/demo mode
-- [ ] Actualizar las acceptance criteria con evidencia de pruebas
+- [x] Demo dashboard público en `/demo/dashboard` (SaaS, Ecom, Agency)
+- [x] 6 Conectores: Postgres, MySQL, Stripe, Google Sheets, Shopify, CSV/Excel
+- [x] NLQA interactivo ("Pregúntale a tus datos") con 1-clic a widget
+- [x] Sistema de Alertas con despacho a Slack, Email y Webhook
+- [x] Reportes Programados en background con worker de PDF (Puppeteer)
+- [x] Embed Mode con tokens firmados HMAC y directiva CSP frame-ancestors
 
 ## Cómo arrancar
 
@@ -157,7 +155,7 @@ pnpm start            # arrancar build
 pnpm lint             # ESLint (warnings OK, errors no)
 pnpm lint:strict      # igual pero --max-warnings 0
 pnpm typecheck        # tsc --noEmit
-pnpm test             # vitest run (386 tests)
+pnpm test             # vitest run (714 tests)
 pnpm test:watch       # watch mode
 pnpm test:security    # solo threat-model P0 tests
 pnpm test:e2e         # playwright

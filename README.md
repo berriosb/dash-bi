@@ -1,168 +1,194 @@
 # dash-bi
 
-> **Open source + self-hosted BI con IA que compone dashboards completos con datos reales y elección de proveedor LLM.**
->
-> Como Metabase, Superset, Lightdash y Wren AI — pero con AI generativa + multi-LLM como citizens first-class.
+> **Open-source & self-hosted AI-first Business Intelligence platform.**  
+> Compose dashboards with natural language, query your data in conversational language, connect multiple sources, and choose your preferred LLM provider.
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Stack: Next.js 16](https://img.shields.io/badge/Next.js-16-black)](https://nextjs.org)
-[![TypeScript: strict](https://img.shields.io/badge/TypeScript-strict-blue)](https://www.typescriptlang.org)
-[![Tests: 594](https://img.shields.io/badge/tests-594%20unit%20and%20security-brightgreen)](./app/tests)
+[![React: 19.2](https://img.shields.io/badge/React-19.2-61dafb)](https://react.dev)
+[![TypeScript: strict](https://img.shields.io/badge/TypeScript-5.7%20strict-blue)](https://www.typescriptlang.org)
+[![Tests: 714 passing](https://img.shields.io/badge/tests-714%20passed-brightgreen)](./app/tests)
+[![Security: Multi--tenant RLS](https://img.shields.io/badge/Security-RLS%20Isolating-green)](./docs/security/threat-model.md)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](./CONTRIBUTING.md)
 
-> **NOTA:** Este es el directorio de trabajo local del proyecto. El código de la aplicación vive en `./app/`.
+---
 
-## Estructura del workspace
+## ⚡ ¿Por qué dash-bi?
 
-```
-dash-bi/
-├── README.md                       ← este archivo (índice del workspace)
-├── .gitignore                      ← ignores raíz (OS, editor, secrets, AI tooling)
-├── SPEC.md                         ← spec master del producto
-├── PRODUCT.md                      ← contexto durable del producto
-├── DESIGN.md                       ← design system (Impeccable)
-│
-├── docs/                           ← docs de diseño + auditorías + agent skills
-│   ├── IMPLEMENTATION-PLAN-v1.0.md ← plan de implementación 6 semanas
-│   ├── architecture.md             ← arquitectura técnica
-│   ├── agent-skills.md             ← política + setup de AI agent skills
-│   ├── security/
-│   │   └── threat-model.md         ← amenazas + controles
-│   ├── audits/
-│   │   └── 2026-07-21-arquitectura/
-│   │       ├── REPORTE.md          ← auditoría arquitectura
-│   │       └── STACK-AUDIT.md      ← auditoría stack
-│   └── design/
-│       ├── dashboard-surface-brief.md
-│       └── impeccable-adoption-plan.md ← plan archivado de adopción Impeccable
-│
-├── specs/                          ← specs por feature (22 archivos)
-│   ├── widget-system.md
-│   ├── dashboard-archetypes.md
-│   ├── ai-generate-dashboards.md
-│   ├── multi-llm-router.md
-│   ├── connectors.md
-│   ├── layouts-themes.md
-│   ├── multi-tenant.md
-│   ├── auth.md
-│   ├── export.md
-│   ├── onboarding.md
-│   ├── manual-editing.md
-│   ├── email.md
-│   ├── query-engine.md
-│   ├── nlqa.md
-│   ├── testing.md
-│   ├── deployment.md
-│   ├── scheduled-reports.md
-│   ├── errors-ux.md
-│   ├── csv-excel-connector.md
-│   ├── demo-mode.md
-│   └── README.md
-│
-├── diagrams/                       ← (vacío por ahora)
-│
-├── .opencode/skills/               ← tracked solo project-authored (ej. security-audit)
-├── .agents/skills/                 ← gitignored — mirror local de skills de terceros
-├── .claude/                        ← gitignored — config + skills Claude
-├── .hermes/                        ← gitignored — planes efímeros del planner
-├── .impeccable/                    ← gitignored — config local Impeccable (regenerable)
-├── research/                       ← gitignored — investigación local (strategic conclusions en SPEC.md)
-├── AGENTS.md                       ← gitignored — contexto AI per-developer
-├── skills-lock.json                ← gitignored — hashes de skills de terceros
-│
-└── app/                            ← CÓDIGO DE LA APLICACIÓN (ver app/README.md)
-    ├── src/                        ← Next.js App Router + componentes
-    ├── drizzle/migrations/         ← SQL migrations
-    ├── scripts/                    ← setup-rls + init-readonly
-    ├── tests/                      ← unit + security + integración + E2E
-    └── ...
-```
+Las herramientas tradicionales de BI (Metabase, Superset, Tableau) fueron construidas antes de la era de los Modelos de Lenguaje. Las herramientas modernas a menudo te obligan a usar su nube cerrada o te atan a un único modelo de IA propietario.
 
-## Status actual
+**dash-bi** es una plataforma de analítica y BI diseñada desde cero con **IA generativa, multi-LLM y soberanía de datos**:
 
-**MVP funcional — etapa de estabilización y cierre:**
+- 🤖 **Generación de Dashboards con IA**: Escribe un prompt y obtén un dashboard completo con layouts variados (8 archetypes, 7 patrones atómicos), widgets configurados y queries SQL optimizadas.
+- 💬 **NLQA ("Pregúntale a tus datos")**: Haz preguntas en lenguaje natural ("¿Cuál fue el MRR de julio por región?"), obtén la query ejecutada, explicación y gráfico interactivo, y guárdalo como widget en 1 clic.
+- 🔑 **Multi-LLM & BYOK**: Usa OpenAI, Anthropic (Claude) o Google (Gemini) con tus propias API keys cifradas en reposo con AES-256-GCM.
+- 🛡️ **Seguridad Grado Enterprise**: Aislamiento multi-tenant estricto mediante **PostgreSQL Row Level Security (RLS)** nativo, 5 capas de defensa contra SQL injection y usuario de base de datos de solo lectura.
+- 🔌 **6 Conectores Nativos**: PostgreSQL, MySQL, Stripe, Google Sheets, Shopify y archivos locales (CSV / Excel).
+- 🔔 **Alertas y Notificaciones**: Monitorea métricas y recibe avisos inmediatos en Slack, Email o Webhooks personalizados cuando se crucen umbrales críticos o falle la llegada de datos.
+- 📅 **Reportes Programados & PDF Worker**: Generación automática de PDFs de alta fidelidad vía worker headless aislado con Puppeteer y envíos automáticos por correo.
+- 🌐 **Embed Mode**: Embebe dashboards en cualquier SaaS externo vía `<iframe>` con tokens firmados HMAC y protección contra clickjacking (`Content-Security-Policy: frame-ancestors`).
 
-El proyecto ya superó la fase Foundation y contiene el vertical slice principal.
-El estado verificable y las limitaciones de entorno están en
-[`docs/MVP-STATUS.md`](./docs/MVP-STATUS.md).
+---
 
-Ver [`app/README.md`](./app/README.md) para detalle completo.
+## 📊 Comparativa
 
-- [x] Specs escritos (22 specs + 4 docs arquitectura + 2 research)
-- [x] Auditorías hechas (arquitectura + stack, 2026-07-21)
-- [x] Threat model + 10 controles de seguridad
-- [x] Scaffolding Next.js 16 + configs
-- [x] Schema Drizzle (12 tablas) + migrations generadas
-- [x] RLS policies + script de setup
-- [x] `withOrgContext()` wrapper + ESLint rule anti-data-leak v1.1
-- [x] Security utilities (encryption, validate-query, validate-connection)
-- [x] Suite amplia de tests unitarios y de seguridad
-- [x] Docker Compose (Postgres + Redis + app + PDF worker)
-- [x] CI/CD (lint + typecheck + unit + security + e2e + audit)
-- [x] Logger con redaction (Pino) + Sentry
-- [x] better-auth (magic link + Google OAuth + RBAC + email verification)
-- [x] Auto org provisioning en signup
-- [x] EmailProvider + Resend + Mock para dev
-- [x] shadcn/ui (10 componentes) + 7 widgets + DashboardGrid (dnd-kit)
-- [x] ESLint 9 flat config + custom rule funcional
-- [x] AI Gateway + multi-LLM router (OpenAI, Anthropic, Gemini)
-- [x] Query engine completo (cache, circuit breaker, hydrate)
-- [x] 3 conectores (Postgres, Stripe, Sheets)
-- [x] Demo dashboard público en `/demo/dashboard`
+| Feature | Metabase OSS | Lightdash | Apache Superset | **dash-bi** |
+| :--- | :---: | :---: | :---: | :---: |
+| **Generación AI de Dashboards** | ❌ | ❌ | ❌ | **✅ Nativo (Multi-Archetype)** |
+| **Multi-LLM Router (OpenAI/Anthropic/Gemini)** | ❌ | ❌ | ❌ | **✅ BYOK Cifrado** |
+| **NLQA (Preguntas a Gráficos)** | Parcial | ❌ | ❌ | **✅ 1-clic a Widget** |
+| **Aislamiento Multi-tenant Nativo** | Solo Enterprise | ❌ | Parcial | **✅ RLS en PostgreSQL** |
+| **Editor Visual Drag & Drop** | Limitado | Limitado | Complejo | **✅ Fluido (`dnd-kit`)** |
+| **Alertas multicanal (Slack, Email, Webhook)** | Email/Slack | Slack | Complejo | **✅ Sí, con cooldown y worker** |
+| **Reportes PDF en Background Worker** | En proceso | ❌ | Vía Celery | **✅ Worker Puppeteer Aislado** |
+| **Despliegue Rápido en Docker** | ✅ | ✅ | Complejo | **✅ 1 comando (`docker compose`)** |
 
-**Siguiente objetivo — release readiness:**
+---
 
-- [ ] Ejecutar integración RLS y E2E con Docker real
-- [ ] Validar vertical slice completo con datos reales
-- [ ] Completar superficies parciales de NLQA, demo mode y scheduled reports
-- [ ] Sincronizar acceptance criteria de las specs con pruebas reales
+## 🚀 Quickstart en 60 Segundos
 
-## Cómo arrancar
-
-Ver [`app/README.md`](./app/README.md) para instrucciones detalladas.
+La forma más rápida de levantar dash-bi con PostgreSQL 16, Redis 7, la aplicación Next.js y el worker de PDF:
 
 ```bash
+# 1. Clonar el repositorio
+git clone https://github.com/berriosb/dash-bi.git
+cd dash-bi
+
+# 2. Levantar todos los servicios con Docker Compose
+docker compose up -d
+
+# 3. Abrir en tu navegador
+# -> http://localhost:3000
+```
+
+> 💡 **¿Quieres probar sin configurar bases de datos ni llaves de IA?**  
+> Entra directamente a **`http://localhost:3000/demo/dashboard`** para interactuar con datos de prueba de 3 industrias (SaaS, E-commerce, Agencia B2B) y alternar temas en vivo.
+
+---
+
+## 🛠️ Desarrollo Local
+
+Si prefieres correr la aplicación en modo desarrollo:
+
+### Prerrequisitos
+- Node.js 22+ (LTS)
+- pnpm 9.12+
+- Docker (para Postgres y Redis locales)
+
+### Paso a paso
+
+```bash
+# 1. Instalar dependencias
 cd app/
-cp .env.example .env.local
-docker compose up -d postgres redis
 pnpm install
+
+# 2. Configurar variables de entorno
+cp .env.example .env.local
+
+# 3. Levantar dependencias (Postgres 16 + Redis 7)
+docker compose up -d postgres redis
+
+# 4. Ejecutar migraciones y políticas RLS
 pnpm db:migrate
 pnpm db:setup-rls
+
+# 5. Iniciar servidor de desarrollo
 pnpm dev
 ```
 
-App corre en http://localhost:3000.
+La app estará disponible en `http://localhost:3000`.
 
-## Decisiones congeladas
+---
 
-Ver `docs/IMPLEMENTATION-PLAN-v1.0.md` para el plan consolidado.
+## 🏗️ Arquitectura del Sistema
 
-**Cambios clave vs v0.1:**
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│ HOST (Docker Compose)                                                   │
+│                                                                         │
+│  ┌───────────────────────┐         ┌─────────────────────────────────┐  │
+│  │   Next.js 16 App      │         │   PDF Worker (Puppeteer)        │  │
+│  │   (Port 3000)         │         │   (Servicio Aislado)            │  │
+│  │   - App Router / RSC  │         │   - Chrome Headless             │  │
+│  │   - AI Gateway (v6)   │◄───────►│   - BullMQ Job Consumer         │  │
+│  │   - Query Engine      │         │   - Generación de reportes PDF  │  │
+│  │   - Studio (dnd-kit)  │         └────────────────┬────────────────┘  │
+│  └───────────┬───────────┘                          │                   │
+│              │                                      │                   │
+│              ▼                                      ▼                   │
+│  ┌───────────────────────┐         ┌─────────────────────────────────┐  │
+│  │   PostgreSQL 16       │         │   Redis 7                       │  │
+│  │   (Port 5432)         │         │   (Port 6379)                   │  │
+│  │   - Multi-tenant RLS  │         │   - Cola de trabajos (BullMQ)   │  │
+│  │   - Role Read-Only IA │         │   - Caché de consultas SQL      │  │
+│  │   - Drizzle ORM       │         │   - Throttling & Rate limiting  │  │
+│  └───────────────────────┘         └─────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────┘
+```
 
-- AI SDK v6 (no v4)
-- dnd-kit (no react-grid-layout)
-- TanStack Query (separado de Zustand)
-- Worker PDF separado
-- 7 widgets (no 10)
-- 2 themes (no 4)
-- 3 LLM providers (no 5)
-- Puppeteer en container separado
+### Seguridad y Threat Model (Defense in Depth)
 
-## License
+1. **Aislamiento Multi-tenant Inviolable**: Toda consulta a base de datos se envuelve en `withOrgContext(orgId, userId, fn)`, seteando `app.current_org_id` en PostgreSQL y activando las políticas RLS.
+2. **Validación de SQL Generado por IA**: Toda query generada pasa por `validateQuery()` que rechaza DDL/DML, inyecta automáticamente `LIMIT 5000` y bloquea tablas del sistema.
+3. **Rol de Base de Datos de Solo Lectura**: Las consultas analíticas de la IA corren bajo el usuario `dashbi_readonly`, imposibilitando cualquier modificación accidental o maliciosa.
+4. **Protección SSRF en Conectores**: Validación estricta de hosts y rangos IP privados antes de permitir conexiones a fuentes externas.
+5. **BYOK Cifrado**: Claves de API de proveedores LLM cifradas con AES-256-GCM. Filtro automático de redaction en logger (Pino) para prevenir filtraciones en logs.
 
-AGPL v3 — ver [`LICENSE`](./LICENSE).
+---
 
-Elegida por la misma razón que Metabase, Wren AI, Briefer y Grafana: el código es libre para self-host, pero si alguien ofrece dash-bi como servicio en la nube debe publicar sus modificaciones. Esto protege que un proveedor cloud forkee el código sin contribuir.
+## 🧪 Calidad de Código & Testing
 
-## Contributing
+dash-bi cuenta con una suite completa de pruebas unitarias, de integración con PostgreSQL real y de seguridad estricta:
 
-Ver [`CONTRIBUTING.md`](./CONTRIBUTING.md). Resumen:
+```bash
+cd app/
 
-- **Issues:** bugs, features, preguntas — todo welcome.
-- **PRs:** abrir PR contra `main`. CI corre lint + typecheck + unit + e2e + audit.
-- **Branches:** `feat/*`, `fix/*`, `chore/*`, `docs/*`.
-- **Commits:** conventional commits (`feat:`, `fix:`, `chore:`, `docs:`).
+# Ejecutar las 89 suites de prueba (714 tests)
+pnpm test
 
-## Code of Conduct
+# Verificación de tipos TypeScript en modo estricto
+pnpm typecheck
 
-[`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md) — basado en Contributor Covenant 2.1.
+# Linter estricto (cero warnings)
+pnpm lint:strict
+
+# Pruebas End-to-End con Playwright
+pnpm test:e2e
+
+# Verificar build de producción
+pnpm build
+```
+
+---
+
+## 📁 Estructura del Repositorio
+
+```
+dash-bi/
+├── app/                            ← Código fuente de la aplicación
+│   ├── src/app/                    ← Next.js App Router (Páginas y API routes)
+│   ├── src/components/             ← NlqaPanel, Studio, Widgets, Alertas, UI
+│   ├── src/db/                     ← Esquema Drizzle y políticas RLS
+│   ├── src/lib/                    ← AI Gateway, Query Engine, Conectores, Cifrado
+│   ├── src/worker/                 ← Worker de BullMQ para PDF y Alertas
+│   ├── drizzle/migrations/         ← Migraciones SQL versionadas
+│   └── tests/                      ← Tests unitarios, integración RLS y E2E
+├── specs/                          ← 22 especificaciones detalladas de producto
+├── docs/                           ← Arquitectura, modelo de amenazas y guías
+├── docker-compose.yml              ← Topología de producción para despliegue
+└── README.md                       ← Este archivo
+```
+
+---
+
+## 📜 Licencia
+
+Distribuido bajo licencia **AGPL v3** — consulta [`LICENSE`](./LICENSE) para más detalles.
+
+dash-bi es 100% libre para self-hosting y uso interno en tu empresa. Si modificas dash-bi para ofrecerlo como un servicio SaaS comercial en la nube, debes compartir el código fuente de tus mejoras con la comunidad, garantizando la preservación del ecosistema abierto.
+
+---
+
+## 🤝 Contribuciones
+
+¡Las contribuciones son bienvenidas! Consulta [`CONTRIBUTING.md`](./CONTRIBUTING.md) para conocer las pautas de estilo, flujo de branches (`feat/*`, `fix/*`) y conventional commits.
