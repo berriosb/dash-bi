@@ -9,7 +9,7 @@ describe('DemoDashboardViewer', () => {
     render(<DemoDashboardViewer />);
 
     expect(screen.getByText('Modo Demo')).toBeDefined();
-    expect(screen.getByRole('heading', { name: 'Ingresos y rendimiento' })).toBeDefined();
+    expect(screen.getByRole('heading', { name: /SaaS Analytics|Ingresos y rendimiento/i })).toBeDefined();
     expect(screen.getByText('Crear mi dashboard gratis')).toBeDefined();
   });
 

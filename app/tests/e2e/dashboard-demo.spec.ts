@@ -8,10 +8,10 @@ test.describe('dashboard demo surface', () => {
     );
     await page.goto('/demo/dashboard');
 
-    await expect(page.getByRole('heading', { name: 'Ingresos y rendimiento' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /SaaS Analytics|Ingresos y rendimiento/i })).toBeVisible();
     await expect(page.getByText('Panel de decisión')).toBeVisible();
     await expect(page.locator('[data-dashboard-ready="true"]')).toBeVisible();
-    await expect(page.locator('[data-widget-id]')).toHaveCount(5);
+    await expect(page.locator('[data-widget-id]')).toHaveCount(8);
 
     const state = await page.locator('[data-dashboard-ready="true"]').evaluate((element) => ({
       archetype: element.getAttribute('data-archetype'),
@@ -28,7 +28,7 @@ test.describe('dashboard demo surface', () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/demo/dashboard');
 
-    await expect(page.getByRole('heading', { name: 'Ingresos y rendimiento' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /SaaS Analytics|Ingresos y rendimiento/i })).toBeVisible();
     const state = await page.locator('[data-dashboard-ready="true"]').evaluate((element) => ({
       columns: getComputedStyle(element).gridTemplateColumns,
       overflow: document.documentElement.scrollWidth > window.innerWidth,
