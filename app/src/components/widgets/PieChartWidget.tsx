@@ -15,7 +15,13 @@ export function PieChartWidget({ widget }: { widget: PieChartWidgetType }) {
   const items = Array.isArray(data) ? data : [];
 
   return (
-    <WidgetSurface widgetId={widget.id} title={config.title} isEmpty={items.length === 0}>
+    <WidgetSurface
+      widgetId={widget.id}
+      title={config.title}
+      isEmpty={items.length === 0}
+      widgetType="pie-chart"
+      widgetData={widget.data}
+    >
       <div
         className="widget-content"
         role="img"

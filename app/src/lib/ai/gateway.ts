@@ -125,6 +125,44 @@ export interface NLQAEditResult {
   modifyWidgetId?: string;
 }
 
+// ─────────────────────────────────────────────────────────────────
+// Widget Explanation ("¿Por qué varió esta métrica?")
+// ─────────────────────────────────────────────────────────────────
+
+export const widgetExplanationSchema = z.object({
+  headline: z.string().min(1).max(120),
+  summary: z.string().min(1).max(500),
+  trend: z.enum(['upward', 'downward', 'stable', 'volatile']),
+  keyDrivers: z.array(
+    z.object({
+      label: z.string().min(1).max(80),
+      impact: z.enum(['positive', 'negative', 'neutral']),
+      detail: z.string().min(1).max(250),
+    }),
+  ).min(1).max(5),
+  suggestedAction: z.string().min(1).max(300),
+});
+
+export type WidgetExplanationResult = z.infer<typeof widgetExplanationSchema>;
+
+export interface ExplainWidgetInput {
+  widgetTitle: string;
+  widgetType: string;
+  data: unknown;
+  context?: {
+    dashboardTitle?: string;
+    timeWindow?: string;
+    comparativo?: string;
+  };
+}
+
+export interface ExplainWidgetOutput extends WidgetExplanationResult {
+  usage?: {
+    promptTokens: number;
+    completionTokens: number;
+  };
+}
+
 export class AiGateway {
   constructor(
     private provider: LLMProvider = 'openai',
@@ -353,6 +391,55 @@ ${input.prompt}
     });
 
     return result.object as NLQAEditResult;
+  }
+
+  // ─── Explain Widget: ¿Por qué varió esta métrica? ───────────────
+
+  async explainWidgetData(input: ExplainWidgetInput): Promise<ExplainWidgetOutput> {
+    const model = getLanguageModel(this.provider, this.modelName, this.encryptedApiKey);
+
+    const systemPrompt = `
+# ROLE
+Sos un analista de Business Intelligence y asesor de decisiones ejecutivas en dash-bi ("The Decision Desk").
+Tu labor es interpretar los datos de una métrica o widget específico y explicar con precisión matemática y ejecutiva por qué varió y qué factores lo explican.
+
+# TÍTULO DEL WIDGET
+${input.widgetTitle} (Tipo: ${input.widgetType})
+
+# CONTEXTO DEL DASHBOARD
+Dashboard: ${input.context?.dashboardTitle ?? 'General'}
+Ventana temporal: ${input.context?.timeWindow ?? 'No especificada'}
+Comparativo: ${input.context?.comparativo ?? 'No especificado'}
+
+# DATOS DEL WIDGET
+${JSON.stringify(input.data ?? { value: null }, null, 2)}
+
+# REGLAS ESTRICTAS
+1. Sé conciso, cuantitativo y objetivo. NUNCA inventes números que no estén en los datos.
+2. "headline": Conclusión principal en una sola línea contundente (<120 caracteres).
+3. "summary": Explicación ejecutiva de 2 a 3 oraciones contextualizando la variación observada (<500 caracteres).
+4. "trend": 'upward' | 'downward' | 'stable' | 'volatile'.
+5. "keyDrivers": Entre 1 y 4 factores determinantes observados o inferidos directamente de los datos, indicando impact ('positive' | 'negative' | 'neutral').
+6. "suggestedAction": Una recomendación ejecutiva de acción directa y accionable (<300 caracteres).
+7. Idioma: Español ejecutivo neutro.
+`;
+
+    const result = await generateObject({
+      model,
+      schema: widgetExplanationSchema,
+      prompt: systemPrompt,
+      temperature: 0.2,
+    });
+
+    return {
+      ...result.object,
+      usage: result.usage
+        ? {
+            promptTokens: result.usage.inputTokens ?? 0,
+            completionTokens: result.usage.outputTokens ?? 0,
+          }
+        : undefined,
+    };
   }
 }
 

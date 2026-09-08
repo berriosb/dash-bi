@@ -84,6 +84,8 @@ export function KPIWidget({ widget }: { widget: KPIWidgetType }) {
       title={config.title}
       isEmpty={!hasValue}
       emptyMessage="La consulta no devolvió un valor para esta métrica."
+      widgetType="kpi"
+      widgetData={widget.data}
     >
       <div className="widget-kpi-value tabular-nums">{formattedValue}</div>
       {config.showDelta !== false && deltaInfo !== null && (

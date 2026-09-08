@@ -43,7 +43,13 @@ export function BarChartWidget({ widget }: { widget: BarChartWidgetType }) {
   );
 
   return (
-    <WidgetSurface widgetId={widget.id} title={config.title} isEmpty={!hasData}>
+    <WidgetSurface
+      widgetId={widget.id}
+      title={config.title}
+      isEmpty={!hasData}
+      widgetType="bar-chart"
+      widgetData={widget.data}
+    >
       <div
         className="widget-content"
         role="img"

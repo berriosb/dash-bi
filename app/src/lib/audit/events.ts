@@ -71,6 +71,7 @@ export type AuditEvent =
   // ───── NLQA (Sprint 4) ─────
   | 'nlqa.question_asked'
   | 'nlqa.answer_generated'
+  | 'nlqa.widget_explained'
   // ───── Scheduled reports (Sprint 6) ─────
   | 'scheduled_report.created'
   | 'scheduled_report.updated'
@@ -103,7 +104,7 @@ export const AUDIT_EVENT_CATEGORIES = {
   query: ['query.executed', 'query.failed', 'query.cache_hit'],
   export: ['export.pdf_requested', 'export.pdf_completed', 'export.pdf_failed', 'export.png_requested', 'export.png_completed', 'export.link_generated', 'export.link_revoked'],
   public_link: ['public_link.viewed'],
-  nlqa: ['nlqa.question_asked', 'nlqa.answer_generated'],
+  nlqa: ['nlqa.question_asked', 'nlqa.answer_generated', 'nlqa.widget_explained'],
   scheduled_report: ['scheduled_report.created', 'scheduled_report.updated', 'scheduled_report.deleted', 'scheduled_report.executed', 'scheduled_report.failed', 'scheduled_report.paused', 'scheduled_report.resumed'],
   alert: ['alert.created', 'alert.updated', 'alert.deleted', 'alert.paused', 'alert.resumed', 'alert.fired', 'alert.delivered', 'alert.delivery_failed', 'alert.evaluation_failed', 'alert.evaluation_suppressed'],
 } as const satisfies Record<string, readonly AuditEvent[]>;

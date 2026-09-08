@@ -75,6 +75,8 @@ export function TableWidget({ widget }: { widget: TableWidgetType }) {
       title={config.title}
       isEmpty={rows.length === 0}
       emptyMessage="La consulta no devolvió filas para mostrar."
+      widgetType="table"
+      widgetData={widget.data}
     >
       <div className="widget-table-container">
         <table className="widget-table">

@@ -25,7 +25,13 @@ export function ScatterWidget({ widget }: { widget: ScatterWidgetType }) {
   const items = Array.isArray(data) ? data : [];
 
   return (
-    <WidgetSurface widgetId={widget.id} title={config.title} isEmpty={items.length === 0}>
+    <WidgetSurface
+      widgetId={widget.id}
+      title={config.title}
+      isEmpty={items.length === 0}
+      widgetType="scatter"
+      widgetData={widget.data}
+    >
       <div
         className="widget-content"
         role="img"

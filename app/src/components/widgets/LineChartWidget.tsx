@@ -52,7 +52,13 @@ export function LineChartWidget({ widget }: { widget: LineChartWidgetType }) {
   if (chartData.length >= HIGH_DENSITY_THRESHOLD) {
     const seriesKeys = series.map((s) => s.name);
     return (
-      <WidgetSurface widgetId={widget.id} title={config.title} isEmpty={!hasData}>
+      <WidgetSurface
+        widgetId={widget.id}
+        title={config.title}
+        isEmpty={!hasData}
+        widgetType="line-chart"
+        widgetData={widget.data}
+      >
         <div className="h-full w-full p-2">
           <HighDensityChart
             type="line"
@@ -67,7 +73,13 @@ export function LineChartWidget({ widget }: { widget: LineChartWidgetType }) {
   }
 
   return (
-    <WidgetSurface widgetId={widget.id} title={config.title} isEmpty={!hasData}>
+    <WidgetSurface
+      widgetId={widget.id}
+      title={config.title}
+      isEmpty={!hasData}
+      widgetType="line-chart"
+      widgetData={widget.data}
+    >
       <div
         className="widget-content"
         role="img"
