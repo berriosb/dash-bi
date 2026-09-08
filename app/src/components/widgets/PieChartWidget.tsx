@@ -21,7 +21,7 @@ export function PieChartWidget({ widget }: { widget: PieChartWidgetType }) {
         role="img"
         aria-label={`Distribución${config.title ? `: ${config.title}` : ''}`}
       >
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minHeight={220} minWidth={0}>
           <PieChart>
             <Tooltip
               contentStyle={chartTooltipContentStyle}

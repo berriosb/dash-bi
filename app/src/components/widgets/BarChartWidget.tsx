@@ -49,7 +49,7 @@ export function BarChartWidget({ widget }: { widget: BarChartWidgetType }) {
         role="img"
         aria-label={`Gráfico de barras${config.title ? `: ${config.title}` : ''}`}
       >
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minHeight={220} minWidth={0}>
           <BarChart
             data={chartData}
             layout={config.orientation === 'horizontal' ? 'vertical' : 'horizontal'}

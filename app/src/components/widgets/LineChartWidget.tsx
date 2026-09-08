@@ -73,7 +73,7 @@ export function LineChartWidget({ widget }: { widget: LineChartWidgetType }) {
         role="img"
         aria-label={`Gráfico de líneas${config.title ? `: ${config.title}` : ''}`}
       >
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minHeight={220} minWidth={0}>
           <LineChart data={chartData} margin={{ top: 8, right: 12, left: 0, bottom: 4 }}>
             {config.showGrid !== false && <CartesianGrid {...chartGridStyle} />}
             <XAxis

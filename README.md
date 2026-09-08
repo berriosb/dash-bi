@@ -11,6 +11,10 @@
 [![Security: Multi--tenant RLS](https://img.shields.io/badge/Security-RLS%20Isolating-green)](./docs/security/threat-model.md)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](./CONTRIBUTING.md)
 
+<p align="center">
+  <img src="./docs/images/dashbi-preview-saas.png" alt="dash-bi Demo Preview" width="100%" />
+</p>
+
 ---
 
 ## ⚡ ¿Por qué dash-bi?
