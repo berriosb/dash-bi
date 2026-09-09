@@ -42,4 +42,15 @@ describe('DemoDashboardViewer', () => {
     fireEvent.click(themeBtn);
     expect(screen.getByText(/Tema: Corporate/)).toBeDefined();
   });
+
+  it('toggles the AI NLQA Assistant panel when button is clicked', () => {
+    render(<DemoDashboardViewer />);
+
+    expect(screen.queryByText('Asistente IA de Analítica (NLQA)')).toBeNull();
+
+    const nlqaBtn = screen.getByRole('button', { name: /Asistente IA/i });
+    fireEvent.click(nlqaBtn);
+
+    expect(screen.getByText('Asistente IA de Analítica (NLQA)')).toBeDefined();
+  });
 });

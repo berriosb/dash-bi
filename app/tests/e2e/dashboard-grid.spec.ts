@@ -12,13 +12,13 @@ import { test, expect } from '@playwright/test';
  */
 
 test.describe('demo dashboard', () => {
-  test('renders all 5 widgets with Spanish titles', async ({ page }) => {
+  test('renders widgets with Spanish titles', async ({ page }) => {
     await page.goto('/demo/dashboard');
     await expect(page.getByText(/Panel de decisión/i)).toBeVisible();
-    await expect(page.getByText(/Ingresos netos/i)).toBeVisible();
-    await expect(page.getByText(/Conversión/i)).toBeVisible();
-    await expect(page.getByText(/Ticket promedio/i)).toBeVisible();
-    await expect(page.getByText(/Ingresos por período/i)).toBeVisible();
+    await expect(page.getByText(/Ingresos Netos/i)).toBeVisible();
+    await expect(page.getByText(/Tasa de Churn/i)).toBeVisible();
+    await expect(page.getByText(/Clientes Activos/i)).toBeVisible();
+    await expect(page.getByText(/Evolución de Ingresos/i)).toBeVisible();
   });
 
   test('archetype kpi-grid is applied', async ({ page }) => {
@@ -68,7 +68,7 @@ test.describe('a11y basics', () => {
     // Widget regions should have semantic sections
     const widgets = page.locator('[data-widget-id]');
     const count = await widgets.count();
-    expect(count).toBe(5);
+    expect(count).toBe(8);
     // Each widget should be a section element
     for (let i = 0; i < count; i++) {
       const tagName = await widgets.nth(i).evaluate((el) => el.tagName);

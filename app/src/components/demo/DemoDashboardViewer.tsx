@@ -304,7 +304,7 @@ export const DEMO_PRESETS: Record<string, { label: string; description: string; 
 export function DemoDashboardViewer() {
   const [activePresetKey, setActivePresetKey] = React.useState<string>('saas');
   const [activeTheme, setActiveTheme] = React.useState<ThemeId>('moderno-saas');
-  const [isNlqaOpen, setIsNlqaOpen] = React.useState<boolean>(true);
+  const [isNlqaOpen, setIsNlqaOpen] = React.useState<boolean>(false);
 
   const baseDashboard = DEMO_PRESETS[activePresetKey]?.dashboard ?? DEMO_PRESETS.saas!.dashboard;
 
