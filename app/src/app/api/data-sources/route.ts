@@ -46,9 +46,31 @@ const ShopifyConfigSchema = z.object({
   accessToken: z.string().min(10).max(256),
 });
 
+const HubspotConfigSchema = z.object({
+  // HubSpot Private App tokens are opaque; we only require length.
+  accessToken: z.string().min(10).max(512),
+  portalId: z.string().max(32).optional(),
+});
+
+const GA4ConfigSchema = z.object({
+  // OAuth access token (Bearer). Service account JSON is a follow-up.
+  accessToken: z.string().min(10).max(4096),
+  // GA4 property ID (numeric string).
+  propertyId: z.string().regex(/^\d+$/, 'propertyId must be numeric'),
+});
+
+const SnowflakeConfigSchema = z.object({
+  account: z.string().min(3).max(128),
+  username: z.string().min(1).max(128),
+  password: z.string().min(1).max(256),
+  database: z.string().min(1).max(128),
+  schema: z.string().min(1).max(128),
+  warehouse: z.string().min(1).max(128),
+});
+
 const CreateDataSourceSchema = z.object({
   name: z.string().min(1).max(200),
-  type: z.enum(['postgres', 'mysql', 'stripe', 'sheets', 'shopify']),
+  type: z.enum(['postgres', 'mysql', 'stripe', 'sheets', 'shopify', 'hubspot', 'ga4', 'snowflake']),
   config: z.unknown(),
 });
 
@@ -223,6 +245,54 @@ export async function POST(req: Request) {
       validatedConfig = result.data as Record<string, unknown>;
     } else if (type === 'shopify') {
       const result = ShopifyConfigSchema.safeParse(config);
+      if (!result.success) {
+        const correlationId = getOrGenerateCorrelationId(req);
+        return NextResponse.json(
+          {
+            code: 'validation.invalid_format',
+            message: 'Revisá los campos marcados.',
+            correlationId,
+            retryable: false,
+            fieldErrors: flattenZod(result.error),
+          },
+          { status: 400, headers: { 'x-correlation-id': correlationId } },
+        );
+      }
+      validatedConfig = result.data as Record<string, unknown>;
+    } else if (type === 'hubspot') {
+      const result = HubspotConfigSchema.safeParse(config);
+      if (!result.success) {
+        const correlationId = getOrGenerateCorrelationId(req);
+        return NextResponse.json(
+          {
+            code: 'validation.invalid_format',
+            message: 'Revisá los campos marcados.',
+            correlationId,
+            retryable: false,
+            fieldErrors: flattenZod(result.error),
+          },
+          { status: 400, headers: { 'x-correlation-id': correlationId } },
+        );
+      }
+      validatedConfig = result.data as Record<string, unknown>;
+    } else if (type === 'ga4') {
+      const result = GA4ConfigSchema.safeParse(config);
+      if (!result.success) {
+        const correlationId = getOrGenerateCorrelationId(req);
+        return NextResponse.json(
+          {
+            code: 'validation.invalid_format',
+            message: 'Revisá los campos marcados.',
+            correlationId,
+            retryable: false,
+            fieldErrors: flattenZod(result.error),
+          },
+          { status: 400, headers: { 'x-correlation-id': correlationId } },
+        );
+      }
+      validatedConfig = result.data as Record<string, unknown>;
+    } else if (type === 'snowflake') {
+      const result = SnowflakeConfigSchema.safeParse(config);
       if (!result.success) {
         const correlationId = getOrGenerateCorrelationId(req);
         return NextResponse.json(

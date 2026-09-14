@@ -1,4 +1,4 @@
-export type ConnectorType = 'postgres' | 'stripe' | 'sheets' | 'csv' | 'excel' | 'spreadsheet' | 'shopify' | 'meta-ads' | 'notion' | 'mysql';
+export type ConnectorType = 'postgres' | 'stripe' | 'sheets' | 'csv' | 'excel' | 'spreadsheet' | 'shopify' | 'hubspot' | 'ga4' | 'snowflake' | 'meta-ads' | 'notion' | 'mysql';
 
 export type ConnectorConfig = {
   id: string;
@@ -42,11 +42,20 @@ export type StripeOperation =
  * path. The `kind: 'spreadsheet'` marker tells the connector to load
  * the schema for the right file before running the query.
  */
+export type GA4Query = {
+  kind: 'ga4';
+  metrics: string[];
+  dimensions?: string[];
+  dateRange: { startDate: string; endDate: string };
+  limit?: number;
+};
+
 export type Query =
   | { kind: 'sql'; sql: string; params?: unknown[] }
   | { kind: 'stripe'; operation: StripeOperation; params?: unknown }
   | { kind: 'sheets'; spreadsheetId: string; range: string }
-  | { kind: 'spreadsheet'; fileId: string; sql: string; params?: unknown[] };
+  | { kind: 'spreadsheet'; fileId: string; sql: string; params?: unknown[] }
+  | GA4Query;
 
 export type QueryResult<T = Record<string, unknown>> = {
   rows: T[];

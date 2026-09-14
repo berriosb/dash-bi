@@ -23,6 +23,12 @@ export const connectorTypeEnum = pgEnum('connector_type', [
   'excel',
   'mysql',
   'shopify',
+  // Tier 2 (post-MVP). Declared in the enum so that upcoming slices
+  // for Hubspot / GA4 / Snowflake can ship without an additional
+  // schema migration each time.
+  'hubspot',
+  'ga4',
+  'snowflake',
 ]);
 
 export const themeEnum = pgEnum('theme', ['moderno-saas', 'corporate']);

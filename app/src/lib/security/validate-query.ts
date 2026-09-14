@@ -89,6 +89,69 @@ export function validateQuery(
     }
   }
 
+  if (dataSourceType === 'hubspot') {
+    // Hubspot (Tier 2): SQL is SELECT-only and maps to a CRM resource
+    // (contacts/companies/deals). The connector enforces the resource
+    // allowlist; here we block DML/DDL/stacked statements and apply the
+    // role-based PII filter.
+    if (query.kind !== 'sql') {
+      throw new ValidationError('Hubspot expects a SQL query');
+    }
+    const sql = query.sql.trim();
+    const upper = sql.toUpperCase();
+    if (!/^(SELECT|WITH|EXPLAIN)/.test(upper)) {
+      throw new ValidationError('Only SELECT queries allowed');
+    }
+    const semicolons = sql.split(';').filter((s) => s.trim().length > 0);
+    if (semicolons.length > 1) {
+      throw new ValidationError('Multi-statement queries not allowed');
+    }
+    const forbidden = /\b(INSERT|UPDATE|DELETE|DROP|TRUNCATE|ALTER|CREATE|GRANT|REVOKE)\b/i;
+    if (forbidden.test(sql)) {
+      throw new ValidationError('DML/DDL statements not allowed');
+    }
+    if (role) assertRolePermissions(sql, role);
+    if (!/LIMIT\s+\d+/i.test(sql)) {
+      query.sql = `${sql.replace(/;\s*$/, '')} LIMIT 10000`;
+    }
+  }
+
+  if (dataSourceType === 'ga4') {
+    // GA4 (Tier 2): the Query union has a `kind: 'ga4'` variant for
+    // metrics/dimensions/dateRange. There is no SQL string to validate
+    // here — the connector enforces structural invariants (≥1 metric,
+    // startDate ≤ endDate). This branch only verifies the query kind.
+    if (query.kind !== 'ga4') {
+      throw new ValidationError('GA4 expects a ga4 query (metrics/dimensions/dateRange)');
+    }
+  }
+
+  if (dataSourceType === 'snowflake') {
+    // Snowflake (Tier 2): SQL semantics are identical to Postgres/
+    // MySQL — SELECT-only, single statement, no DML/DDL, role-based
+    // PII filter, auto-inject LIMIT.
+    if (query.kind !== 'sql') {
+      throw new ValidationError('Snowflake expects a SQL query');
+    }
+    const sql = query.sql.trim();
+    const upper = sql.toUpperCase();
+    if (!/^(SELECT|WITH|EXPLAIN)/.test(upper)) {
+      throw new ValidationError('Only SELECT queries allowed');
+    }
+    const semicolons = sql.split(';').filter((s) => s.trim().length > 0);
+    if (semicolons.length > 1) {
+      throw new ValidationError('Multi-statement queries not allowed');
+    }
+    const forbidden = /\b(INSERT|UPDATE|DELETE|DROP|TRUNCATE|ALTER|CREATE|GRANT|REVOKE|MERGE)\b/i;
+    if (forbidden.test(sql)) {
+      throw new ValidationError('DML/DDL statements not allowed');
+    }
+    if (role) assertRolePermissions(sql, role);
+    if (!/LIMIT\s+\d+/i.test(sql)) {
+      query.sql = `${sql.replace(/;\s*$/, '')} LIMIT 10000`;
+    }
+  }
+
   if (dataSourceType === 'spreadsheet' || dataSourceType === 'csv' || dataSourceType === 'excel') {
     if (query.kind !== 'spreadsheet') {
       throw new ValidationError('Spreadsheet expects spreadsheet query');
