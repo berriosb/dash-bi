@@ -1,0 +1,18 @@
+# dash-bi daily Postgres backup (host-side cron).
+#
+# Install:
+#   sudo mkdir -p /var/backups/dashbi && sudo chown root:root /var/backups/dashbi
+#   sudo install -m 644 /dev/null /etc/cron.d/dashbi-backup
+#   sudo cp deploy/cron/dashbi-backup /etc/cron.d/dashbi-backup
+#   sudo sed -i 's|__REPO_PATH__|/opt/dash-bi|' /etc/cron.d/dashbi-backup
+#
+# Verify:
+#   sudo bash /etc/cron.d/dashbi-backup    # force-run now
+#   ls -lh /var/backups/dashbi/            # expect dashbi_YYYYMMDD_HHMMSS.dump
+#
+# Cron line: minute=0, hour=3, dom=*, mon=*, dow=*, user=root
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Daily at 03:00 UTC, retain 30 days (cleanup is in scripts/backup.sh)
+0 3 * * * root cd __REPO_PATH__ && set -a && . ./.env.staging && set +a && __REPO_PATH__/scripts/backup.sh

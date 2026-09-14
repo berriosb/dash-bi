@@ -40,6 +40,10 @@ Session.vim
 .env
 .env.*
 !.env.example
+# Operator-facing template for staging deploys. Lives alongside
+# `.env.example` so operators can `cp` + `sed` instead of typing
+# from scratch. Contains only `__PASTE_GENERATED__` placeholders.
+!.env.staging.example
 
 # Logs
 *.log

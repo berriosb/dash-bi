@@ -1,5 +1,18 @@
 name: dashbi
 
+# dash-bi production compose (single-node staging/prod).
+#
+# This file is the canonical production topology. It uses Compose's
+# `${VAR:?message}` syntax for every secret that the Zod env schema
+# (`app/src/lib/env.ts`) or the Postgres/Redis services require. An
+# operator who forgets to set one of these in `.env.staging` will see
+# docker compose fail fast with the message embedded after `:?`, instead
+# of booting the stack with a publicly-known placeholder password.
+#
+# For local dev, use `app/docker-compose.yml` instead — that file
+# intentionally exposes ports for Postgres/Redis and skips the prod
+# secret gates.
+
 services:
   app:
     build:
@@ -11,11 +24,20 @@ services:
       - "${APP_PORT:-3000}:3000"
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=postgres://${POSTGRES_USER:-dashbi}:${POSTGRES_PASSWORD:-dashbi_password}@postgres:5432/${POSTGRES_DB:-dashbi}
-      - REDIS_URL=redis://:${REDIS_PASSWORD:-redis_password}@redis:6379
-      - LLM_KEY_ENCRYPTION_KEY=${LLM_KEY_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      - DATABASE_URL=postgres://${POSTGRES_USER:?POSTGRES_USER required}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB required}
+      - DATABASE_READONLY_URL=postgres://${POSTGRES_READONLY_USER:?POSTGRES_READONLY_USER required}:${POSTGRES_READONLY_PASSWORD:?POSTGRES_READONLY_PASSWORD required}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB required}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD required}@redis:6379
+      - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET required (>=32 chars)}
+      - BETTER_AUTH_URL=${BETTER_AUTH_URL:?BETTER_AUTH_URL required}
+      - LLM_KEY_ENCRYPTION_KEY=${LLM_KEY_ENCRYPTION_KEY:?LLM_KEY_ENCRYPTION_KEY required (32 bytes hex)}
+      - PDF_WORKER_URL=http://pdf-worker:3001
+      - PDF_WORKER_SECRET=${PDF_WORKER_SECRET:?PDF_WORKER_SECRET required (>=16 chars)}
       - EMAIL_PROVIDER=${EMAIL_PROVIDER:-resend}
-      - RESEND_API_KEY=${RESEND_API_KEY:-resend_dummy}
+      # Email is optional in dev; if left blank the email provider is
+      # instantiated in test/no-op mode. Never use a placeholder value
+      # here — Resend will reject requests with `re_xxx_dummy` style
+      # strings and the failure mode is silent.
+      - RESEND_API_KEY=${RESEND_API_KEY:-}
       - EMAIL_FROM=${EMAIL_FROM:-noreply@dash-bi.com}
       - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
       - LOG_LEVEL=${LOG_LEVEL:-info}
@@ -48,9 +70,16 @@ services:
     restart: unless-stopped
     environment:
       - NODE_ENV=production
-      - REDIS_URL=redis://:${REDIS_PASSWORD:-redis_password}@redis:6379
+      - DATABASE_URL=postgres://${POSTGRES_USER:?POSTGRES_USER required}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB required}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD required}@redis:6379
+      - LLM_KEY_ENCRYPTION_KEY=${LLM_KEY_ENCRYPTION_KEY:?LLM_KEY_ENCRYPTION_KEY required (32 bytes hex)}
+      - EMAIL_FROM=${EMAIL_FROM:-noreply@dash-bi.com}
+      - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
       - EXPORTS_DIR=/var/lib/dash-bi/exports
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
     volumes:
@@ -78,7 +107,9 @@ services:
       - "${POSTGRES_PORT:-5432}:5432"
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-dashbi}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-dashbi_password}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}
+      - POSTGRES_READONLY_USER=${POSTGRES_READONLY_USER:-dashbi_readonly}
+      - POSTGRES_READONLY_PASSWORD=${POSTGRES_READONLY_PASSWORD:?POSTGRES_READONLY_PASSWORD required}
       - POSTGRES_DB=${POSTGRES_DB:-dashbi}
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -110,11 +141,11 @@ services:
         --maxmemory 512mb
         --maxmemory-policy allkeys-lru
         --appendonly yes
-        --requirepass ${REDIS_PASSWORD:-redis_password}
+        --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD required}
     volumes:
       - redis-data:/var/lib/redis/data
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis_password}", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:?REDIS_PASSWORD required}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
