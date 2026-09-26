@@ -159,3 +159,5 @@ research/
 # ─────────────────────────────────────────────────────────────
 AGENTS.md
 skills-lock.json
+# Local Pi runtime state
+.atl/
