@@ -17,6 +17,7 @@ import { trackOnboardingEvent } from '@/lib/onboarding/track';
 export function GeneratingStep() {
   const prompt = useOnboardingStore((s) => s.prompt);
   const dataSourceId = useOnboardingStore((s) => s.dataSourceId);
+  const selectedSourceType = useOnboardingStore((s) => s.selectedSourceType);
   const dashboardId = useOnboardingStore((s) => s.dashboardId);
   const setDashboardId = useOnboardingStore((s) => s.setDashboardId);
   const goToStep = useOnboardingStore((s) => s.goToStep);
@@ -29,15 +30,23 @@ export function GeneratingStep() {
     setError(null);
 
     async function run() {
-      if (!dataSourceId || !prompt.trim()) {
+      const isDemo = selectedSourceType === 'demo';
+      if (!isDemo && (!dataSourceId || !prompt.trim())) {
         setError('Falta seleccionar fuente de datos o escribir un prompt.');
         return;
       }
       try {
-        const res = await fetch('/api/dashboards/generate', {
+        const url = isDemo
+          ? '/api/dashboards/templates/saas-mrr-analytics/instantiate'
+          : '/api/dashboards/generate';
+        const bodyPayload = isDemo
+          ? JSON.stringify({ title: prompt.trim() || 'Demo SaaS Analytics' })
+          : JSON.stringify({ prompt, dataSourceId });
+
+        const res = await fetch(url, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ prompt, dataSourceId }),
+          body: bodyPayload,
         });
         if (cancelled) return;
 
@@ -64,7 +73,7 @@ export function GeneratingStep() {
     return () => {
       cancelled = true;
     };
-  }, [attempt, prompt, dataSourceId, setDashboardId, goToStep]);
+  }, [attempt, prompt, dataSourceId, selectedSourceType, setDashboardId, goToStep]);
 
   if (error) {
     return (

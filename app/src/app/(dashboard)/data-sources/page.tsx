@@ -15,11 +15,14 @@ import {
   RefreshCw,
   Key,
   FileSpreadsheet,
+  FileText,
+  UploadCloud,
   Server,
   Inbox,
   ShoppingBag,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { FileUploadModal } from '@/components/datasources/FileUploadModal';
 
 interface DataSourceItem {
   id: string;
@@ -70,6 +73,8 @@ export default function DataSourcesPage() {
   const queryClient = useQueryClient();
   const [testingId, setTestingId] = useState<string | null>(null);
   const [showConnectModal, setShowConnectModal] = useState(false);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [uploadInitialType, setUploadInitialType] = useState<'csv' | 'excel'>('csv');
   const [selectedType, setSelectedType] = useState<'postgres' | 'stripe' | 'sheets' | 'mysql' | 'shopify'>('postgres');
   const [submitting, setSubmitting] = useState(false);
 
@@ -195,18 +200,33 @@ export default function DataSourcesPage() {
             <span>Fuentes de Datos</span>
           </h1>
           <p className="text-xs text-slate-400 mt-1">
-            Gestioná las conexiones seguras a tus bases de datos PostgreSQL, MySQL, Shopify, Stripe y Google Sheets.
+            Gestioná conexiones a PostgreSQL, MySQL, Shopify, Stripe, Google Sheets o subí archivos CSV y Excel.
           </p>
         </div>
 
-        <Button
-          onClick={() => setShowConnectModal(true)}
-          data-testid="connect-datasource"
-          className="bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs px-4 h-9 shadow-lg shadow-indigo-500/20 gap-1.5"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Conectar Nueva Fuente</span>
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            onClick={() => {
+              setUploadInitialType('csv');
+              setShowUploadModal(true);
+            }}
+            variant="outline"
+            data-testid="upload-file-datasource"
+            className="border-slate-800 bg-slate-900/80 hover:bg-slate-800 text-slate-200 text-xs px-3.5 h-9 gap-1.5"
+          >
+            <UploadCloud className="w-4 h-4 text-emerald-400" />
+            <span>Subir Archivo (CSV/Excel)</span>
+          </Button>
+
+          <Button
+            onClick={() => setShowConnectModal(true)}
+            data-testid="connect-datasource"
+            className="bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs px-4 h-9 shadow-lg shadow-indigo-500/20 gap-1.5"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Conectar Base de Datos / API</span>
+          </Button>
+        </div>
       </div>
 
       {isLoading && <p className="text-slate-400 text-sm">Cargando fuentes…</p>}
@@ -216,7 +236,7 @@ export default function DataSourcesPage() {
           <Inbox className="w-8 h-8 text-slate-500 mx-auto mb-3" />
           <h2 className="text-sm font-semibold text-white">Todavía no conectaste ninguna fuente</h2>
           <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
-            Conectá una base de datos PostgreSQL, MySQL, Shopify, Stripe o Google Sheets para empezar a generar dashboards.
+            Conectá una base de datos o subí un archivo CSV/Excel para empezar a generar dashboards.
           </p>
         </div>
       )}
@@ -238,6 +258,8 @@ export default function DataSourcesPage() {
                       {ds.type === 'shopify' && <ShoppingBag className="w-5 h-5 text-emerald-400" />}
                       {ds.type === 'stripe' && <Key className="w-5 h-5 text-purple-400" />}
                       {ds.type === 'sheets' && <FileSpreadsheet className="w-5 h-5 text-teal-400" />}
+                      {ds.type === 'csv' && <FileText className="w-5 h-5 text-emerald-400" />}
+                      {ds.type === 'excel' && <FileSpreadsheet className="w-5 h-5 text-teal-400" />}
                     </div>
                     <div>
                       <CardTitle className="text-sm font-bold text-white leading-tight">
@@ -314,7 +336,7 @@ export default function DataSourcesPage() {
             </CardHeader>
 
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
                 <button
                   type="button"
                   onClick={() => setSelectedType('postgres')}
@@ -378,6 +400,32 @@ export default function DataSourcesPage() {
                 >
                   <FileSpreadsheet className="w-5 h-5 text-teal-400" />
                   <span>Sheets</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowConnectModal(false);
+                    setUploadInitialType('csv');
+                    setShowUploadModal(true);
+                  }}
+                  className="p-2.5 rounded-lg border bg-slate-800/60 border-slate-700 text-slate-400 hover:text-emerald-400 hover:border-emerald-500/50 flex flex-col items-center gap-1.5 text-xs font-medium transition"
+                >
+                  <FileText className="w-5 h-5 text-emerald-400" />
+                  <span>CSV</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowConnectModal(false);
+                    setUploadInitialType('excel');
+                    setShowUploadModal(true);
+                  }}
+                  className="p-2.5 rounded-lg border bg-slate-800/60 border-slate-700 text-slate-400 hover:text-teal-400 hover:border-teal-500/50 flex flex-col items-center gap-1.5 text-xs font-medium transition"
+                >
+                  <FileSpreadsheet className="w-5 h-5 text-teal-400" />
+                  <span>Excel</span>
                 </button>
               </div>
 
@@ -521,6 +569,19 @@ export default function DataSourcesPage() {
           </Card>
         </div>
       )}
+
+      <FileUploadModal
+        open={showUploadModal}
+        initialType={uploadInitialType}
+        onClose={() => setShowUploadModal(false)}
+        onSuccess={() => {
+          queryClient.invalidateQueries({ queryKey: ['data-sources'] });
+          toast({
+            title: 'Archivo cargado con éxito',
+            description: 'La tabla de datos fue creada y está lista para ser consultada.',
+          });
+        }}
+      />
     </div>
   );
 }

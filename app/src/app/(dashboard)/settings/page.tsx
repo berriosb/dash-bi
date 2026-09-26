@@ -6,8 +6,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Settings, ShieldCheck, Sparkles, Users, Palette, Check, Save } from 'lucide-react';
+import { Settings, ShieldCheck, Sparkles, Palette, Check, Save } from 'lucide-react';
 import { useUIStore } from '@/stores/uiStore';
+import { MembersManager } from '@/components/settings/MembersManager';
 
 export default function SettingsPage() {
   const { activeTheme, setActiveTheme } = useUIStore();
@@ -190,52 +191,8 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* Section 3: Team Members */}
-      <Card className="bg-slate-900/70 border-slate-800 text-white">
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <Users className="w-5 h-5 text-pink-400" />
-            <CardTitle className="text-base font-bold">Miembros del Equipo</CardTitle>
-          </div>
-          <CardDescription className="text-xs text-slate-400">
-            Administrá el acceso a la organización y los permisos (Admin, Editor, Viewer).
-          </CardDescription>
-        </CardHeader>
-
-        <CardContent className="space-y-3">
-          <div className="space-y-2">
-            <div className="flex items-center justify-between p-3 rounded-lg bg-slate-950 border border-slate-800 text-xs">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold">
-                  A
-                </div>
-                <div>
-                  <p className="font-semibold text-white">Alex Johnson</p>
-                  <p className="text-[11px] text-slate-500">alex@empresa.com</p>
-                </div>
-              </div>
-              <Badge variant="outline" className="bg-indigo-500/10 text-indigo-400 border-indigo-500/20 text-[10px]">
-                Propietario (Admin)
-              </Badge>
-            </div>
-
-            <div className="flex items-center justify-between p-3 rounded-lg bg-slate-950 border border-slate-800 text-xs">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-purple-600 text-white flex items-center justify-center font-bold">
-                  S
-                </div>
-                <div>
-                  <p className="font-semibold text-white">Sofia Martinez</p>
-                  <p className="text-[11px] text-slate-500">sofia@empresa.com</p>
-                </div>
-              </div>
-              <Badge variant="outline" className="bg-purple-500/10 text-purple-400 border-purple-500/20 text-[10px]">
-                Editor
-              </Badge>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Section 3: Team Members (RBAC) */}
+      <MembersManager />
     </div>
   );
 }

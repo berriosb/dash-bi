@@ -15,7 +15,7 @@ const ONBOARDING_STEPS = [
   'success',
 ] as const;
 
-const SOURCE_TYPES = ['postgres', 'stripe', 'sheets'] as const;
+const SOURCE_TYPES = ['postgres', 'stripe', 'sheets', 'demo'] as const;
 
 const EventSchema = z.discriminatedUnion('type', [
   z.object({

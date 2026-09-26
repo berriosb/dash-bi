@@ -19,7 +19,7 @@ export type OnboardingEvent =
   | {
       type: 'step_completed';
       step: OnboardingStep;
-      sourceType?: 'postgres' | 'stripe' | 'sheets';
+      sourceType?: 'postgres' | 'stripe' | 'sheets' | 'demo';
       durationMs: number;
     }
   | {

@@ -45,9 +45,12 @@ export async function createRLSPolicies(): Promise<void> {
         WHERE user_id = current_setting('app.current_user_id')::uuid
       ))`,
 
-    // org_members: ve solo memberships propias
+    // org_members: ve solo memberships propias o de la org activa
     `CREATE POLICY org_members_isolation ON org_members
-      USING (user_id = current_setting('app.current_user_id')::uuid)`,
+      USING (
+        user_id = current_setting('app.current_user_id', true)::uuid
+        OR org_id = current_setting('app.current_org_id', true)::uuid
+      )`,
 
     // data_sources: filtra por org_id
     `CREATE POLICY data_sources_isolation ON data_sources

@@ -14,11 +14,12 @@ describe('ChooseSourceStep', () => {
     useOnboardingStore.getState().reset();
   });
 
-  it('renders the three available source types as selectable cards', () => {
+  it('renders the available source types including demo as selectable cards', () => {
     render(<ChooseSourceStep />);
     expect(screen.getByText(/postgresql/i)).toBeDefined();
     expect(screen.getByText(/stripe/i)).toBeDefined();
     expect(screen.getByText(/google sheets/i)).toBeDefined();
+    expect(screen.getByText(/modo demo/i)).toBeDefined();
   });
 
   it('disables the Continue button until a source is selected', () => {

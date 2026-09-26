@@ -7,7 +7,7 @@ export type OnboardingStep =
   | 'generating'
   | 'success';
 
-export type SourceType = 'postgres' | 'stripe' | 'sheets';
+export type SourceType = 'postgres' | 'stripe' | 'sheets' | 'demo';
 
 export type OnboardingState = {
   step: OnboardingStep;

@@ -48,7 +48,10 @@ const POLICIES = [
     name: 'org_members_isolation',
     table: 'org_members',
     sql: `CREATE POLICY org_members_isolation ON org_members
-      USING (user_id = current_setting('app.current_user_id', true)::uuid)`,
+      USING (
+        user_id = current_setting('app.current_user_id', true)::uuid
+        OR org_id = current_setting('app.current_org_id', true)::uuid
+      )`,
   },
   {
     name: 'data_sources_isolation',

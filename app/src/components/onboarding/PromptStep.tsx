@@ -22,6 +22,11 @@ const SUGGESTIONS_BY_TYPE: Record<SourceType, string[]> = {
     'Tendencia de ventas por región',
     'Comparación Q1 vs Q2 por métrica',
   ],
+  demo: [
+    'Dashboard ejecutivo de SaaS y métricas de retención',
+    'MRR, Churn y LTV de los últimos 12 meses',
+    'Rendimiento comercial y desglose por cohortes',
+  ],
 };
 
 const GENERIC_SUGGESTIONS = [

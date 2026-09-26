@@ -154,4 +154,30 @@ describe('GeneratingStep', () => {
     });
     expect(useOnboardingStore.getState().dashboardId).toBe('dash-uuid-2');
   });
+
+  it('instantiates template endpoint when selectedSourceType is demo', async () => {
+    useOnboardingStore.getState().setSelectedSourceType('demo');
+    useOnboardingStore.getState().setPrompt('Mi Dashboard SaaS');
+    useOnboardingStore.getState().goToStep('generating');
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ dashboard: { id: 'demo-dash-uuid-3' } }),
+    });
+
+    render(<GeneratingStep />);
+
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+    const call = mockFetch.mock.calls[0]!;
+    expect(call[0]).toBe('/api/dashboards/templates/saas-mrr-analytics/instantiate');
+    const body = JSON.parse((call[1] as RequestInit).body as string);
+    expect(body).toEqual({ title: 'Mi Dashboard SaaS' });
+
+    await waitFor(() => {
+      expect(useOnboardingStore.getState().step).toBe('success');
+    });
+    expect(useOnboardingStore.getState().dashboardId).toBe('demo-dash-uuid-3');
+  });
 });
