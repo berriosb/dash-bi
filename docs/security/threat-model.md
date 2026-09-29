@@ -89,6 +89,10 @@ export function validateQuery(query: Query, type: ConnectorType): void {
 - [x] Validación de connection string al guardar
 - [x] Test connection antes de guardar
 - [x] DB user de dash-bi (no del usuario) con permisos limitados
+- [x] Validación en el constructor del connector, no solo en la API (cron jobs, seeds y scripts también quedan cubiertos)
+- [x] Normalización previa: puerto, corchetes IPv6 y notaciones `inet_aton` alternas (decimal, octal, hex) se resuelven antes de comparar, para que `127.0.0.1:5432` y `2130706433` no evadan el bloqueo
+
+**Alcance conocido:** la validación es de nivel *string*. No derrota DNS rebinding, donde un hostname resuelve a una IP pública durante la validación y a una privada al conectar. Eso exige fijar la IP resuelta en el momento de la conexión (lookup custom en el HTTP agent) y está pendiente.
 
 ```typescript
 // lib/security/validate-connection.ts
@@ -184,11 +188,15 @@ export async function checkRateLimit(orgId: string): Promise<void> {
 **Amenaza:** Link público compartido se vuelve viral, alguien scrapea data sensible.
 
 **Controles obligatorios:**
-- [x] Link público con token random 32+ chars (`2^192` combinaciones, brute force no factible)
-- [x] Rate limit por IP en links públicos (100 requests/hora)
-- [x] View counter + alerta si views > 1000/día
-- [x] robots.txt: `Disallow: /share/`
-- [x] Optional: expiration date (default 30 días)
+- [x] Link público con token random 32+ chars (`2^192` combinaciones, brute force no factible) — `sharing/token.ts` usa `randomBytes(24)`
+- [x] Expiración y revocación chequeadas en cada uso, no solo al crear (`get-public-dashboard.ts`)
+- [x] Lectura del share público bajo `withOrgContext`, manteniendo aislamiento entre tenants
+- [x] Tokens de embed firmados con HMAC-SHA256 y comparación en tiempo constante (`timingSafeEqual`)
+- [x] Sin secreto HMAC por defecto: `EMBED_TOKEN_SECRET` → `LLM_KEY_ENCRYPTION_KEY` → `BETTER_AUTH_SECRET`. Sin ninguna de las tres, firmar y verificar fallan en vez de usar una constante pública del repo
+- [ ] Rate limit por IP en links públicos (100 requests/hora) — **no implementado**
+- [ ] View counter + alerta si views > 1000/día — **no implementado**
+- [ ] robots.txt: `Disallow: /share/` — **no implementado** (no existe `public/robots.txt`)
+- [ ] Expiración por defecto de 30 días — **no implementado**: `expiresAt` es opcional y un token sin él es perpetuo. Las APIs de creación deben aplicar el default
 
 ### T7 — Dashboard JSON injection
 

@@ -79,4 +79,56 @@ describe('Alerts Webhook Channel', () => {
     expect(result.status).toBe('failed');
     expect(result.error).toBe('ECONNREFUSED');
   });
+
+  // T3/T6 — SSRF. The webhook target is user-supplied and the server
+  // performs the request, so an unvalidated URL turns this into a
+  // server-side request forgery primitive.
+  describe('SSRF protection', () => {
+    it('does not send to the AWS metadata endpoint', async () => {
+      const result = await sendWebhookAlert({
+        ...baseParams,
+        url: 'http://169.254.169.254/latest/meta-data/iam/security-credentials/',
+      });
+
+      expect(result.status).toBe('failed');
+      expect(result.error).toMatch(/not allowed|blocked|SSRF/i);
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it('does not send to loopback', async () => {
+      const result = await sendWebhookAlert({ ...baseParams, url: 'http://127.0.0.1:5432/' });
+
+      expect(result.status).toBe('failed');
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it('does not send to an internal hostname', async () => {
+      const result = await sendWebhookAlert({ ...baseParams, url: 'http://localhost:8080/admin' });
+
+      expect(result.status).toBe('failed');
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it('does not send to a non-HTTP scheme', async () => {
+      const result = await sendWebhookAlert({ ...baseParams, url: 'file:///etc/passwd' });
+
+      expect(result.status).toBe('failed');
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it('does not follow redirects into the private range', async () => {
+      // A public URL that 302s to 169.254.169.254 is the same attack with
+      // an extra hop, so the transport must not chase it.
+      const mockFetch = vi.mocked(fetch).mockResolvedValue({
+        ok: true,
+        status: 200,
+        redirect: 'manual',
+        text: async () => 'ok',
+      } as unknown as Response);
+
+      await sendWebhookAlert(baseParams);
+      const init = mockFetch.mock.calls[0]![1]!;
+      expect(init?.redirect).toBe('manual');
+    });
+  });
 });

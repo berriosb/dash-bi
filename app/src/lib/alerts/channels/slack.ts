@@ -9,6 +9,7 @@
  * the UI (Settings → Integrations → Slack).
  */
 import type { AlertChannelConfig, AlertDeliveryResult } from '../types';
+import { validateOutboundUrl, OutboundUrlError } from '@/lib/security/validate-connection';
 
 export interface SendSlackAlertParams {
   webhookUrl: string;
@@ -63,11 +64,25 @@ export async function sendSlackAlert(
     ],
   };
 
+  // T3/T6 — SSRF guard at send time. The creation-time schema pins the host,
+  // but a rule persisted before that check (or written via any path that
+  // skips the schema) must not aim the server at internal infrastructure.
+  let target: string;
   try {
-    const res = await fetch(params.webhookUrl, {
+    target = validateOutboundUrl(params.webhookUrl, {
+      allowedPrefixes: ['https://hooks.slack.com/'],
+    }).toString();
+  } catch (error) {
+    const reason = error instanceof OutboundUrlError ? error.message : 'invalid Slack webhook URL';
+    return { channelType: 'slack', status: 'failed', error: reason };
+  }
+
+  try {
+    const res = await fetch(target, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(payload),
+      redirect: 'manual',
     });
     if (!res.ok) {
       return {

@@ -22,6 +22,29 @@ describe('Alerts Slack Channel', () => {
     correlationId: 'alert_test_123',
   };
 
+  // T3/T6 — the schema restricts Slack URLs at creation time, but a rule
+  // stored before that check (or written by any path that skips the schema)
+  // must not be able to aim the server at internal infrastructure.
+  it('refuses to send to a non-Slack host', async () => {
+    const result = await sendSlackAlert({
+      ...baseParams,
+      webhookUrl: 'http://169.254.169.254/latest/meta-data/',
+    });
+
+    expect(result.status).toBe('failed');
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('refuses to send to a look-alike Slack host', async () => {
+    const result = await sendSlackAlert({
+      ...baseParams,
+      webhookUrl: 'https://hooks.slack.com.evil.test/services/T00/B00/xxx',
+    });
+
+    expect(result.status).toBe('failed');
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it('POSTs a Block Kit payload to the webhook URL', async () => {
     const mockFetch = vi.mocked(fetch).mockResolvedValue({
       ok: true,

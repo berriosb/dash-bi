@@ -18,12 +18,29 @@ export interface EmbedVerifyResult {
   error?: 'expired' | 'invalid_signature' | 'invalid_origin' | 'not_found';
 }
 
+export class EmbedTokenSecretError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'EmbedTokenSecretError';
+  }
+}
+
+/**
+ * Resolve the HMAC key used to sign embed tokens.
+ *
+ * T6: there is deliberately NO hardcoded fallback. A committed default
+ * would let anyone forge a token for any org offline, which turns the
+ * embed route into an unauthenticated read path across tenants. A
+ * misconfigured deployment must fail loudly instead.
+ */
 function getSecretKey(): string {
-  return (
-    process.env.LLM_KEY_ENCRYPTION_KEY ||
-    process.env.BETTER_AUTH_SECRET ||
-    'dashbi_embed_fallback_secret_key_32bytes_hex_1234'
-  );
+  const key = process.env.EMBED_TOKEN_SECRET || process.env.LLM_KEY_ENCRYPTION_KEY || process.env.BETTER_AUTH_SECRET;
+  if (!key || key.trim().length === 0) {
+    throw new EmbedTokenSecretError(
+      'Embed token secret is not configured. Set EMBED_TOKEN_SECRET (recommended), LLM_KEY_ENCRYPTION_KEY, or BETTER_AUTH_SECRET.',
+    );
+  }
+  return key;
 }
 
 /**
@@ -64,6 +81,16 @@ export async function verifyEmbedToken(
     return { valid: false, error: 'invalid_signature' };
   }
 
+  // An unconfigured deployment must not validate anything: without a key we
+  // cannot distinguish a real token from a forgery. Fail closed rather than
+  // throw, since this runs on the public embed read path.
+  let secretKey: string;
+  try {
+    secretKey = getSecretKey();
+  } catch {
+    return { valid: false, error: 'invalid_signature' };
+  }
+
   const raw = tokenString.slice(4);
   const parts = raw.split('.');
   if (parts.length !== 2 || !parts[0] || !parts[1]) {
@@ -73,7 +100,7 @@ export async function verifyEmbedToken(
   const payloadBase64 = parts[0];
   const providedSignature = parts[1];
 
-  const expectedSignature = createHmac('sha256', getSecretKey())
+  const expectedSignature = createHmac('sha256', secretKey)
     .update(payloadBase64)
     .digest('base64url');
 

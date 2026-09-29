@@ -8,6 +8,7 @@
  * keep `kind` / `type` as the discriminator field at runtime.
  */
 import { z } from 'zod';
+import { validateOutboundUrl } from '@/lib/security/validate-connection';
 import type { AlertCondition, AlertPlan } from './types';
 import { ALERT_LIMITS } from './types';
 
@@ -60,7 +61,20 @@ export const EmailChannelSchema = z.object({
 
 export const WebhookChannelSchema = z.object({
   type: z.literal('webhook'),
-  url: z.string().url(),
+  // T3/T6 — reject SSRF targets at creation time so a hostile URL never
+  // reaches the database. `sendWebhookAlert` re-validates before dispatch
+  // as defense in depth for rules stored before this check existed.
+  url: z.string().url().refine(
+    (url) => {
+      try {
+        validateOutboundUrl(url);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    { message: 'Webhook URL apunta a un host bloqueado (red privada o metadata endpoint)' },
+  ),
   headers: z.record(z.string(), z.string()).optional(),
 });
 
