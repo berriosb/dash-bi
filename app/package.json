@@ -91,7 +91,7 @@
     "stripe": "^17.5.0",
     "tailwind-merge": "^2.6.0",
     "use-debounce": "^10.0.0",
-    "xlsx": "^0.18.5",
+    "xlsx": "file:vendor/xlsx-0.20.3.tgz",
     "zod": "^3.24.0",
     "zundo": "^2.3.0",
     "zustand": "^5.0.0"
