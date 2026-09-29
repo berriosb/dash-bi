@@ -75,6 +75,10 @@ jobs:
         run: pnpm test
         env:
           NODE_ENV: test
+          # The RLS integration suite is the only real test of the
+          # multi-tenant boundary. GitHub runners have Docker, so a skip
+          # here means the coverage silently vanished — fail instead.
+          RLS_TESTS_REQUIRED: '1'
           BETTER_AUTH_SECRET: ci_placeholder_secret_at_least_32_characters_long_xxxxx
           BETTER_AUTH_URL: http://localhost:3000
           DATABASE_URL: postgresql://dashbi:changeme@localhost:5432/dashbi

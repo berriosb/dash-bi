@@ -18,9 +18,14 @@ import { schemaRef } from './postgres';
  * create during setup. This locks down the failure mode where a callback
  * forgets to use `tx` and a query bypasses the GUCs.
  *
- * Requires Docker. The CI workflow provisions a Testcontainers Postgres
- * in the `e2e` job — these tests run there.
+ * Requires Docker. Without a container runtime these tests SKIP with a
+ * warning rather than failing the whole unit run — a hard failure here
+ * taught everyone to ignore red. Set `RLS_TESTS_REQUIRED=1` to turn a
+ * missing runtime into a hard error; CI sets it so the tenant-isolation
+ * guarantee can never be silently skipped on the merge gate.
  */
+const RUNTIME_UNAVAILABLE = /container runtime|Could not find a working container runtime/i;
+
 async function setRoleAndGucs(
   tx: TestDb,
   orgId: string | null,
@@ -56,20 +61,55 @@ async function setRoleAndGucs(
 
 describe('T1 — Cross-tenant isolation (Postgres RLS, real DB)', () => {
   let db: TestDb;
+  let runtimeAvailable = true;
 
   beforeAll(async () => {
-    db = await getTestDb();
+    try {
+      db = await getTestDb();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!RUNTIME_UNAVAILABLE.test(message)) throw error;
+
+      // Never let CI lose this coverage silently: RLS_TESTS_REQUIRED=1
+      // turns a missing runtime into a hard failure of the merge gate.
+      if (process.env.RLS_TESTS_REQUIRED === '1') {
+        throw new Error(
+          'RLS integration tests are required but no container runtime is available: ' +
+            message,
+          { cause: error },
+        );
+      }
+      runtimeAvailable = false;
+      console.warn(
+        '\n[SKIP] T1 RLS integration tests need Docker (Testcontainers). ' +
+          'The multi-tenant isolation guarantee is UNVERIFIED in this run.\n',
+      );
+    }
   }, 120_000);
 
   beforeEach(async () => {
+    if (!runtimeAvailable) return;
     await resetDb();
   }, 60_000);
 
   afterAll(async () => {
+    if (!runtimeAvailable) return;
     await closeTestDb();
   });
 
-  it('reproduces the failure mode: db.select() without GUC returns zero rows for tenant tables', async () => {
+  // Vitest 3 only exposes `ctx.skip()` inside a test body, not in
+  // `beforeAll`, so the availability flag is checked per test.
+  function itWithDb(name: string, fn: () => Promise<void>): void {
+    it(name, async (ctx) => {
+      if (!runtimeAvailable || !db) {
+        ctx.skip();
+        return;
+      }
+      await fn();
+    });
+  }
+
+  itWithDb('reproduces the failure mode: db.select() without GUC returns zero rows for tenant tables', async () => {
     const { users, orgs, orgMembers } = schemaRef();
 
     const [adminUser] = await db.insert(users).values({
@@ -110,7 +150,7 @@ describe('T1 — Cross-tenant isolation (Postgres RLS, real DB)', () => {
     expect(visibleToAnyone).toEqual([]);
   });
 
-  it('withOrgContext(orgId, userId, fn) isolates per tenant', async () => {
+  itWithDb('withOrgContext(orgId, userId, fn) isolates per tenant', async () => {
     const { users, orgs, orgMembers, dashboards } = schemaRef();
 
     const [orgA, orgB] = await db.insert(orgs).values([
@@ -160,7 +200,7 @@ describe('T1 — Cross-tenant isolation (Postgres RLS, real DB)', () => {
     expect(crossTenantTitles).toEqual(['A secret']);
   });
 
-  it('requiresPermission finds membership only when same-org GUCs are set', async () => {
+  itWithDb('requiresPermission finds membership only when same-org GUCs are set', async () => {
     const { users, orgs, orgMembers } = schemaRef();
 
     const [orgA] = await db.insert(orgs).values({ name: 'Org A', slug: 'org-a' }).returning();
