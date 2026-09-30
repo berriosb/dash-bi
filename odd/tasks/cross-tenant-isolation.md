@@ -115,8 +115,21 @@ which is the closest thing to the HTTP path the current architecture allows.
 |---|---|---|
 | 1, 2 | `349f7d2` fix(security): scope PDF export job lookups to the owning org | done |
 | 3, 4 | `72545ce` fix(security): scope alert rule reads and writes to the caller's org | done |
-| 5 | pending | in progress |
-| 6 | pending | pending |
+| 5 | `aa4f01a` feat(db): enable RLS on alert_rules and alert_events | done |
+| 6 | `4bcf5d5` test: hoist the pdf-enqueue module type out of the importActual generic | done |
+
+## Final gate (verified, branch HEAD = 4bcf5d5)
+
+| Gate | Command | Result |
+|---|---|---|
+| Lint | `pnpm lint:strict` | exit 0, 0 warnings |
+| Typecheck | `pnpm typecheck` | exit 0 |
+| Unit | `pnpm test` | 115 files, 957 passed, 3 skipped |
+| Build | `pnpm build` | exit 0, 43 routes |
+
+The 3 skipped are the RLS integration tests, which need a container runtime. The
+first run of this gate failed: `lint:strict` runs `--max-warnings 0` and commit
+`349f7d2` introduced one warning. Fixed in `4bcf5d5` and re-verified.
 
 ## Blocker discovered for HIGH-5 (do not fix HIGH-5 in isolation)
 
