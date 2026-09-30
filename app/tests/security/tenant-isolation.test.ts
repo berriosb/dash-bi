@@ -59,7 +59,19 @@ describe('withOrgContext - tenant isolation (T1) - logic layer', () => {
 
     it('viewer can read non-sensitive columns', () => {
       expect(() => assertRolePermissions('SELECT name, email FROM customers', 'viewer')).not.toThrow();
-      expect(() => assertRolePermissions('SELECT * FROM products', 'viewer')).not.toThrow();
+    });
+
+    it('viewer cannot use wildcard projection', () => {
+      // This assertion previously expected NO throw, which encoded the
+      // bypass: `SELECT *` returns every column, so it necessarily
+      // returns password/token/ssn. A wildcard carries no column name,
+      // so the literal-column filter could not see it.
+      expect(() => assertRolePermissions('SELECT * FROM products', 'viewer')).toThrow(
+        ValidationError,
+      );
+      expect(() => assertRolePermissions('SELECT p.* FROM products p', 'viewer')).toThrow(
+        ValidationError,
+      );
     });
 
     it('column matching is case-insensitive (catches PASSWORD, Password, etc.)', () => {
@@ -148,9 +160,11 @@ describe('withOrgContext - tenant isolation (T1) - logic layer', () => {
     });
 
     it('still auto-injects LIMIT when role is provided', () => {
+      // Explicit columns, not a wildcard: a viewer is allowed to query
+      // them, and the LIMIT injection must still happen.
       const query: { kind: 'sql'; sql: string } = {
         kind: 'sql',
-        sql: 'SELECT * FROM products',
+        sql: 'SELECT id, name FROM products',
       };
       validateQuery(query, 'postgres', 'viewer');
       expect(query.sql).toMatch(/LIMIT 10000/);

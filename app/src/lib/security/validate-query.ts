@@ -186,12 +186,29 @@ export function validateQuery(
  */
 const SENSITIVE_COLUMN_PATTERN = /\b(password|secret|api_key|apiKey|token|ssn|tax_id|credit_card|card_number|cvv)\b/i;
 
+/**
+ * A wildcard projection returns every column, so it necessarily returns
+ * the sensitive ones. `SELECT *` contains no column NAME, so the literal
+ * pattern above cannot see it — a viewer could exfiltrate `password`,
+ * `token` and `ssn` with a bare `SELECT * FROM users`.
+ *
+ * `*` and `alias.*` are blocked; `COUNT(*)` is exempt because it
+ * aggregates to a single number and leaks nothing.
+ */
+const WILDCARD_PROJECTION = /(^|[\s,(])(?:[A-Za-z_][A-Za-z0-9_]*\s*\.\s*)?\*(?!\s*\))/;
+
 export function assertRolePermissions(sql: string, role: OrgRole): void {
   if (role !== 'viewer') return;
 
   if (SENSITIVE_COLUMN_PATTERN.test(sql)) {
     throw new ValidationError(
       'Role viewer cannot access sensitive columns (PII protection)',
+    );
+  }
+
+  if (WILDCARD_PROJECTION.test(sql)) {
+    throw new ValidationError(
+      'Role viewer cannot use wildcard projection (SELECT *); name the columns explicitly',
     );
   }
 }
