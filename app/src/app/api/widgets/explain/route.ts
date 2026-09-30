@@ -2,10 +2,11 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
 import { withOrgContext } from '@/db/client';
-import { orgs, llmUsage } from '@/db/schema';
+import { orgs } from '@/db/schema';
 import { requireAuth } from '@/lib/auth/request';
 import { AiGateway } from '@/lib/ai/gateway';
-import { calculateCostUsd, type LLMProvider } from '@/lib/ai/types';
+import { type LLMProvider } from '@/lib/ai/types';
+import { recordLLMUsage, assertOrgCanSpendLlm } from '@/lib/ai/quota';
 import { checkRateLimit } from '@/lib/rate-limit';
 import { audit } from '@/lib/audit/log';
 import { toUserError, getOrGenerateCorrelationId } from '@/lib/errors/to-user-error';
@@ -74,6 +75,7 @@ export async function POST(req: Request) {
           llmProvider: orgs.llmProvider,
           llmModel: orgs.llmModel,
           llmApiKeyEncrypted: orgs.llmApiKeyEncrypted,
+          plan: orgs.plan,
         })
         .from(orgs)
         .where(eq(orgs.id, ctx.orgId)),
@@ -82,6 +84,8 @@ export async function POST(req: Request) {
     const provider = (orgConfig?.llmProvider ?? 'openai') as LLMProvider;
     const modelName = orgConfig?.llmModel ?? 'gpt-4o';
     const apiKeyEncrypted = orgConfig?.llmApiKeyEncrypted ?? undefined;
+
+    await assertOrgCanSpendLlm(ctx.orgId, ctx.userId, orgConfig?.plan ?? 'free');
 
     const gateway = new AiGateway(provider, modelName, apiKeyEncrypted);
 
@@ -94,25 +98,14 @@ export async function POST(req: Request) {
     });
     const latencyMs = Date.now() - startTime;
 
-    if (explanation.usage) {
-      const promptTokens = explanation.usage.promptTokens;
-      const completionTokens = explanation.usage.completionTokens;
-      const costUsd = calculateCostUsd(modelName, promptTokens, completionTokens);
-
-      await withOrgContext(ctx.orgId, ctx.userId, ctx.role, async (tx) =>
-        tx.insert(llmUsage).values({
-          orgId: ctx.orgId,
-          userId: ctx.userId,
-          provider,
-          model: modelName,
-          promptTokens,
-          completionTokens,
-          costUsd,
-          latencyMs,
-          success: true,
-        }),
-      );
-    }
+    await recordLLMUsage({
+      orgId: ctx.orgId,
+      userId: ctx.userId,
+      provider,
+      model: modelName,
+      usage: explanation.usage,
+      latencyMs,
+    });
 
     await audit(ctx.orgId, ctx.userId, 'nlqa.widget_explained', `widget:${widgetTitle}`, {
       metadata: {

@@ -7,6 +7,7 @@ import { requireAuth } from '@/lib/auth/request';
 import { resolveConnector } from '@/lib/query-engine/resolve';
 import { executeWithTimeout } from '@/lib/query-engine/execute';
 import { AiGateway, type NLQAHistoryTurn } from '@/lib/ai/gateway';
+import { recordLLMUsage, assertOrgCanSpendLlm } from '@/lib/ai/quota';
 import { validateQuery } from '@/lib/security/validate-query';
 import { audit } from '@/lib/audit/log';
 import { checkRateLimit } from '@/lib/rate-limit';
@@ -134,6 +135,7 @@ export async function POST(req: Request) {
         llmProvider: orgs.llmProvider,
         llmModel: orgs.llmModel,
         llmApiKeyEncrypted: orgs.llmApiKeyEncrypted,
+        plan: orgs.plan,
       })
       .from(orgs)
       .where(eq(orgs.id, ctx.orgId))
@@ -142,13 +144,27 @@ export async function POST(req: Request) {
     const provider = (orgConfig?.llmProvider ?? 'openai') as 'openai' | 'anthropic' | 'gemini';
     const modelName = orgConfig?.llmModel ?? 'gpt-4o';
     const apiKeyEncrypted = orgConfig?.llmApiKeyEncrypted ?? undefined;
+    // Budget gate BEFORE any token is spent. Two LLM calls happen per
+    // question, so letting them run and warning afterwards is worthless.
+    await assertOrgCanSpendLlm(ctx.orgId, ctx.userId, orgConfig?.plan ?? 'free');
+
     const gateway = new AiGateway(provider, modelName, apiKeyEncrypted ?? undefined);
 
+    const sqlStartedAt = Date.now();
     const sqlResult = await gateway.generateNLQASql({
       question,
       schemaInfo: JSON.stringify(rawSchema, null, 2),
       dataSourceType,
       history,
+    });
+
+    await recordLLMUsage({
+      orgId: ctx.orgId,
+      userId: ctx.userId,
+      provider,
+      model: modelName,
+      usage: sqlResult.usage,
+      latencyMs: Date.now() - sqlStartedAt,
     });
 
     if (!sqlResult.sql) {
@@ -212,11 +228,23 @@ export async function POST(req: Request) {
     }
     const execMs = Date.now() - execStart;
 
+    const answerStartedAt = Date.now();
     const answerResult = await gateway.generateNLQAAnswer({
       question,
       sql: sqlResult.sql,
       result: { rows: result.rows, rowCount: result.rowCount },
       history,
+    });
+
+    // Second model call of the same question — billed separately, since
+    // it is a distinct request with its own prompt and completion.
+    await recordLLMUsage({
+      orgId: ctx.orgId,
+      userId: ctx.userId,
+      provider,
+      model: modelName,
+      usage: answerResult.usage,
+      latencyMs: Date.now() - answerStartedAt,
     });
 
     const [assistantMsg] = await withOrgContext(ctx.orgId, ctx.userId, ctx.role, async (tx) =>

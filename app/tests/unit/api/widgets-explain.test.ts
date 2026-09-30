@@ -63,29 +63,37 @@ describe('POST /api/widgets/explain', () => {
       role: 'editor',
     });
     mockWithOrgContext.mockImplementation(async (...args: unknown[]) => {
-      const callback = args[3] as (tx: unknown) => unknown;
+      // The route calls withOrgContext(orgId, userId, role, fn), while the
+      // quota helper uses the 3-arg (orgId, userId, fn) overload. Accept
+      // both so the mock tracks the real contract instead of one arity.
+      const callback = (typeof args[2] === 'function' ? args[2] : args[3]) as (
+        tx: unknown,
+      ) => unknown;
       // Mock orgConfig query
-        const fakeTx = {
-          select: () => ({
-            from: () => ({
-              where: () => [
-                {
-                  llmProvider: 'openai',
-                  llmModel: 'gpt-4o',
-                  llmApiKeyEncrypted: null,
-                },
-              ],
-            }),
+      const fakeTx = {
+        select: () => ({
+          from: () => ({
+            where: () => [
+              {
+                llmProvider: 'openai',
+                llmModel: 'gpt-4o',
+                llmApiKeyEncrypted: null,
+                plan: 'pro',
+              },
+            ],
           }),
-          insert: () => ({
-            values: () => ({
-              returning: () => [{ id: 'usage-1' }],
-            }),
+        }),
+        insert: () => ({
+          values: () => ({
+            returning: () => [{ id: 'usage-1' }],
           }),
-        };
-        return callback(fakeTx);
-      },
-    );
+        }),
+        // Monthly spend aggregate for the budget gate: the org is well
+        // under its cap, so the request must proceed.
+        execute: async () => [{ spend: '0.500000' }],
+      };
+      return callback(fakeTx);
+    });
   });
 
   it('rejects unauthenticated requests with 401', async () => {

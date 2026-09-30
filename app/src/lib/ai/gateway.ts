@@ -4,7 +4,8 @@ import { getLanguageModel } from './router';
 import { selectArchetype } from '@/lib/widgets/selector';
 import { ARCHETYPES } from '@/lib/widgets/archetypes';
 import { validateDashboardWithArchetype } from '@/lib/widgets/validator';
-import type { LLMProvider, GenerateDashboardInput } from './types';
+import type { LLMProvider, GenerateDashboardInput, LLMUsage } from './types';
+import { toLLMUsage } from './types';
 import type { Dashboard, Widget, WidgetType } from '@/lib/widgets/types';
 
 type GeneratedWidget = {
@@ -81,8 +82,8 @@ const nlqaAnswerSchema = z.object({
     .nullable(),
 });
 
-export type NLQASqlResult = z.infer<typeof nlqaSqlSchema>;
-export type NLQAAnswerResult = z.infer<typeof nlqaAnswerSchema>;
+export type NLQASqlResult = z.infer<typeof nlqaSqlSchema> & { usage?: LLMUsage };
+export type NLQAAnswerResult = z.infer<typeof nlqaAnswerSchema> & { usage?: LLMUsage };
 
 export interface NLQAHistoryTurn {
   role: 'user' | 'assistant';
@@ -123,6 +124,7 @@ export interface NLQAEditResult {
   reasoning: string;
   widgets?: Widget[];
   modifyWidgetId?: string;
+  usage?: LLMUsage;
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -170,7 +172,7 @@ export class AiGateway {
     private encryptedApiKey?: string,
   ) {}
 
-  async generateDashboard(input: GenerateDashboardInput): Promise<Dashboard> {
+  async generateDashboard(input: GenerateDashboardInput): Promise<Dashboard & { usage?: LLMUsage }> {
     const selection = selectArchetype({
       prompt: input.prompt,
       dataSourceType: input.dataSourceType,
@@ -237,7 +239,7 @@ Reglas estrictas:
       throw new Error(`La IA generó una composición inválida para el archetype seleccionado: ${details}`);
     }
 
-    return dashboard;
+    return { ...dashboard, usage: toLLMUsage(result.usage) };
   }
 
   // ─── NLQA: paso 1 — pregunta → SQL ──────────────────────────────
@@ -273,7 +275,7 @@ ${input.question}
       temperature: 0.1,
     });
 
-    return result.object;
+    return { ...result.object, usage: toLLMUsage(result.usage) };
   }
 
   // ─── NLQA: paso 2 — pregunta + SQL + resultado → texto + chart ──
@@ -325,7 +327,7 @@ ${input.history?.length ? `# HISTORIAL (contexto)\n${input.history.map((h) => `$
       temperature: 0.3,
     });
 
-    return result.object;
+    return { ...result.object, usage: toLLMUsage(result.usage) };
   }
 
   // ─── Edit iterativo — modifica dashboard existente ─────────────
@@ -390,7 +392,7 @@ ${input.prompt}
       temperature: 0.2,
     });
 
-    return result.object as NLQAEditResult;
+    return { ...(result.object as Omit<NLQAEditResult, 'usage'>), usage: toLLMUsage(result.usage) };
   }
 
   // ─── Explain Widget: ¿Por qué varió esta métrica? ───────────────

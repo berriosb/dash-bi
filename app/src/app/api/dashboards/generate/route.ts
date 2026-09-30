@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server';
 import { eq, and } from 'drizzle-orm';
 import { withOrgContext } from '@/db/client';
-import { dashboards } from '@/db/schema';
+import { dashboards, orgs } from '@/db/schema';
 import { requireAuth } from '@/lib/auth/request';
 import { resolveConnector } from '@/lib/query-engine/resolve';
 import { hydrateDashboard } from '@/lib/query-engine/dashboard';
 import { pruneSchemaForPrompt } from '@/lib/connectors/types';
 import { AiGateway } from '@/lib/ai/gateway';
+import { recordLLMUsage, assertOrgCanSpendLlm } from '@/lib/ai/quota';
 import { checkRateLimit } from '@/lib/rate-limit';
 import { audit } from '@/lib/audit/log';
 import { toUserError, getOrGenerateCorrelationId } from '@/lib/errors/to-user-error';
@@ -82,6 +83,17 @@ export async function POST(req: Request) {
     const prunedSchema = pruneSchemaForPrompt(rawSchema, prompt);
     const dsType = (connector.type === 'stripe' || connector.type === 'sheets' ? connector.type : 'postgres') as 'postgres' | 'stripe' | 'sheets';
     const gateway = new AiGateway();
+    // NOTE: this route builds the gateway with defaults, so it does NOT
+    // use the org's BYOK provider/model (unlike /api/nlqa/ask). Usage is
+    // recorded with the same values actually used so the cost row is
+    // truthful; the BYOK inconsistency is tracked separately.
+    const provider = 'openai';
+    const modelName = 'gpt-4o';
+
+    const [planRow] = await withOrgContext(ctx.orgId, ctx.userId, ctx.role, async (tx) =>
+      tx.select({ plan: orgs.plan }).from(orgs).where(eq(orgs.id, ctx.orgId)),
+    );
+    await assertOrgCanSpendLlm(ctx.orgId, ctx.userId, planRow?.plan ?? 'free');
 
     let responsePayload: {
       dashboard: Dashboard & { id?: string };
@@ -99,6 +111,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: 'Dashboard not found' }, { status: 404 });
       }
 
+      const editStartedAt = Date.now();
       const editResult = await gateway.generateNLQAEdit({
         prompt,
         existingDashboard: {
@@ -150,6 +163,15 @@ export async function POST(req: Request) {
           .returning()
       );
 
+      await recordLLMUsage({
+        orgId: ctx.orgId,
+        userId: ctx.userId,
+        provider,
+        model: modelName,
+        usage: editResult.usage,
+        latencyMs: Date.now() - editStartedAt,
+      });
+
       await audit(ctx.orgId, ctx.userId, 'dashboard.updated', `dashboard:${dashboardId}`, {
         metadata: {
           action: 'ai_edit',
@@ -165,11 +187,21 @@ export async function POST(req: Request) {
         reasoning: editResult.reasoning,
       };
     } else {
+      const generatedStartedAt = Date.now();
       const generated = await gateway.generateDashboard({
         prompt,
         schemaInfo: JSON.stringify(prunedSchema, null, 2),
         dataSourceId,
         dataSourceType: dsType,
+      });
+
+      await recordLLMUsage({
+        orgId: ctx.orgId,
+        userId: ctx.userId,
+        provider,
+        model: modelName,
+        usage: generated.usage,
+        latencyMs: Date.now() - generatedStartedAt,
       });
 
       const hydratedWidgets = await hydrateDashboard(ctx.orgId, ctx.userId, generated.widgets);
