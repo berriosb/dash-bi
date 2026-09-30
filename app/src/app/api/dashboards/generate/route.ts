@@ -147,7 +147,7 @@ export async function POST(req: Request) {
       );
       let finalWidgets = newWidgets;
       if (toHydrate.length > 0) {
-        const hydrated = await hydrateDashboard(ctx.orgId, ctx.userId, toHydrate);
+        const hydrated = await hydrateDashboard(ctx.orgId, ctx.userId, toHydrate, ctx.role);
         const byId = new Map(hydrated.map((h) => [h.id, h]));
         finalWidgets = newWidgets.map((w) => byId.get(w.id) ?? w);
       }
@@ -204,7 +204,7 @@ export async function POST(req: Request) {
         latencyMs: Date.now() - generatedStartedAt,
       });
 
-      const hydratedWidgets = await hydrateDashboard(ctx.orgId, ctx.userId, generated.widgets);
+      const hydratedWidgets = await hydrateDashboard(ctx.orgId, ctx.userId, generated.widgets, ctx.role);
 
       const [saved] = await withOrgContext(ctx.orgId, ctx.userId, ctx.role, async (tx) =>
         tx.insert(dashboards).values({

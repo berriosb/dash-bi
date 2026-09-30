@@ -65,7 +65,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       return NextResponse.json({ error: 'Dashboard not found' }, { status: 404 });
     }
 
-    const hydratedWidgets = await hydrateDashboard(ctx.orgId, ctx.userId, (dashboard.widgets ?? []) as Parameters<typeof hydrateDashboard>[2]);
+    // `role` is the 4th parameter, so `widgets` stays at index 2.
+    const hydratedWidgets = await hydrateDashboard(ctx.orgId, ctx.userId, (dashboard.widgets ?? []) as Parameters<typeof hydrateDashboard>[2], ctx.role);
 
     return NextResponse.json({
       dashboard: {

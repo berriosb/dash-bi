@@ -183,8 +183,15 @@ export function validateQuery(
  * El viewer:
  *   - Solo puede SELECT (ya cubierto por regex arriba)
  *   - No puede acceder a columnas sensibles marcadas (PII masking)
+ *
+ * The lookarounds replace `\b` on purpose: `\b` is NOT a boundary between
+ * `_` and a word character, so every snake_case column (`user_password`,
+ * `customer_ssn`, `billing_tax_id`, `token_type`) used to walk straight
+ * through this filter. Negating `[A-Za-z0-9]` makes `_` a valid boundary
+ * while still leaving `tokenizer` alone.
  */
-const SENSITIVE_COLUMN_PATTERN = /\b(password|secret|api_key|apiKey|token|ssn|tax_id|credit_card|card_number|cvv)\b/i;
+const SENSITIVE_COLUMN_PATTERN =
+  /(?<![A-Za-z0-9])(password|secret|api_key|apiKey|token|ssn|tax_id|credit_card|card_number|cvv)(?![A-Za-z0-9])/i;
 
 /**
  * A wildcard projection returns every column, so it necessarily returns
@@ -192,10 +199,24 @@ const SENSITIVE_COLUMN_PATTERN = /\b(password|secret|api_key|apiKey|token|ssn|ta
  * pattern above cannot see it — a viewer could exfiltrate `password`,
  * `token` and `ssn` with a bare `SELECT * FROM users`.
  *
- * `*` and `alias.*` are blocked; `COUNT(*)` is exempt because it
- * aggregates to a single number and leaks nothing.
+ * The previous regex demanded a `[\s,(]` before the star, so a SQL comment
+ * wedged in between hid it. Instead we mask the stars that belong to an
+ * aggregate — `COUNT(*)` aggregates to a single number and leaks nothing —
+ * and reject whatever `*` survives. A SQL
+ * comment cannot hide a projection star, it can only add one, so this fails
+ * closed.
+ *
+ * Accepted false positives, both from the fail-closed direction: a column
+ * named `password_reset_required_at` is now rejected by the sensitive
+ * pattern, and a `*` anywhere that is not an aggregate star — an arithmetic
+ * `2 * 3`, a LIKE pattern `'a*b'` — is now rejected. `SELECT 2 * 3` was
+ * already rejected by the old pattern, so that part is not a regression.
+ * A SQL comment stripper would narrow this further but is deliberately NOT
+ * used: mishandling a string literal there is a fail-open hole, which is
+ * strictly worse than an over-block.
  */
-const WILDCARD_PROJECTION = /(^|[\s,(])(?:[A-Za-z_][A-Za-z0-9_]*\s*\.\s*)?\*(?!\s*\))/;
+const AGGREGATE_STAR =
+  /\b(?:count|sum|avg|min|max|array_agg|json_agg)\s*\(\s*\*\s*\)/gi;
 
 export function assertRolePermissions(sql: string, role: OrgRole): void {
   if (role !== 'viewer') return;
@@ -206,7 +227,7 @@ export function assertRolePermissions(sql: string, role: OrgRole): void {
     );
   }
 
-  if (WILDCARD_PROJECTION.test(sql)) {
+  if (sql.replace(AGGREGATE_STAR, '()').includes('*')) {
     throw new ValidationError(
       'Role viewer cannot use wildcard projection (SELECT *); name the columns explicitly',
     );

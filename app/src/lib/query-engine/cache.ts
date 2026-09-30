@@ -1,12 +1,27 @@
 import crypto from 'node:crypto';
 import type { QueryResult } from '@/lib/connectors/types';
+import type { OrgRole } from '@/lib/auth/permissions';
 
 const memoryCache = new Map<string, { result: QueryResult; expiresAt: number }>();
 
-export function generateCacheKey(orgId: string, dataSourceId: string, query: unknown): string {
+/**
+ * `role` is REQUIRED, not optional, and it is part of the key.
+ *
+ * The cache is populated on the miss path, which is the only path where
+ * `validateQuery` runs. Without the role in the key, a result that an admin
+ * was allowed to read was served straight from the cache to a viewer, and the
+ * PII filter never ran for them. Making the parameter required turns "forgot
+ * to pass the role" into a type error instead of a silent cross-role leak.
+ */
+export function generateCacheKey(
+  orgId: string,
+  dataSourceId: string,
+  query: unknown,
+  role: OrgRole,
+): string {
   const queryStr = JSON.stringify(query, Object.keys(query as object).sort());
   const hash = crypto.createHash('sha256').update(queryStr).digest('hex');
-  return `query:${orgId}:${dataSourceId}:${hash}`;
+  return `query:${orgId}:${dataSourceId}:${role}:${hash}`;
 }
 
 export async function cacheGet(key: string): Promise<QueryResult | null> {
