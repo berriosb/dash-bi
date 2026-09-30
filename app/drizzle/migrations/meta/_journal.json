@@ -85,6 +85,13 @@
       "when": 1789393398653,
       "tag": "0011_previous_quasimodo",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1789479798653,
+      "tag": "0012_rls_alert_rules",
+      "breakpoints": true
     }
   ]
 }

@@ -113,9 +113,37 @@ which is the closest thing to the HTTP path the current architecture allows.
 
 | Task | Commit | Status |
 |---|---|---|
-| 1 | — | pending |
-| 2 | — | pending |
-| 3 | — | pending |
-| 4 | — | pending |
-| 5 | — | pending |
-| 6 | — | pending |
+| 1, 2 | `349f7d2` fix(security): scope PDF export job lookups to the owning org | done |
+| 3, 4 | `72545ce` fix(security): scope alert rule reads and writes to the caller's org | done |
+| 5 | pending | in progress |
+| 6 | pending | pending |
+
+## Blocker discovered for HIGH-5 (do not fix HIGH-5 in isolation)
+
+`withSystemContext` (`app/src/db/client.ts:147-149`) is a bare `db.transaction(fn)`.
+It sets no GUC and does nothing to bypass RLS. Its docstring says "Bypassea RLS",
+and that is only true today because `DATABASE_URL` connects as a superuser
+(HIGH-5) — a superuser ignores RLS unconditionally.
+
+`lib/alerts/dispatcher.ts:22-36` uses `withSystemContext` to read alert rules for
+**every** org, and `src/db/rls.ts` uses it for `enableRLS` and `createRLSPolicies`.
+
+So migration 0012 arms a trap for the HIGH-5 fix. The moment the app role becomes
+`NOSUPERUSER`:
+
+- `app_current_org_id()` returns the sentinel zero UUID for those transactions,
+- the dispatcher's cross-org SELECT matches zero rows,
+- **alerts silently stop firing**, and `enableRLS` / `createRLSPolicies` become
+  no-ops.
+
+This does not break anything today. It does mean HIGH-5 cannot be shipped on its
+own: `withSystemContext` needs a real bypass first — `SET LOCAL row_security = off`
+is not enough, since Postgres raises instead of bypassing for a non-superuser
+without `BYPASSRLS`. The options are a dedicated `BYPASSRLS` role that this
+context switches to, or a separate system connection.
+
+Also unresolved: `scripts/setup-rls.ts` and `src/db/rls.ts` still use the raw
+`current_setting('app.current_org_id')::uuid` form, which raises rather than
+returning NULL when the GUC was never set. The two policies added here use
+`app_current_org_id()`; the pre-existing ones were left alone to keep this
+commit reviewable.
