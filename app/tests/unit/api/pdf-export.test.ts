@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
+import type * as PdfEnqueueModule from '@/lib/export/pdf-enqueue';
 import { UnauthorizedError, ForbiddenError } from '@/lib/auth/context';
 
 const {
@@ -248,7 +249,7 @@ describe('GET /api/dashboards/[id]/export/pdf — cross-tenant isolation', () =>
   };
 
   beforeAll(async () => {
-    const actual = await vi.importActual<typeof import('@/lib/export/pdf-enqueue')>(
+    const actual = await vi.importActual<typeof PdfEnqueueModule>(
       '@/lib/export/pdf-enqueue'
     );
     realGetPdfJobStatus = actual.getPdfJobStatus as unknown as PdfStatusFn;
