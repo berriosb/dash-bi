@@ -50,7 +50,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       return NextResponse.json({ error: 'jobId query param required' }, { status: 400 });
     }
 
-    const result = await getPdfJobStatus(jobId);
+    // Scope the lookup to the caller's org and the dashboard in the path:
+    // BullMQ job ids are sequential and Redis has no RLS, so an unscoped
+    // lookup would let any tenant enumerate and download other tenants' PDFs.
+    const result = await getPdfJobStatus(jobId, { orgId: ctx.orgId, dashboardId });
 
     if (result.status === 'not_found') {
       return NextResponse.json({ status: 'not_found' }, { status: 404 });
