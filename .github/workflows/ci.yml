@@ -87,6 +87,23 @@ jobs:
           LLM_KEY_ENCRYPTION_KEY: ci_placeholder_encryption_key_at_least_32_chars_xxxxxxx
           NEXT_PUBLIC_APP_URL: http://localhost:3000
 
+      - name: Coverage gate
+        # Separate step from `pnpm test` on purpose: the thresholds in
+        # vitest.config.ts were never enforced because CI ran
+        # `vitest run` without --coverage. This makes them real. Runs on
+        # its own so the fast unit suite is not slowed down for everyone.
+        run: pnpm test:coverage
+        env:
+          NODE_ENV: test
+          RLS_TESTS_REQUIRED: '1'
+          BETTER_AUTH_SECRET: ci_placeholder_secret_at_least_32_characters_long_xxxxx
+          BETTER_AUTH_URL: http://localhost:3000
+          DATABASE_URL: postgresql://dashbi:changeme@localhost:5432/dashbi
+          DATABASE_READONLY_URL: postgresql://dashbi_readonly:changeme@localhost:5432/dashbi
+          REDIS_URL: redis://localhost:6379
+          LLM_KEY_ENCRYPTION_KEY: ci_placeholder_encryption_key_at_least_32_chars_xxxxxxx
+          NEXT_PUBLIC_APP_URL: http://localhost:3000
+
       - name: Build (catches route collisions, RSC/server-only leaks, Suspense boundary issues)
         run: pnpm build
         env:

@@ -15,15 +15,25 @@ export default defineConfig({
     exclude: ['tests/e2e/**', 'node_modules/**', '.next/**'],
     coverage: {
       provider: 'v8',
-      reporter: ['text', 'html', 'lcov'],
+      reporter: ['text-summary', 'lcov'],
+      // Only the lib/db layer. The 34 API route handlers, 16 pages and
+      // 54 components are NOT in this denominator, so these numbers say
+      // nothing about whether /api/nlqa/ask works. Widening it is a
+      // separate piece of work — the current ratio would collapse.
       include: ['src/lib/**/*.ts', 'src/db/**/*.ts'],
       exclude: ['**/*.test.ts', '**/*.d.ts', 'src/lib/env.ts'],
       thresholds: {
-        // Cobertura mínima para MVP
-        statements: 70,
-        branches: 65,
-        functions: 70,
-        lines: 70,
+        // Measured with `pnpm test:coverage` and set slightly BELOW the
+        // real numbers so the gate is green today and fails on a
+        // regression. They used to sit at 70/65/70/70 and had never
+        // been enforced, because CI ran `vitest run` without
+        // `--coverage`; the functions threshold was 2.2 points above
+        // actual (67.8%), so wiring it up as-is would have failed the
+        // merge gate on the first run.
+        statements: 70, // actual 71.63
+        branches: 75,  // actual 79.33
+        functions: 65, // actual 67.80
+        lines: 70,     // actual 71.63
       },
     },
     testTimeout: 30000,  // 30s para tests con Testcontainers
