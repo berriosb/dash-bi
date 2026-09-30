@@ -141,7 +141,52 @@ Verify the surrounding error handling and report what it does.
 
 | Task | Commit | Status |
 |---|---|---|
-| 1 | — | pending |
-| 2 | — | pending |
-| 3 | — | pending |
-| 4 | — | pending |
+| 1, 2, 3 | `05926b4` fix(security): actually apply the viewer PII filter and close its bypasses | done |
+
+## Third bypass, found while verifying the first two
+
+Not in the original plan. The query cache is populated on the miss path, which
+is the only path where `validateQuery` runs; the hit path at `dashboard.ts:36-40`
+returns before the validator is reached. `generateCacheKey(orgId, dataSourceId,
+query)` did not include the role, so an admin reading a PII column populated the
+cache and a viewer of the same org was served those rows with the filter never
+invoked. The role is now part of the key and required, at the cost of up to 3x
+cache fragmentation per `(org, dataSource, query)`. `cacheClearOrg` still matches
+on the `query:{orgId}:` prefix, which is why the role was placed after
+`dataSourceId` and not inside the hash.
+
+Worth noting how it nearly escaped: the first regression test written for it
+passed against the vulnerable code, because `validateQuery` mutates
+`query.sql` in place, so reusing one widget object across the two calls
+desynced the cache keys. Production deserializes a fresh widget per request.
+
+## Final gate (verified at HEAD = 05926b4)
+
+| Gate | Command | Result |
+|---|---|---|
+| Lint | `pnpm lint:strict` | exit 0, 0 warnings |
+| Typecheck | `pnpm typecheck` | exit 0 |
+| Unit | `pnpm test` | 117 files, 994 passed, 3 skipped |
+| Build | `pnpm build` | exit 0 |
+
+3 skipped are the RLS integration tests, which need a container runtime.
+
+## Known, deliberately not fixed here
+
+- `validateQuery` still returns `void` and mutates its argument to inject
+  `LIMIT 10000`. Four callers pass a throwaway literal and execute the
+  original SQL without the limit (audit HIGH-2, HIGH-3). Same root cause also
+  means a hydrated widget's `query.sql` can be written back to the DB with the
+  limit baked in if the widget is persisted after hydration. Own ticket.
+- `assertRolePermissions` still keys off `role !== 'viewer'`, so a future
+  `analyst` or `guest` role gets no restriction (audit M5). An allowlist of
+  unrestricted roles would fail closed instead.
+- `resolveConnector`'s `setRole` duck-typing (`resolve.ts:55-59`) is dead: the
+  `Connector` interface does not declare it and none of the 9 implementations
+  define it. Unreachable before and after this change.
+- Six connectors and four route/worker call sites still call `validateQuery`
+  with 2 args. Harmless: `execute.ts` validates first, so the role-aware check
+  runs before the untyped second pass can execute anything.
+- The `sheet`, `ga4` and `shopify` branches of `validateQuery` apply no role
+  filtering at all.
+- The uncommitted design-token work in the working tree stays untouched.
