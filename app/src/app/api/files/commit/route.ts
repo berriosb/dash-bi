@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { errorResponse } from '@/lib/errors/response';
 import { z } from 'zod';
 import { sql, eq } from 'drizzle-orm';
-import { withSystemContext, withOrgContext } from '@/db/client';
+import { withOrgContext } from '@/db/client';
 import { dataSources, uploadedFiles } from '@/db/schema';
 import { requireAuth } from '@/lib/auth/request';
 import { audit } from '@/lib/audit/log';
@@ -105,8 +105,13 @@ export async function POST(req: Request) {
     }
     const targetTable: string = uploadedRow.targetTable;
 
-    // 1. DDL: create schema + table + RLS + indexes (table-owner).
-    await withSystemContext(async (tx) => {
+    // 1. DDL: create schema + table + RLS + indexes.
+    //
+    //    These run under the org context like everything else in the handler.
+    //    DDL is not filtered by RLS, so the GUCs change nothing here — what
+    //    makes it work is that the app role owns the per-org schemas it
+    //    creates and holds CREATE on the database. No system context needed.
+    await withOrgContext(ctx.orgId, ctx.userId, ctx.role, async (tx) => {
       const [schemaName] = targetTable.split('.');
       if (!schemaName) {
         throw new Error('targetTable inválido');
@@ -121,17 +126,18 @@ export async function POST(req: Request) {
       }
     });
 
-    // 2. INSERT the rows. The `dashbi` role owns the table and bypasses
-    //    FORCE RLS, so we don't need GUCs.
-    const inserted = await withSystemContext(
-      async (tx) =>
-        loadRows(
-          tx as never,
-          targetTable,
-          ctx.orgId,
-          inferredColumns,
-          stored.rows,
-        ),
+    // 2. INSERT the rows under the caller's org, so the per-table RLS policy
+    //    (`org_id = app_current_org_id()`) accepts them. The table is one this
+    //    org created, but FORCE RLS applies to the owner too, so the GUCs are
+    //    what make the INSERT pass — not the fact that we own it.
+    const inserted = await withOrgContext(ctx.orgId, ctx.userId, ctx.role, (tx) =>
+      loadRows(
+        tx as never,
+        targetTable,
+        ctx.orgId,
+        inferredColumns,
+        stored.rows,
+      ),
     );
 
     // 3. Create the data_sources row so the file shows up in the

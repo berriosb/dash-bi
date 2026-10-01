@@ -142,8 +142,29 @@ export async function withOrgContext<T>(
 }
 
 /**
- * System context para migrations y cleanup jobs.
- * NO usar en /app/api/. Bypassea RLS.
+ * A plain transaction with no org context. **It does not bypass RLS.**
+ *
+ * The previous doc comment claimed it did. It never did — this has always been
+ * `db.transaction(fn)` with no GUC set. It appeared to work only because the
+ * app connected as a superuser (HIGH-5), and RLS is inert for a superuser.
+ * With that fixed, a read through here sees zero rows and a write fails the
+ * `WITH CHECK`: `app_current_org_id()` returns the zero UUID when no GUC is
+ * set, so `org_id = app_current_org_id()` matches nothing.
+ *
+ * It is therefore subject to RLS like any other transaction. The name
+ * suggests otherwise, which is the trap.
+ *
+ *   withOrgContext(orgId, userId, fn)
+ *       You know which org you are acting for. The normal case, and the only
+ *       one a request handler should use — see the guard in
+ *       tests/unit/db/system-context-usage.test.ts.
+ *
+ *   a named SECURITY DEFINER function
+ *       You genuinely need to cross orgs: a background worker scanning every
+ *       tenant, or resolving a public token to its org. Those are the only two
+ *       shapes that justify a system capability, and a function has a name, a
+ *       signature, a pinned search_path and an EXECUTE grant that can be
+ *       audited. This transaction has none of those.
  */
 export async function withSystemContext<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
   return await db.transaction(fn);

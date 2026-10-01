@@ -1,7 +1,7 @@
 import type { Job } from 'bullmq';
-import { eq } from 'drizzle-orm';
-import { withOrgContext, withSystemContext, withOrgContextReadOnly } from '@/db/client';
-import { alertRules, alertEvents, dashboards } from '@/db/schema';
+import { eq, sql } from 'drizzle-orm';
+import { db, withOrgContext, withOrgContextReadOnly } from '@/db/client';
+import { alertRules, alertEvents } from '@/db/schema';
 import { audit } from '@/lib/audit/log';
 import { evaluateCondition } from './condition';
 import { deliverToChannel } from './channels';
@@ -19,6 +19,28 @@ interface EvaluateResult {
   fired: boolean;
   value: number | string | null;
   threshold: number | string;
+}
+
+/**
+ * Shape of `public.alert_rules` as it comes back from raw SQL, i.e. with the
+ * column names rather than Drizzle's property names. Written out instead of
+ * reusing the Drizzle inferred type, which does not apply here and would let a
+ * rename land as `undefined` at runtime instead of a compile error.
+ */
+interface AlertRuleRow {
+  id: string;
+  org_id: string;
+  name: string;
+  query_sql: string;
+  query_columns: unknown;
+  condition: unknown;
+  consecutive_breaches: number;
+  consecutive_breaches_to_fire: number;
+  cooldown_minutes: number;
+  channels: unknown;
+  enabled: boolean;
+  last_fired_at: Date | null;
+  [key: string]: unknown;
 }
 
 interface LoadedRule {
@@ -197,35 +219,36 @@ async function markEvaluationFailed(
   });
 }
 
+/**
+ * Resolve a rule id from the queue to its rule, across orgs.
+ *
+ * The job payload is just an id, so there is no org to scope by until the rule
+ * is found. That resolution goes through a named SECURITY DEFINER function
+ * (migration 0014) with a pinned search_path and an audited EXECUTE grant;
+ * everything the evaluator does afterwards runs under `withOrgContext`.
+ */
 async function loadRuleAcrossOrgs(alertRuleId: string): Promise<LoadedRule | null> {
-  const result = await withSystemContext(async (tx) => {
-    const rows = await tx
-      .select({
-        rule: alertRules,
-        dashboardTitle: dashboards.title,
-      })
-      .from(alertRules)
-      .innerJoin(dashboards, eq(alertRules.dashboardId, dashboards.id))
-      .where(eq(alertRules.id, alertRuleId))
-      .limit(1);
-    return rows[0];
-  });
+  const result = (
+    await db.execute<{ rule: AlertRuleRow; dashboard_title: string }>(
+      sql`SELECT * FROM dashbi_load_alert_rule(${alertRuleId}::uuid)`,
+    )
+  )[0];
 
   if (!result) return null;
   return {
     id: result.rule.id,
-    orgId: result.rule.orgId,
+    orgId: result.rule.org_id,
     name: result.rule.name,
-    querySql: result.rule.querySql,
-    queryColumns: result.rule.queryColumns as { value: string; timestamp?: string },
+    querySql: result.rule.query_sql,
+    queryColumns: result.rule.query_columns as { value: string; timestamp?: string },
     condition: result.rule.condition as AlertCondition,
-    consecutiveBreaches: result.rule.consecutiveBreaches,
-    consecutiveBreachesToFire: result.rule.consecutiveBreachesToFire,
-    cooldownMinutes: result.rule.cooldownMinutes,
+    consecutiveBreaches: result.rule.consecutive_breaches,
+    consecutiveBreachesToFire: result.rule.consecutive_breaches_to_fire,
+    cooldownMinutes: result.rule.cooldown_minutes,
     channels: result.rule.channels as AlertChannelConfig[],
     enabled: result.rule.enabled,
-    lastFiredAt: result.rule.lastFiredAt,
-    dashboardTitle: result.dashboardTitle,
+    lastFiredAt: result.rule.last_fired_at,
+    dashboardTitle: result.dashboard_title,
   };
 }
 
