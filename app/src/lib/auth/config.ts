@@ -5,6 +5,7 @@ import { db, type Tx } from '@/db/client';
 import * as schema from '@/db/schema';
 import { orgs, orgMembers } from '@/db/schema';
 import { eq, sql } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
 import { sendEmail } from '@/lib/email';
 import { MagicLinkEmail } from './messages';
 import { logger } from '@/lib/logger';
@@ -22,9 +23,17 @@ function slugify(value: string): string {
 async function uniqueSlug(tx: Tx, base: string): Promise<string> {
   let candidate = base;
   let suffix = 0;
+  // Slug uniqueness is a GLOBAL constraint, not a per-tenant one, so the probe
+  // has to see every org. Going through `orgs` directly stopped working once
+  // RLS was enabled on it: the provisioning user belongs to no org yet, so the
+  // query returned nothing and the new org collided with orgs_slug_idx on
+  // someone else's slug. `dashbi_slug_is_taken` (migration 0015) answers the
+  // one question this actually needs.
   while (suffix < 50) {
-    const existing = await tx.select({ id: orgs.id }).from(orgs).where(eq(orgs.slug, candidate)).limit(1);
-    if (existing.length === 0) return candidate;
+    const rows = await tx.execute(
+      sql`SELECT dashbi_slug_is_taken(${candidate}) AS taken`,
+    );
+    if (!(rows[0] as { taken: boolean }).taken) return candidate;
     suffix += 1;
     candidate = `${base}-${suffix}`;
   }
@@ -39,16 +48,31 @@ async function provisionOrgForUser(
   const seedName = displayName?.trim() || email.split('@')[0] || 'Mi organización';
   const baseSlug = slugify(seedName);
 
-  // Run the entire provisioning flow inside a single `withSystemContext`
-  // transaction. The `org_members_isolation` RLS policy requires
-  // `app.current_user_id` to be set; we set it to the freshly-created user
-  // id so the policy evaluates true and the INSERT succeeds. We use the
-  // system context (which runs at the table-owner role) and set the GUCs
-  // ourselves so the policies still see the right identity.
+  // The org id is generated here, not by the database, and the INSERT has no
+  // RETURNING. Both are load-bearing, and the reason was measured rather than
+  // assumed: in PostgreSQL `INSERT ... RETURNING` also evaluates the table's
+  // SELECT policy on the row it is about to return, and a row that policy
+  // filters makes the whole statement fail with `new row violates row-level
+  // security policy` (a message that blames WITH CHECK and points at the wrong
+  // policy). A brand-new org has no `org_members` row yet, so `orgs_read` does
+  // not match it — asking for the id back is asking to read a row this session
+  // cannot read. The alternative, widening `orgs_read` with an
+  // `OR id = app_current_org_id()` branch, would re-open the exact id-based
+  // hole that made the org switcher return one org instead of N. See
+  // migration 0015.
+  const orgId = randomUUID();
+
+  // Run the entire provisioning flow inside a single transaction, with the
+  // GUCs set explicitly because the RLS policies read them.
   return await db.transaction(async (tx) => {
     await tx.execute(sql`SET LOCAL ROLE NONE`);
+    // `app.current_org_id` gets the *org* id. It used to be set to the user id,
+    // with a comment claiming `org_members_isolation` needed it — but that
+    // policy only checks `user_id`, never `org_id`. Meanwhile the `audit_log`
+    // insert below is scoped by `org_id = app_current_org_id()`, so the old
+    // value only ever worked by accident. The org id is correct for both.
     await tx.execute(
-      sql`SELECT set_config('app.current_org_id', ${userId}, true)`,
+      sql`SELECT set_config('app.current_org_id', ${orgId}, true)`,
     );
     await tx.execute(
       sql`SELECT set_config('app.current_user_id', ${userId}, true)`,
@@ -59,24 +83,18 @@ async function provisionOrgForUser(
 
     const slug = await uniqueSlug(tx, baseSlug);
 
-    const [org] = await tx
-      .insert(orgs)
-      .values({
-        name: seedName,
-        slug,
-        plan: 'free',
-        defaultTheme: 'moderno-saas',
-        llmProvider: 'openai',
-        llmModel: 'gpt-4o',
-      })
-      .returning({ id: orgs.id });
-
-    if (!org) {
-      throw new Error('Failed to provision organization during signup');
-    }
+    await tx.insert(orgs).values({
+      id: orgId,
+      name: seedName,
+      slug,
+      plan: 'free',
+      defaultTheme: 'moderno-saas',
+      llmProvider: 'openai',
+      llmModel: 'gpt-4o',
+    });
 
     await tx.insert(orgMembers).values({
-      orgId: org.id,
+      orgId,
       userId,
       role: 'admin',
       joinedAt: new Date(),
@@ -84,20 +102,20 @@ async function provisionOrgForUser(
 
     await tx
       .update(schema.users)
-      .set({ activeOrgId: org.id })
+      .set({ activeOrgId: orgId })
       .where(eq(schema.users.id, userId));
 
     // Write the audit row inside the same transaction so it is also
     // visible under the same GUCs (audit_log_isolation).
     await tx.insert(schema.auditLog).values({
-      orgId: org.id,
+      orgId,
       userId,
       action: 'org.created',
-      resource: `org:${org.id}`,
+      resource: `org:${orgId}`,
       metadata: { source: 'signup' },
     });
 
-    return org.id;
+    return orgId;
   });
 }
 

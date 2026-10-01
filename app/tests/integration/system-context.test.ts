@@ -22,6 +22,25 @@ const SYSTEM_FUNCTIONS = [
   'dashbi_count_enabled_alert_rules',
   'dashbi_load_alert_rule',
   'dashbi_resolve_public_link',
+  // From migration 0015. Both cross the RLS boundary on purpose, which is why
+  // they are on this list and not just in their own suite: a SECURITY DEFINER
+  // function that PUBLIC can call is an RLS bypass with a nicer name, and the
+  // whole point of this allowlist is that adding one is a decision somebody
+  // made out loud.
+  //
+  //   dashbi_user_belongs_to_org — the `orgs` read/update policy. It has to
+  //     read `org_members`, which has its own RLS; querying it inline is
+  //     rejected as `infinite recursion detected in policy`. Returns one
+  //     boolean per row, so the leak is a membership answer about an org the
+  //     caller already named — not the org list.
+  //
+  //   dashbi_slug_is_taken — slug uniqueness is a GLOBAL constraint, not a
+  //     per-tenant one, so the probe has to see every org including the ones
+  //     the provisioning user belongs to (none). Returns one boolean per
+  //     candidate slug: an existence oracle over a user-chosen string, which
+  //     is the minimum this needs to answer.
+  'dashbi_user_belongs_to_org',
+  'dashbi_slug_is_taken',
 ];
 
 describe('SECURITY DEFINER system functions', () => {
