@@ -2,27 +2,58 @@
 @import "tw-animate-css";
 
 /* ─────────────────────────────────────────────────────────────────
-   Design tokens — exposed to Tailwind v4 via @theme inline.
+   Design tokens — exposed to Tailwind v4 via @theme.
    We keep HSL components (no hsl() wrapper) in :root so dark mode
-   and corporate theme can override them at runtime. The @theme inline
-   block re-exposes them as full hsl(...) values so Tailwind generates
+   and corporate theme can override them at runtime. The @theme block
+   re-exposes them as full hsl(...) values so Tailwind generates
    utilities (bg-primary, text-foreground, border-border, etc).
    ───────────────────────────────────────────────────────────────── */
 
-@theme inline {
+@theme {
+  /* Every colour utility resolves through a bare HSL component variable.
+     Two failure modes are being avoided here:
+       1. `hsl(var(--color-primary) / 0.12)` — var(--color-primary) is already
+          a complete colour function, so this expands to hsl(hsl(...) / 0.12),
+          which is invalid and silently dropped.
+       2. The shadcn `<alpha-value>` placeholder — Tailwind emits it verbatim
+          into the compiled CSS here, leaving 115 invalid declarations.
+     Keeping the components unwrapped and the @theme block non-inline makes
+     utilities resolve to var(--color-primary) at runtime, so [data-theme]
+     overrides still work and opacity modifiers go through color-mix(). */
   --color-primary: hsl(var(--color-primary-hsl));
+  --color-primary-foreground: hsl(var(--color-primary-foreground-hsl));
   --color-secondary: hsl(var(--color-secondary-hsl));
+  --color-secondary-foreground: hsl(var(--color-secondary-foreground-hsl));
   --color-success: hsl(var(--color-success-hsl));
+  --color-success-foreground: hsl(var(--color-success-foreground-hsl));
   --color-warning: hsl(var(--color-warning-hsl));
+  --color-warning-foreground: hsl(var(--color-warning-foreground-hsl));
   --color-danger: hsl(var(--color-danger-hsl));
+  --color-danger-foreground: hsl(var(--color-danger-foreground-hsl));
+
+  /* shadcn vocabulary. These were referenced 200+ times in the app and had no
+     token behind them, so every one of those utilities resolved to nothing. */
+  --color-destructive: hsl(var(--color-destructive-hsl));
+  --color-destructive-foreground: hsl(var(--color-destructive-foreground-hsl));
   --color-muted: hsl(var(--color-muted-hsl));
+  --color-muted-foreground: hsl(var(--color-muted-foreground-hsl));
   --color-accent: hsl(var(--color-accent-hsl));
+  --color-accent-foreground: hsl(var(--color-accent-foreground-hsl));
+
   --color-background: hsl(var(--color-background-hsl));
-  --color-surface: hsl(var(--color-surface-hsl));
-  --color-border: hsl(var(--color-border-hsl));
+  --color-foreground: hsl(var(--color-text-hsl));
   --color-text: hsl(var(--color-text-hsl));
   --color-text-muted: hsl(var(--color-text-muted-hsl));
-  --color-foreground: hsl(var(--color-text-hsl));
+  --color-surface: hsl(var(--color-surface-hsl));
+
+  --color-card: hsl(var(--color-card-hsl));
+  --color-card-foreground: hsl(var(--color-card-foreground-hsl));
+  --color-popover: hsl(var(--color-popover-hsl));
+  --color-popover-foreground: hsl(var(--color-popover-foreground-hsl));
+
+  --color-border: hsl(var(--color-border-hsl));
+  --color-input: hsl(var(--color-input-hsl));
+  --color-ring: hsl(var(--color-ring-hsl));
 
   --radius-lg: var(--spacing-border-radius);
   --radius-md: calc(var(--spacing-border-radius) * 0.75);
@@ -34,20 +65,49 @@
 
 /* ─── Runtime theme tokens (overridable per [data-theme] / dark mode) ─── */
 :root {
-  --color-primary-hsl: 239 84% 67%;        /* indigo-500 */
-  --color-secondary-hsl: 258 90% 66%;      /* violet-500 */
-  --color-success-hsl: 160 84% 39%;        /* emerald-500 */
-  --color-warning-hsl: 38 92% 50%;         /* amber-500 */
-  --color-danger-hsl: 0 84% 60%;           /* red-500 */
+  /* Signal hues. Every surface that carries a white foreground sits deep
+     enough in its ramp that the pair clears WCAG 2.2 AA (4.5:1) at the 12px
+     weight the KPI delta and primary buttons actually use. Measured against
+     the HSL values actually declared here — the hex notes on each line are
+     what those values render to, not the stock Tailwind swatch:
+       primary    6.18:1    danger     4.80:1    warning  5.68:1 (dark fg)
+       secondary  4.72:1    accent     4.67:1    success  4.74:1
+     secondary, success and accent were originally one ramp step shallower
+     (66%, 29%, 60% lightness) and measured 4.31, 4.46 and 3.56 — all fails. */
+  --color-primary-hsl: 243 75% 59%;        /* #5048e5 */
+  --color-secondary-hsl: 258 90% 64%;      /* #8251f6 */
+  --color-success-hsl: 160 84% 28%;        /* #0b835b */
+  --color-warning-hsl: 32 95% 44%;         /* amber-600, dark foreground */
+  --color-danger-hsl: 0 72% 51%;           /* red-600 */
   --color-muted-hsl: 220 9% 46%;           /* gray-500 */
-  --color-accent-hsl: 330 81% 60%;         /* pink-500 */
+  --color-accent-hsl: 330 81% 48%;         /* #de177a */
   --color-background-hsl: 0 0% 100%;
   --color-surface-hsl: 220 14% 96%;        /* gray-50 */
   --color-border-hsl: 220 13% 91%;         /* gray-200 */
   --color-text-hsl: 222 47% 11%;           /* gray-900 */
-  --color-text-muted-hsl: 220 9% 46%;      /* gray-500 */
+  --color-text-muted-hsl: 220 9% 46%;      /* gray-500 — 4.83:1 on white */
 
-  --font-family: 'IBM Plex Sans', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  /* Foregrounds pair with the surface they sit on. */
+  --color-primary-foreground-hsl: 0 0% 100%;
+  --color-secondary-foreground-hsl: 0 0% 100%;
+  --color-accent-foreground-hsl: 0 0% 100%;
+  --color-success-foreground-hsl: 0 0% 100%;
+  --color-warning-foreground-hsl: 222 47% 11%;
+  --color-danger-foreground-hsl: 0 0% 100%;
+  --color-destructive-hsl: 0 72% 51%;
+  --color-destructive-foreground-hsl: 0 0% 100%;
+
+  /* Card / popover sit white on the gray-50 canvas. */
+  --color-card-hsl: 0 0% 100%;
+  --color-card-foreground-hsl: 222 47% 11%;
+  --color-popover-hsl: 0 0% 100%;
+  --color-popover-foreground-hsl: 222 47% 11%;
+
+  --color-muted-foreground-hsl: 220 9% 46%;
+  --color-input-hsl: 220 13% 91%;
+  --color-ring-hsl: 243 75% 59%;
+
+  --font-family: 'IBM Plex Sans Variable', 'IBM Plex Sans', 'Segoe UI', system-ui, -apple-system, sans-serif;
   --font-family-mono: 'IBM Plex Mono', 'JetBrains Mono', ui-monospace, monospace;
   --font-heading-weight: 600;
   --font-body-weight: 400;
@@ -76,6 +136,25 @@
     --color-border-hsl: 215 25% 22%;         /* slate-800 */
     --color-text-hsl: 210 20% 98%;           /* slate-50 — AAA sobre bg */
     --color-text-muted-hsl: 215 16% 75%;     /* slate-300 — AA sobre bg */
+
+    --color-primary-foreground-hsl: 234 60% 12%;
+    --color-secondary-foreground-hsl: 258 60% 12%;
+    --color-accent-foreground-hsl: 330 60% 12%;
+    --color-success-foreground-hsl: 160 70% 8%;
+    --color-warning-foreground-hsl: 38 80% 10%;
+    --color-danger-foreground-hsl: 0 60% 12%;
+    --color-destructive-hsl: 0 84% 70%;
+    --color-destructive-foreground-hsl: 0 60% 12%;
+
+    --color-card-hsl: 222 40% 11%;           /* slate-900 */
+    --color-card-foreground-hsl: 210 20% 98%;
+    --color-popover-hsl: 222 44% 10%;
+    --color-popover-foreground-hsl: 210 20% 98%;
+
+    --color-muted-foreground-hsl: 215 16% 72%;
+    --color-input-hsl: 215 25% 26%;
+    --color-ring-hsl: 234 89% 74%;
+
     --shadow-card: 0 1px 3px 0 rgb(0 0 0 / 0.4), 0 1px 2px -1px rgb(0 0 0 / 0.3);
   }
 }
@@ -94,6 +173,25 @@
   --color-border-hsl: 215 25% 22%;
   --color-text-hsl: 210 20% 98%;
   --color-text-muted-hsl: 215 16% 75%;
+
+  --color-primary-foreground-hsl: 234 60% 12%;
+  --color-secondary-foreground-hsl: 258 60% 12%;
+  --color-accent-foreground-hsl: 330 60% 12%;
+  --color-success-foreground-hsl: 160 70% 8%;
+  --color-warning-foreground-hsl: 38 80% 10%;
+  --color-danger-foreground-hsl: 0 60% 12%;
+  --color-destructive-hsl: 0 84% 70%;
+  --color-destructive-foreground-hsl: 0 60% 12%;
+
+  --color-card-hsl: 222 40% 11%;
+  --color-card-foreground-hsl: 210 20% 98%;
+  --color-popover-hsl: 222 44% 10%;
+  --color-popover-foreground-hsl: 210 20% 98%;
+
+  --color-muted-foreground-hsl: 215 16% 72%;
+  --color-input-hsl: 215 25% 26%;
+  --color-ring-hsl: 234 89% 74%;
+
   --shadow-card: 0 1px 3px 0 rgb(0 0 0 / 0.4), 0 1px 2px -1px rgb(0 0 0 / 0.3);
 }
 
@@ -111,6 +209,24 @@
   --color-border-hsl: 215 20% 75%;        /* slate-300 */
   --color-text-hsl: 222 47% 11%;
   --color-text-muted-hsl: 215 19% 35%;
+
+  --color-primary-foreground-hsl: 0 0% 100%;
+  --color-secondary-foreground-hsl: 0 0% 100%;
+  --color-accent-foreground-hsl: 0 0% 100%;
+  --color-success-foreground-hsl: 0 0% 100%;
+  --color-warning-foreground-hsl: 0 0% 100%;
+  --color-danger-foreground-hsl: 0 0% 100%;
+  --color-destructive-hsl: 0 70% 42%;
+  --color-destructive-foreground-hsl: 0 0% 100%;
+
+  --color-card-hsl: 0 0% 100%;
+  --color-card-foreground-hsl: 222 47% 11%;
+  --color-popover-hsl: 0 0% 100%;
+  --color-popover-foreground-hsl: 222 47% 11%;
+
+  --color-muted-foreground-hsl: 215 19% 35%;
+  --color-input-hsl: 215 20% 75%;
+  --color-ring-hsl: 224 76% 40%;
 
   --font-heading-weight: 700;
   --spacing-card-padding: 16px;
@@ -135,6 +251,25 @@
     --color-border-hsl: 215 20% 30%;
     --color-text-hsl: 210 20% 98%;
     --color-text-muted-hsl: 215 16% 75%;
+
+    --color-primary-foreground-hsl: 224 60% 10%;
+    --color-secondary-foreground-hsl: 215 30% 10%;
+    --color-accent-foreground-hsl: 192 60% 10%;
+    --color-success-foreground-hsl: 142 60% 10%;
+    --color-warning-foreground-hsl: 32 70% 10%;
+    --color-danger-foreground-hsl: 0 60% 12%;
+    --color-destructive-hsl: 0 70% 65%;
+    --color-destructive-foreground-hsl: 0 60% 12%;
+
+    --color-card-hsl: 215 35% 13%;
+    --color-card-foreground-hsl: 210 20% 98%;
+    --color-popover-hsl: 215 38% 11%;
+    --color-popover-foreground-hsl: 210 20% 98%;
+
+    --color-muted-foreground-hsl: 215 16% 72%;
+    --color-input-hsl: 215 20% 32%;
+    --color-ring-hsl: 224 76% 60%;
+
     --shadow-card: none;
   }
 }
@@ -152,6 +287,25 @@
   --color-border-hsl: 215 20% 30%;
   --color-text-hsl: 210 20% 98%;
   --color-text-muted-hsl: 215 16% 75%;
+
+  --color-primary-foreground-hsl: 224 60% 8%;
+  --color-secondary-foreground-hsl: 215 30% 10%;
+  --color-accent-foreground-hsl: 192 60% 10%;
+  --color-success-foreground-hsl: 142 60% 10%;
+  --color-warning-foreground-hsl: 32 70% 10%;
+  --color-danger-foreground-hsl: 0 60% 12%;
+  --color-destructive-hsl: 0 70% 65%;
+  --color-destructive-foreground-hsl: 0 60% 12%;
+
+  --color-card-hsl: 215 35% 13%;
+  --color-card-foreground-hsl: 210 20% 98%;
+  --color-popover-hsl: 215 38% 11%;
+  --color-popover-foreground-hsl: 210 20% 98%;
+
+  --color-muted-foreground-hsl: 215 16% 72%;
+  --color-input-hsl: 215 20% 32%;
+  --color-ring-hsl: 224 76% 60%;
+
   --shadow-card: none;
 }
 
@@ -858,7 +1012,7 @@
 
 @layer base {
   * {
-    border-color: var(--color-border);
+    border-color: hsl(var(--color-border-hsl));
   }
 
   body {
@@ -1350,8 +1504,8 @@
 .property-panel {
   width: 320px;
   flex-shrink: 0;
-  background: var(--color-surface);
-  border-left: 1px solid var(--color-border);
+  background: hsl(var(--color-surface-hsl));
+  border-left: 1px solid hsl(var(--color-border-hsl));
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -1367,7 +1521,7 @@
 
 .property-panel__empty {
   text-align: center;
-  color: var(--color-text-muted);
+  color: hsl(var(--color-text-muted-hsl));
 }
 
 .property-panel__header {
@@ -1375,25 +1529,25 @@
   align-items: center;
   gap: 12px;
   padding: 16px 20px;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid hsl(var(--color-border-hsl));
 }
 
 .property-panel__back {
-  color: var(--color-text-muted);
+  color: hsl(var(--color-text-muted-hsl));
 }
 
 .property-panel__eyebrow {
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--color-text-muted);
+  color: hsl(var(--color-text-muted-hsl));
   margin: 0;
 }
 
 .property-panel__title {
   font-size: 16px;
   font-weight: 600;
-  color: var(--color-text);
+  color: hsl(var(--color-text-hsl));
   margin: 2px 0 0;
 }
 
@@ -1407,7 +1561,7 @@
 }
 
 .property-panel__footer {
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid hsl(var(--color-border-hsl));
   padding: 16px 20px;
   display: flex;
   flex-direction: column;
@@ -1419,7 +1573,7 @@
   align-items: center;
   gap: 6px;
   font-size: 11px;
-  color: var(--color-text-muted);
+  color: hsl(var(--color-text-muted-hsl));
   justify-content: center;
 }
 
@@ -1433,7 +1587,7 @@
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--color-text-muted);
+  color: hsl(var(--color-text-muted-hsl));
   margin: 0;
   font-weight: 600;
 }
@@ -1443,7 +1597,7 @@
   align-items: center;
   gap: 8px;
   font-size: 12px;
-  color: var(--color-text-muted);
+  color: hsl(var(--color-text-muted-hsl));
   margin: 0;
 }
 
@@ -1453,7 +1607,7 @@
 
 .property-section__meta-value {
   font-family: var(--font-family-mono);
-  background: hsl(var(--color-border));
+  background: hsl(var(--color-border-hsl));
   padding: 2px 6px;
   border-radius: 4px;
   font-size: 11px;
@@ -1461,7 +1615,7 @@
 
 .property-section__hint {
   font-size: 11px;
-  color: var(--color-text-muted);
+  color: hsl(var(--color-text-muted-hsl));
   margin: 0;
 }
 
@@ -1474,11 +1628,11 @@
 .property-select {
   width: 100%;
   background: transparent;
-  border: 1px solid var(--color-border);
+  border: 1px solid hsl(var(--color-border-hsl));
   border-radius: 6px;
   padding: 6px 8px;
   font-size: 13px;
-  color: var(--color-text);
+  color: hsl(var(--color-text-hsl));
 }
 
 .property-toggle {
@@ -1486,17 +1640,17 @@
   align-items: center;
   gap: 8px;
   font-size: 12px;
-  color: var(--color-text-muted);
+  color: hsl(var(--color-text-muted-hsl));
   cursor: pointer;
 }
 
 .property-toggle input {
-  accent-color: hsl(var(--color-primary));
+  accent-color: hsl(var(--color-primary-hsl));
 }
 
 .property-panel__hint {
   font-size: 12px;
-  color: var(--color-text-muted);
+  color: hsl(var(--color-text-muted-hsl));
   margin: 0;
 }
 
@@ -1513,9 +1667,9 @@
 }
 
 .dialog-content {
-  background: var(--color-surface);
+  background: hsl(var(--color-surface-hsl));
   border-radius: var(--spacing-border-radius);
-  border: 1px solid var(--color-border);
+  border: 1px solid hsl(var(--color-border-hsl));
   box-shadow: var(--shadow-card);
   max-width: 480px;
   width: 100%;
@@ -1536,17 +1690,17 @@
   font-size: 18px;
   font-weight: 600;
   margin: 0;
-  color: var(--color-text);
+  color: hsl(var(--color-text-hsl));
 }
 
 .dialog-close {
-  color: var(--color-text-muted);
+  color: hsl(var(--color-text-muted-hsl));
 }
 
 .dialog-footer {
   margin-top: 16px;
   padding-top: 16px;
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid hsl(var(--color-border-hsl));
 }
 
 .dialog-footer__hint {
@@ -1554,7 +1708,7 @@
   align-items: center;
   gap: 6px;
   font-size: 11px;
-  color: var(--color-text-muted);
+  color: hsl(var(--color-text-muted-hsl));
   margin: 0;
 }
 
@@ -1576,7 +1730,7 @@
 .widget-type-card {
   width: 100%;
   background: transparent;
-  border: 1px solid var(--color-border);
+  border: 1px solid hsl(var(--color-border-hsl));
   border-radius: 8px;
   padding: 10px 12px;
   display: flex;
@@ -1588,20 +1742,20 @@
 }
 
 .widget-type-card:hover {
-  background: hsl(var(--color-border) / 0.4);
-  border-color: hsl(var(--color-primary) / 0.4);
+  background: hsl(var(--color-border-hsl) / 0.4);
+  border-color: hsl(var(--color-primary-hsl) / 0.4);
 }
 
 .widget-type-card__label {
   font-size: 14px;
   font-weight: 600;
-  color: var(--color-text);
+  color: hsl(var(--color-text-hsl));
   margin: 0;
 }
 
 .widget-type-card__description {
   font-size: 12px;
-  color: var(--color-text-muted);
+  color: hsl(var(--color-text-muted-hsl));
   margin: 2px 0 0;
 }
 
@@ -1613,7 +1767,7 @@
 
 .widget-form__hint {
   font-size: 11px;
-  color: var(--color-text-muted);
+  color: hsl(var(--color-text-muted-hsl));
   margin: 6px 0 0;
 }
 
@@ -1636,27 +1790,27 @@
 }
 
 .dashboard-status-bar__chip--editing {
-  background: hsl(var(--color-primary) / 0.12);
-  color: hsl(var(--color-primary));
-  border-color: hsl(var(--color-primary) / 0.3);
+  background: hsl(var(--color-primary-hsl) / 0.12);
+  color: hsl(var(--color-primary-hsl));
+  border-color: hsl(var(--color-primary-hsl) / 0.3);
 }
 
 .dashboard-status-bar__chip--saving {
-  background: hsl(var(--color-warning) / 0.12);
-  color: hsl(var(--color-warning));
-  border-color: hsl(var(--color-warning) / 0.3);
+  background: hsl(var(--color-warning-hsl) / 0.12);
+  color: hsl(var(--color-warning-hsl));
+  border-color: hsl(var(--color-warning-hsl) / 0.3);
 }
 
 .dashboard-status-bar__chip--saved {
-  background: hsl(var(--color-success) / 0.12);
-  color: hsl(var(--color-success));
-  border-color: hsl(var(--color-success) / 0.3);
+  background: hsl(var(--color-success-hsl) / 0.12);
+  color: hsl(var(--color-success-hsl));
+  border-color: hsl(var(--color-success-hsl) / 0.3);
 }
 
 .dashboard-status-bar__chip--error {
-  background: hsl(var(--color-danger) / 0.12);
-  color: hsl(var(--color-danger));
-  border-color: hsl(var(--color-danger) / 0.3);
+  background: hsl(var(--color-danger-hsl) / 0.12);
+  color: hsl(var(--color-danger-hsl));
+  border-color: hsl(var(--color-danger-hsl) / 0.3);
 }
 
 /* ---------- Sprint 2: dashboard layout with property panel ---------- */
@@ -1674,7 +1828,7 @@
   .property-panel {
     width: 100%;
     border-left: 0;
-    border-top: 1px solid var(--color-border);
+    border-top: 1px solid hsl(var(--color-border-hsl));
   }
 }
 
@@ -1687,8 +1841,8 @@
   max-width: calc(100vw - 32px);
   height: 560px;
   max-height: calc(100vh - 32px);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
+  background: hsl(var(--color-surface-hsl));
+  border: 1px solid hsl(var(--color-border-hsl));
   border-radius: 12px;
   box-shadow: 0 12px 32px rgb(0 0 0 / 0.16), 0 2px 4px rgb(0 0 0 / 0.08);
   display: flex;
@@ -1703,20 +1857,20 @@
   justify-content: space-between;
   gap: 8px;
   padding: 12px 16px;
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-surface);
+  border-bottom: 1px solid hsl(var(--color-border-hsl));
+  background: hsl(var(--color-surface-hsl));
 }
 
 .nlqa-panel__eyebrow {
   font-size: 13px;
   font-weight: 600;
-  color: var(--color-text);
+  color: hsl(var(--color-text-hsl));
   margin: 0;
 }
 
 .nlqa-panel__hint {
   font-size: 11px;
-  color: var(--color-text-muted);
+  color: hsl(var(--color-text-muted-hsl));
   margin: 0;
 }
 
@@ -1736,16 +1890,16 @@
   justify-content: center;
   text-align: center;
   flex: 1;
-  color: var(--color-text-muted);
+  color: hsl(var(--color-text-muted-hsl));
   padding: 24px;
 }
 
 .nlqa-panel__error {
   padding: 8px 12px;
   border-radius: 8px;
-  background: hsl(var(--color-danger) / 0.12);
-  color: hsl(var(--color-danger));
-  border: 1px solid hsl(var(--color-danger) / 0.3);
+  background: hsl(var(--color-danger-hsl) / 0.12);
+  color: hsl(var(--color-danger-hsl));
+  border: 1px solid hsl(var(--color-danger-hsl) / 0.3);
   font-size: 12px;
 }
 
@@ -1753,8 +1907,8 @@
   display: flex;
   gap: 8px;
   padding: 12px 16px;
-  border-top: 1px solid var(--color-border);
-  background: var(--color-surface);
+  border-top: 1px solid hsl(var(--color-border-hsl));
+  background: hsl(var(--color-surface-hsl));
 }
 
 .nlqa-panel__form input {
@@ -1771,17 +1925,17 @@
 
 .nlqa-bubble--user {
   align-self: flex-end;
-  background: hsl(var(--color-primary) / 0.12);
-  border: 1px solid hsl(var(--color-primary) / 0.3);
-  color: var(--color-text);
+  background: hsl(var(--color-primary-hsl) / 0.12);
+  border: 1px solid hsl(var(--color-primary-hsl) / 0.3);
+  color: hsl(var(--color-text-hsl));
   border-bottom-right-radius: 4px;
 }
 
 .nlqa-bubble--assistant {
   align-self: flex-start;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  color: var(--color-text);
+  background: hsl(var(--color-surface-hsl));
+  border: 1px solid hsl(var(--color-border-hsl));
+  color: hsl(var(--color-text-hsl));
   border-bottom-left-radius: 4px;
 }
 
@@ -1795,7 +1949,7 @@
   align-items: center;
   gap: 4px;
   cursor: pointer;
-  color: var(--color-text-muted);
+  color: hsl(var(--color-text-muted-hsl));
   user-select: none;
   list-style: none;
 }
@@ -1807,21 +1961,21 @@
 .nlqa-bubble__sql {
   margin: 8px 0 0;
   padding: 8px;
-  background: hsl(var(--color-muted) / 0.1);
+  background: hsl(var(--color-muted-hsl) / 0.1);
   border-radius: 6px;
   font-family: var(--font-family-mono);
   font-size: 11px;
   white-space: pre-wrap;
   word-break: break-word;
-  color: var(--color-text);
+  color: hsl(var(--color-text-hsl));
 }
 
 .nlqa-bubble__chart {
   margin-top: 8px;
   padding: 8px 10px;
   border-radius: 8px;
-  background: hsl(var(--color-secondary) / 0.08);
-  border: 1px solid hsl(var(--color-secondary) / 0.2);
+  background: hsl(var(--color-secondary-hsl) / 0.08);
+  border: 1px solid hsl(var(--color-secondary-hsl) / 0.2);
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -1830,7 +1984,7 @@
 .nlqa-bubble__meta {
   margin: 8px 0 0;
   font-size: 10px;
-  color: var(--color-text-muted);
+  color: hsl(var(--color-text-muted-hsl));
 }
 
 /* ---------- Sprint 3: LLM Usage Panel ---------- */
@@ -1843,9 +1997,9 @@
 .llm-usage__error {
   padding: 8px 12px;
   border-radius: 8px;
-  background: hsl(var(--color-danger) / 0.12);
-  color: hsl(var(--color-danger));
-  border: 1px solid hsl(var(--color-danger) / 0.3);
+  background: hsl(var(--color-danger-hsl) / 0.12);
+  color: hsl(var(--color-danger-hsl));
+  border: 1px solid hsl(var(--color-danger-hsl) / 0.3);
   font-size: 13px;
 }
 
@@ -1856,7 +2010,7 @@
 .llm-usage__heading {
   font-size: 13px;
   font-weight: 600;
-  color: var(--color-text);
+  color: hsl(var(--color-text-hsl));
   margin: 0 0 12px;
 }
 
@@ -1870,14 +2024,14 @@
 .llm-usage__stat-value {
   font-size: 24px;
   font-weight: 700;
-  color: var(--color-text);
+  color: hsl(var(--color-text-hsl));
   margin: 0;
   font-variant-numeric: tabular-nums;
 }
 
 .llm-usage__stat-subtext {
   font-size: 11px;
-  color: var(--color-text-muted);
+  color: hsl(var(--color-text-muted-hsl));
   margin: 0;
 }
 
@@ -1891,13 +2045,13 @@
 .llm-usage__table td {
   padding: 8px 12px;
   text-align: left;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid hsl(var(--color-border-hsl));
 }
 
 .llm-usage__table th {
   font-size: 11px;
   text-transform: uppercase;
-  color: var(--color-text-muted);
+  color: hsl(var(--color-text-muted-hsl));
   letter-spacing: 0.05em;
 }
 
@@ -1924,13 +2078,13 @@
 
 .llm-usage__day-bar {
   width: 100%;
-  background: linear-gradient(180deg, hsl(var(--color-primary)), hsl(var(--color-secondary)));
+  background: linear-gradient(180deg, hsl(var(--color-primary-hsl)), hsl(var(--color-secondary-hsl)));
   border-radius: 4px 4px 0 0;
   min-height: 2px;
 }
 
 .llm-usage__day-label {
   font-size: 9px;
-  color: var(--color-text-muted);
+  color: hsl(var(--color-text-muted-hsl));
   font-variant-numeric: tabular-nums;
 }

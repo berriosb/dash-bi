@@ -1,4 +1,8 @@
 import type { Metadata, Viewport } from 'next';
+// IBM Plex Sans is the typeface DESIGN.md commits to as the thing that keeps
+// dash-bi from reading as a generic SaaS template. It has to be actually
+// loaded — declaring the family name in a CSS stack is not enough.
+import '@fontsource-variable/ibm-plex-sans/wght.css';
 import './globals.css';
 import { Providers } from '@/components/providers/Providers';
 
