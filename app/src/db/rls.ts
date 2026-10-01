@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { db, withSystemContext } from './client';
+import { parseBareIdent, quoteIdent } from '@/lib/connectors/parsers/sql-ident';
 
 /**
  * Habilita Row Level Security en todas las tablas tenant-scoped.
@@ -28,9 +29,13 @@ export async function enableRLS(): Promise<void> {
 
   await withSystemContext(async () => {
     for (const table of tables) {
-      await db.execute(sql.raw(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY`));
+      // These come from a literal in this file, so validation is defense in
+      // depth — but it costs nothing and keeps every `sql.raw` identifier in
+      // the codebase going through the same grammar (T3).
+      const ident = quoteIdent(parseBareIdent(table, 'rls table'));
+      await db.execute(sql.raw(`ALTER TABLE ${ident} ENABLE ROW LEVEL SECURITY`));
       // FORCE también para table owners (defense in depth)
-      await db.execute(sql.raw(`ALTER TABLE ${table} FORCE ROW LEVEL SECURITY`));
+      await db.execute(sql.raw(`ALTER TABLE ${ident} FORCE ROW LEVEL SECURITY`));
     }
   });
 }
@@ -110,7 +115,13 @@ export async function createRLSPolicies(): Promise<void> {
       // DROP primero (idempotente)
       const policyName = policy.match(/CREATE POLICY (\w+)/)?.[1];
       if (policyName) {
-        await db.execute(sql.raw(`DROP POLICY IF EXISTS ${policyName} ON ${getTableFromPolicy(policy)}`));
+        const quotedPolicy = quoteIdent(parseBareIdent(policyName, 'policy'));
+        const table = getTableFromPolicy(policy);
+        await db.execute(
+          sql.raw(
+            `DROP POLICY IF EXISTS ${quotedPolicy} ON ${quoteIdent(parseBareIdent(table, 'rls table'))}`,
+          ),
+        );
       }
       await db.execute(sql.raw(policy));
     }

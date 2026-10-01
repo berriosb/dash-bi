@@ -7,6 +7,7 @@ import {
   buildRLSPoliciesSQL,
 } from '@/lib/connectors/parsers/load';
 import type { InferredColumn } from '@/lib/connectors/parsers/infer-types';
+import { UnsafeIdentifierError } from '@/lib/connectors/parsers/sql-ident';
 
 const SAMPLE_COLUMNS: InferredColumn[] = [
   { name: 'id', type: 'number', nullable: false, samples: [] },
@@ -22,9 +23,14 @@ describe('buildCreateSchemaSQL', () => {
     );
   });
 
-  it('quotes the identifier to prevent injection', () => {
-    const sql = buildCreateSchemaSQL('a"; DROP TABLE x; --');
-    expect(sql).toContain('"a""; DROP TABLE x; --"');
+  it('rejects a schema name that is not a bare identifier (T3)', () => {
+    // Previously this escaped to `"a""; DROP TABLE x; --"` and executed. The
+    // caller only ever passes a name from `safeTableName`, so escaping an
+    // injection there was never needed — it only hid that a hostile value had
+    // reached the sink. Rejecting is the stronger guarantee (T3).
+    expect(() => buildCreateSchemaSQL('a"; DROP TABLE x; --')).toThrow(
+      UnsafeIdentifierError,
+    );
   });
 });
 
@@ -57,9 +63,7 @@ describe('buildCreateTableSQL', () => {
   });
 
   it('throws on a non-schema-qualified target table', () => {
-    expect(() => buildCreateTableSQL('sales', [])).toThrow(
-      /schema-qualified/,
-    );
+    expect(() => buildCreateTableSQL('sales', [])).toThrow(UnsafeIdentifierError);
   });
 
   it('normalizes column names through the header normalizer', () => {
@@ -85,7 +89,7 @@ describe('buildRLSPoliciesSQL', () => {
   });
 
   it('throws on a non-schema-qualified target table', () => {
-    expect(() => buildRLSPoliciesSQL('sales')).toThrow(/schema-qualified/);
+    expect(() => buildRLSPoliciesSQL('sales')).toThrow(UnsafeIdentifierError);
   });
 });
 
@@ -128,6 +132,6 @@ describe('buildDropTableSQL', () => {
   });
 
   it('throws on a non-schema-qualified target table', () => {
-    expect(() => buildDropTableSQL('sales')).toThrow(/schema-qualified/);
+    expect(() => buildDropTableSQL('sales')).toThrow(UnsafeIdentifierError);
   });
 });
