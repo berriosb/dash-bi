@@ -9,6 +9,7 @@ import { randomUUID } from 'node:crypto';
 import { sendEmail } from '@/lib/email';
 import { MagicLinkEmail } from './messages';
 import { logger } from '@/lib/logger';
+import { redactError } from '@/lib/redact';
 
 function slugify(value: string): string {
   return value
@@ -181,8 +182,10 @@ export const auth = betterAuth({
           text: `Restablecé tu contraseña: ${url}`,
         });
       } catch (error) {
-        // Logged pero no propagado (T4)
-        console.error('sendResetPassword failed:', error);
+        // Logged pero no propagado (T4). T5: the raw error is NOT logged —
+        // this is the reset-password URL, token in the query string, and
+        // `redactError` is what keeps it out of stdout.
+        logger.error({ err: redactError(error) }, 'sendResetPassword failed');
       }
     },
   },
@@ -236,7 +239,9 @@ export const auth = betterAuth({
             text: template.text,
           });
         } catch (error) {
-          console.error('sendMagicLink failed:', error);
+          // T5: same reasoning as sendResetPassword — the magic-link token
+          // lives in the URL this flow just built.
+          logger.error({ err: redactError(error) }, 'sendMagicLink failed');
           // NO throw — signup flow no debe depender de email provider
         }
       },
@@ -282,7 +287,8 @@ export const auth = betterAuth({
           text: template.text,
         });
       } catch (error) {
-        console.error('sendVerificationEmail failed:', error);
+        // T5: same reasoning as the other two — verify-email URL, token included.
+        logger.error({ err: redactError(error) }, 'sendVerificationEmail failed');
       }
     },
   },
