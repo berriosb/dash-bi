@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { errorResponse } from '@/lib/errors/response';
 import { z } from 'zod';
 import { eq, desc, asc } from 'drizzle-orm';
 import { withOrgContext } from '@/db/client';
@@ -12,8 +13,6 @@ import { validateQuery, ValidationError } from '@/lib/security/validate-query';
 import { audit } from '@/lib/audit/log';
 import { checkRateLimit } from '@/lib/rate-limit';
 import { logger } from '@/lib/logger';
-import { toUserError, getOrGenerateCorrelationId } from '@/lib/errors/to-user-error';
-import { statusFromCode } from '@/lib/errors/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,15 +23,6 @@ const AskBodySchema = z.object({
 });
 
 const MAX_HISTORY_TURNS = 6;
-
-function errorResponse(error: unknown, req: Request) {
-  const correlationId = getOrGenerateCorrelationId(req);
-  const appError = toUserError(error, correlationId);
-  return NextResponse.json(appError, {
-    status: statusFromCode(appError.code),
-    headers: { 'x-correlation-id': correlationId },
-  });
-}
 
 export async function POST(req: Request) {
   try {

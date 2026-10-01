@@ -1,23 +1,13 @@
 import { NextResponse } from 'next/server';
+import { errorResponse } from '@/lib/errors/response';
 import { sql, eq, and, isNull } from 'drizzle-orm';
 import { withOrgContext, withSystemContext } from '@/db/client';
 import { uploadedFiles } from '@/db/schema';
 import { requireAuth } from '@/lib/auth/request';
-import { toUserError, getOrGenerateCorrelationId } from '@/lib/errors/to-user-error';
-import { statusFromCode } from '@/lib/errors/types';
 import { audit } from '@/lib/audit/log';
 import { buildDropTableSQL } from '@/lib/connectors/parsers/load';
 
 export const dynamic = 'force-dynamic';
-
-function errorResponse(error: unknown, req: Request) {
-  const correlationId = getOrGenerateCorrelationId(req);
-  const appError = toUserError(error, correlationId);
-  return NextResponse.json(appError, {
-    status: statusFromCode(appError.code),
-    headers: { 'x-correlation-id': correlationId },
-  });
-}
 
 /**
  * GET /api/files/[id]

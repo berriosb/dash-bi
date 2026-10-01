@@ -1,21 +1,11 @@
 import { NextResponse } from 'next/server';
+import { errorResponse } from '@/lib/errors/response';
 import { requireAuth } from '@/lib/auth/request';
 import { enqueuePdfExport, getPdfJobStatus } from '@/lib/export/pdf-enqueue';
 import { audit } from '@/lib/audit/log';
 import { logger } from '@/lib/logger';
-import { toUserError, getOrGenerateCorrelationId } from '@/lib/errors/to-user-error';
-import { statusFromCode } from '@/lib/errors/types';
 
 export const dynamic = 'force-dynamic';
-
-function errorResponse(error: unknown, req: Request) {
-  const correlationId = getOrGenerateCorrelationId(req);
-  const appError = toUserError(error, correlationId);
-  return NextResponse.json(appError, {
-    status: statusFromCode(appError.code),
-    headers: { 'x-correlation-id': correlationId },
-  });
-}
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id: dashboardId } = await params;

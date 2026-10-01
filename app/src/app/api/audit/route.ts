@@ -1,11 +1,10 @@
 import { NextResponse } from 'next/server';
+import { errorResponse } from '@/lib/errors/response';
 import { eq, and, desc, gte, inArray, type SQL } from 'drizzle-orm';
 import { withOrgContext } from '@/db/client';
 import { auditLog } from '@/db/schema';
 import { requireAuth } from '@/lib/auth/request';
 import { AUDIT_EVENT_CATEGORIES, type AuditCategory } from '@/lib/audit/events';
-import { toUserError, getOrGenerateCorrelationId } from '@/lib/errors/to-user-error';
-import { statusFromCode } from '@/lib/errors/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,15 +33,6 @@ function sanitizeSinceDays(raw: string | null): Date | null {
   const n = Number.parseInt(raw, 10);
   if (!Number.isFinite(n) || n <= 0) return null;
   return new Date(Date.now() - n * 24 * 60 * 60 * 1000);
-}
-
-function errorResponse(error: unknown, req: Request) {
-  const correlationId = getOrGenerateCorrelationId(req);
-  const appError = toUserError(error, correlationId);
-  return NextResponse.json(appError, {
-    status: statusFromCode(appError.code),
-    headers: { 'x-correlation-id': correlationId },
-  });
 }
 
 export async function GET(req: Request) {

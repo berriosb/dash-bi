@@ -1,11 +1,10 @@
 import { NextResponse } from 'next/server';
+import { errorResponse } from '@/lib/errors/response';
 import { z } from 'zod';
 import { sql, eq } from 'drizzle-orm';
 import { withSystemContext, withOrgContext } from '@/db/client';
 import { dataSources, uploadedFiles } from '@/db/schema';
 import { requireAuth } from '@/lib/auth/request';
-import { toUserError, getOrGenerateCorrelationId } from '@/lib/errors/to-user-error';
-import { statusFromCode } from '@/lib/errors/types';
 import { audit } from '@/lib/audit/log';
 import { encryptApiKey } from '@/lib/security/encryption';
 import { takeParsedForCommit } from '@/lib/connectors/parsers/commit-store';
@@ -34,15 +33,6 @@ const CommitBodySchema = z.object({
     .min(1)
     .max(200),
 });
-
-function errorResponse(error: unknown, req: Request) {
-  const correlationId = getOrGenerateCorrelationId(req);
-  const appError = toUserError(error, correlationId);
-  return NextResponse.json(appError, {
-    status: statusFromCode(appError.code),
-    headers: { 'x-correlation-id': correlationId },
-  });
-}
 
 /**
  * POST /api/files/commit

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { errorResponse } from '@/lib/errors/response';
 import { and, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { withOrgContext } from '@/db/client';
@@ -7,24 +8,13 @@ import { requireAuth } from '@/lib/auth/request';
 import { audit } from '@/lib/audit/log';
 import {
   getOrGenerateCorrelationId,
-  toUserError,
 } from '@/lib/errors/to-user-error';
-import { statusFromCode } from '@/lib/errors/types';
 
 export const dynamic = 'force-dynamic';
 
 const UpdateRoleSchema = z.object({
   role: z.enum(['admin', 'editor', 'viewer']),
 });
-
-function errorResponse(error: unknown, req: Request) {
-  const correlationId = getOrGenerateCorrelationId(req);
-  const appError = toUserError(error, correlationId);
-  return NextResponse.json(appError, {
-    status: statusFromCode(appError.code),
-    headers: { 'x-correlation-id': correlationId },
-  });
-}
 
 export async function PATCH(
   req: Request,

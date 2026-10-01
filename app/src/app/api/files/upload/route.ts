@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server';
+import { errorResponse } from '@/lib/errors/response';
 import { withSystemContext } from '@/db/client';
 import { uploadedFiles } from '@/db/schema';
 import { requireAuth } from '@/lib/auth/request';
-import { toUserError, getOrGenerateCorrelationId } from '@/lib/errors/to-user-error';
-import { statusFromCode } from '@/lib/errors/types';
 import { audit } from '@/lib/audit/log';
 import { parseCSV } from '@/lib/connectors/parsers/csv';
 import { parseExcel } from '@/lib/connectors/parsers/excel';
@@ -12,37 +11,13 @@ import { safeTableName } from '@/lib/connectors/parsers/normalize';
 import { checkRateLimit } from '@/lib/rate-limit';
 import { logger } from '@/lib/logger';
 import { storeParsedForCommit } from '@/lib/connectors/parsers/commit-store';
+import { detectFormat } from '@/lib/connectors/parsers/detect-format';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 const MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024; // 100MB
 const MAX_ROWS = 1_000_000;
-
-function errorResponse(error: unknown, req: Request) {
-  const correlationId = getOrGenerateCorrelationId(req);
-  const appError = toUserError(error, correlationId);
-  return NextResponse.json(appError, {
-    status: statusFromCode(appError.code),
-    headers: { 'x-correlation-id': correlationId },
-  });
-}
-
-function detectFormat(filename: string, mime: string): 'csv' | 'xlsx' | 'xls' {
-  const lower = filename.toLowerCase();
-  if (lower.endsWith('.xlsx')) return 'xlsx';
-  if (lower.endsWith('.xls')) return 'xls';
-  if (
-    mime === 'text/csv' ||
-    mime === 'application/csv' ||
-    lower.endsWith('.csv') ||
-    lower.endsWith('.tsv') ||
-    lower.endsWith('.txt')
-  ) {
-    return 'csv';
-  }
-  return 'csv';
-}
 
 interface InMemoryUpload {
   filename: string;

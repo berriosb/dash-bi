@@ -1,11 +1,10 @@
 import { NextResponse } from 'next/server';
+import { errorResponse } from '@/lib/errors/response';
 import { withOrgContext } from '@/db/client';
 import { publicLinks } from '@/db/schema';
 import { requireAuth } from '@/lib/auth/request';
 import { generatePublicToken } from '@/lib/sharing/token';
 import { audit } from '@/lib/audit/log';
-import { toUserError, getOrGenerateCorrelationId } from '@/lib/errors/to-user-error';
-import { statusFromCode } from '@/lib/errors/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,15 +17,6 @@ function sanitizeExpiresInDays(value: unknown): number {
   if (days <= 0) return DEFAULT_EXPIRY_DAYS;
   if (days > MAX_EXPIRY_DAYS) return MAX_EXPIRY_DAYS;
   return days;
-}
-
-function errorResponse(error: unknown, req: Request) {
-  const correlationId = getOrGenerateCorrelationId(req);
-  const appError = toUserError(error, correlationId);
-  return NextResponse.json(appError, {
-    status: statusFromCode(appError.code),
-    headers: { 'x-correlation-id': correlationId },
-  });
 }
 
 export async function POST(

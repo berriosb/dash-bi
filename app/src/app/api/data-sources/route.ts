@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { errorResponse } from '@/lib/errors/response';
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
 import { withOrgContext } from '@/db/client';
@@ -8,8 +9,7 @@ import { encryptApiKey } from '@/lib/security/encryption';
 import { validatePostgresHost } from '@/lib/security/validate-connection';
 import { checkRateLimit } from '@/lib/rate-limit';
 import { audit } from '@/lib/audit/log';
-import { toUserError, getOrGenerateCorrelationId } from '@/lib/errors/to-user-error';
-import { statusFromCode } from '@/lib/errors/types';
+import { getOrGenerateCorrelationId } from '@/lib/errors/to-user-error';
 
 export const dynamic = 'force-dynamic';
 
@@ -73,15 +73,6 @@ const CreateDataSourceSchema = z.object({
   type: z.enum(['postgres', 'mysql', 'stripe', 'sheets', 'shopify', 'hubspot', 'ga4', 'snowflake']),
   config: z.unknown(),
 });
-
-function errorResponse(error: unknown, req: Request) {
-  const correlationId = getOrGenerateCorrelationId(req);
-  const appError = toUserError(error, correlationId);
-  return NextResponse.json(appError, {
-    status: statusFromCode(appError.code),
-    headers: { 'x-correlation-id': correlationId },
-  });
-}
 
 export async function GET(req: Request) {
   try {

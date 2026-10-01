@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { errorResponse } from '@/lib/errors/response';
 import { eq, and } from 'drizzle-orm';
 import { withOrgContext } from '@/db/client';
 import { dashboards, orgs } from '@/db/schema';
@@ -10,8 +11,7 @@ import { AiGateway } from '@/lib/ai/gateway';
 import { recordLLMUsage, assertOrgCanSpendLlm } from '@/lib/ai/quota';
 import { checkRateLimit } from '@/lib/rate-limit';
 import { audit } from '@/lib/audit/log';
-import { toUserError, getOrGenerateCorrelationId } from '@/lib/errors/to-user-error';
-import { statusFromCode } from '@/lib/errors/types';
+import { getOrGenerateCorrelationId } from '@/lib/errors/to-user-error';
 import type { ThemeId, Dashboard, Widget } from '@/lib/widgets/types';
 import { z } from 'zod';
 
@@ -28,15 +28,6 @@ const GenerateBodySchema = z.object({
 
 function getClientIp(req: Request): string {
   return req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
-}
-
-function errorResponse(error: unknown, req: Request) {
-  const correlationId = getOrGenerateCorrelationId(req);
-  const appError = toUserError(error, correlationId);
-  return NextResponse.json(appError, {
-    status: statusFromCode(appError.code),
-    headers: { 'x-correlation-id': correlationId },
-  });
 }
 
 export async function POST(req: Request) {
