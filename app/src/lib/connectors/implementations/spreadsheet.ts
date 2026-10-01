@@ -150,8 +150,21 @@ export class SpreadsheetConnector implements Connector {
     // the SELECT. The `org_id` column is filtered by app_current_org_id().
     const result = await withOrgContext(file.orgId, null, async (tx) => {
       const res = await tx.execute(sql.raw(query.sql));
-      const rows = (res as unknown as { rows: unknown[] }).rows ?? [];
-      return rows as T[];
+      // Drizzle's postgres-js driver resolves execute() with the rows array
+      // itself. The previous code read `res.rows` and fell back to `[]`, so a
+      // correct result was discarded and every spreadsheet-backed dashboard
+      // rendered empty — with no error anywhere.
+      //
+      // The `?? []` also swallowed the wrong shape silently, so a future change
+      // in the driver would look like "no data" rather than a failure. An
+      // unexpected shape now throws; the alert evaluator's extractValue() is
+      // the in-repo precedent for treating this as an array.
+      if (!Array.isArray(res)) {
+        throw new Error(
+          'Spreadsheet query returned an unexpected result shape from the driver',
+        );
+      }
+      return res as T[];
     });
     return {
       rows: result as T[],

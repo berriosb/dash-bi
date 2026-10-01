@@ -26,10 +26,12 @@ const SYSTEM_FUNCTIONS = [
 
 describe('SECURITY DEFINER system functions', () => {
   let db: TestDb;
+  let runtimeAvailable = false;
 
   beforeAll(async () => {
     try {
       db = await getTestDb();
+      runtimeAvailable = true;
     } catch (error) {
       if (RUNTIME_UNAVAILABLE.test(String(error))) {
         if (process.env.RLS_TESTS_REQUIRED === '1') throw error;
@@ -48,10 +50,25 @@ describe('SECURITY DEFINER system functions', () => {
     if (db) await resetDb();
   }, 60_000);
 
-  const skip = () => !db;
+  /**
+   * Vitest only exposes `ctx.skip()` inside a test body, so availability is
+   * checked per test rather than once in `beforeAll`.
+   *
+   * This matters: without it a missing container runtime makes the assertions
+   * `return` early and report PASSED, which is a green suite that verified
+   * nothing. Same helper the rls-isolation suite uses.
+   */
+  function itWithDb(name: string, fn: () => Promise<void>): void {
+    it(name, async (ctx) => {
+      if (!runtimeAvailable || !db) {
+        ctx.skip();
+        return;
+      }
+      await fn();
+    });
+  }
 
-  it('exist and are SECURITY DEFINER with a pinned search_path', async () => {
-    if (skip()) return;
+  itWithDb('exist and are SECURITY DEFINER with a pinned search_path', async () => {
     const rows = await db.execute<{ proname: string; prosecdef: boolean; proconfig: string[] | null }>(sql`
       SELECT p.proname, p.prosecdef, p.proconfig
       FROM pg_proc p
@@ -72,8 +89,7 @@ describe('SECURITY DEFINER system functions', () => {
     }
   });
 
-  it('are NOT executable by PUBLIC, and not by the AI read-only role', async () => {
-    if (skip()) return;
+  itWithDb('are NOT executable by PUBLIC, and not by the AI read-only role', async () => {
     const rows = await db.execute<{ proname: string; public_execute: boolean; ro_execute: boolean }>(sql`
       SELECT p.proname,
              has_function_privilege('public', p.oid, 'EXECUTE') AS public_execute,
@@ -95,8 +111,7 @@ describe('SECURITY DEFINER system functions', () => {
     }
   });
 
-  it('cross orgs for a non-superuser where RLS would otherwise hide everything', async () => {
-    if (skip()) return;
+  itWithDb('cross orgs for a non-superuser where RLS would otherwise hide everything', async () => {
     // Two orgs, one alert rule each. The dispatcher has to see both, and it
     // runs as the app role, which RLS would otherwise reduce to zero rows.
     await db.execute(sql`
@@ -136,8 +151,7 @@ describe('SECURITY DEFINER system functions', () => {
     expect(viaFunction.length).toBe(2);
   });
 
-  it('resolves a public link by token and returns the owning org', async () => {
-    if (skip()) return;
+  itWithDb('resolves a public link by token and returns the owning org', async () => {
     await db.execute(sql`
       INSERT INTO orgs (id, name, slug, created_at, updated_at)
       VALUES ('11111111-1111-1111-1111-111111111111', 'Org A', 'org-a', now(), now())
