@@ -1,21 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { UnauthorizedError, ForbiddenError } from '@/lib/auth/context';
+import { UnauthorizedError } from '@/lib/auth/context';
 
-const {
-  mockDbUpdate,
-  mockWithSystemContext,
-  mockRequireAuth,
-} = vi.hoisted(() => ({
-  mockDbUpdate: vi.fn(),
-  mockWithSystemContext: vi.fn(
-    async (..._args: unknown[]) => undefined
-  ),
+const { mockTxUpdate, mockWithOrgContext, mockRequireAuth } = vi.hoisted(() => ({
+  mockTxUpdate: vi.fn(),
+  mockWithOrgContext: vi.fn(),
   mockRequireAuth: vi.fn(),
 }));
 
 vi.mock('@/db/client', () => ({
-  db: { update: mockDbUpdate },
-  withSystemContext: mockWithSystemContext,
+  withOrgContext: mockWithOrgContext,
 }));
 
 
@@ -40,6 +33,7 @@ vi.mock('@/lib/logger', () => ({
 
 
 import { POST } from '@/app/api/onboarding/step/route';
+import { users } from '@/db/schema';
 
 function makeReq(body: unknown): Request {
   return new Request('http://localhost/api/onboarding/step', {
@@ -50,10 +44,14 @@ function makeReq(body: unknown): Request {
 }
 
 describe('POST /api/onboarding/step', () => {
+  // Kept in scope so the tests can assert what reached the users table.
+  let where: ReturnType<typeof vi.fn>;
+  let set: ReturnType<typeof vi.fn>;
+
   beforeEach(() => {
     vi.clearAllMocks();
-    mockDbUpdate.mockReset();
-    mockWithSystemContext.mockReset();
+    mockTxUpdate.mockReset();
+    mockWithOrgContext.mockReset();
     mockRequireAuth.mockReset();
     mockRequireAuth.mockResolvedValue({
       userId: 'user-test',
@@ -61,24 +59,42 @@ describe('POST /api/onboarding/step', () => {
       orgId: 'org-test',
       role: 'admin',
     });
-    (mockWithSystemContext as unknown as { mockImplementation: (impl: (fn: unknown) => Promise<unknown>) => void }).mockImplementation((fn: unknown) => (fn as (tx: { update: typeof mockDbUpdate }) => Promise<unknown>)({ update: mockDbUpdate }) ?? Promise.resolve(undefined));
-    const where = vi.fn().mockResolvedValue(undefined);
-    const set = vi.fn().mockReturnValue({ where });
-    mockDbUpdate.mockReturnValue({ set });
+    (mockWithOrgContext as unknown as { mockImplementation: (impl: (...args: unknown[]) => Promise<unknown>) => void }).mockImplementation((...args: unknown[]) => {
+      // withOrgContext(orgId, userId, [role,] fn) — the last arg is the callback.
+      const fn = args[args.length - 1] as (tx: unknown) => Promise<unknown>;
+      return fn({ update: mockTxUpdate });
+    });
+    where = vi.fn().mockResolvedValue(undefined);
+    set = vi.fn().mockReturnValue({ where });
+    mockTxUpdate.mockReturnValue({ set });
   });
 
-  it('updates currentOnboardingStep inside withSystemContext', async () => {
+  it('updates currentOnboardingStep on the users table under the caller org', async () => {
     const res = await POST(makeReq({ step: 'choose_source' }));
     const json = await res.json();
 
     expect(res.status).toBe(200);
     expect(json).toEqual({ ok: true });
-    expect(mockWithSystemContext).toHaveBeenCalledTimes(1);
-    expect(mockDbUpdate).toHaveBeenCalledTimes(1);
-    const setCall = (mockDbUpdate.mock.results[0]?.value as { set: ReturnType<typeof vi.fn> }).set.mock.calls[0]?.[0] as {
+    expect(mockWithOrgContext).toHaveBeenCalledTimes(1);
+    expect(mockWithOrgContext).toHaveBeenCalledWith(
+      'org-test',
+      'user-test',
+      'admin',
+      expect.any(Function),
+    );
+    expect(mockTxUpdate).toHaveBeenCalledTimes(1);
+    expect(mockTxUpdate).toHaveBeenCalledWith(users);
+    const setCall = set.mock.calls[0]?.[0] as {
       currentOnboardingStep: string;
     };
     expect(setCall.currentOnboardingStep).toBe('choose_source');
+    expect(where).toHaveBeenCalledTimes(1);
+    // eq(users.id, ctx.userId) — the UPDATE is scoped to the caller only.
+    expect(where).toHaveBeenCalledWith({
+      op: 'eq',
+      a: users.id,
+      b: 'user-test',
+    });
   });
 
   it('records onboardingDataSourceId when provided', async () => {
@@ -87,7 +103,7 @@ describe('POST /api/onboarding/step', () => {
       makeReq({ step: 'prompt', dataSourceId: validUuid })
     );
     expect(res.status).toBe(200);
-    const setCall = (mockDbUpdate.mock.results[0]?.value as { set: ReturnType<typeof vi.fn> }).set.mock.calls[0]?.[0] as {
+    const setCall = set.mock.calls[0]?.[0] as {
       currentOnboardingStep: string;
       onboardingDataSourceId: string;
     };
@@ -95,10 +111,17 @@ describe('POST /api/onboarding/step', () => {
     expect(setCall.onboardingDataSourceId).toBe(validUuid);
   });
 
+  it('omits onboardingDataSourceId when not provided', async () => {
+    const res = await POST(makeReq({ step: 'welcome' }));
+    expect(res.status).toBe(200);
+    const setCall = set.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(setCall).toEqual({ currentOnboardingStep: 'welcome' });
+  });
+
   it('rejects invalid step values', async () => {
     const res = await POST(makeReq({ step: 'invalid' }));
     expect(res.status).toBe(400);
-    expect(mockDbUpdate).not.toHaveBeenCalled();
+    expect(mockTxUpdate).not.toHaveBeenCalled();
   });
 
   it('returns 401 when session is invalid', async () => {
@@ -107,6 +130,6 @@ describe('POST /api/onboarding/step', () => {
     );
     const res = await POST(makeReq({ step: 'choose_source' }));
     expect(res.status).toBe(401);
-    expect(mockDbUpdate).not.toHaveBeenCalled();
+    expect(mockTxUpdate).not.toHaveBeenCalled();
   });
 });
