@@ -5,6 +5,11 @@ import { parseBareIdent, quoteIdent } from '@/lib/connectors/parsers/sql-ident';
 /**
  * Habilita Row Level Security en todas las tablas tenant-scoped.
  * Ejecutar UNA VEZ en setup, no en cada boot.
+ *
+ * These run as the migration/owner role, not the app role. DDL is not subject
+ * to RLS, so `withSystemContext` is a plain transaction here — the privilege
+ * comes from the connection, not from a bypass. Nothing in `src/app/api` calls
+ * this; see the guard in tests/unit/db/system-context-usage.test.ts.
  */
 export async function enableRLS(): Promise<void> {
   const tables = [

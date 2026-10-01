@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { errorResponse } from '@/lib/errors/response';
 import { sql, eq, and, isNull } from 'drizzle-orm';
-import { withOrgContext, withSystemContext } from '@/db/client';
+import { withOrgContext } from '@/db/client';
 import { uploadedFiles } from '@/db/schema';
 import { requireAuth } from '@/lib/auth/request';
 import { audit } from '@/lib/audit/log';
@@ -96,11 +96,11 @@ export async function DELETE(
       );
     }
 
-    // 2. Drop the materialized table. This needs table-owner
-    //    privileges which the `dashbi` role has. We use
-    //    withSystemContext to bypass RLS only for the DDL (the file
-    //    row was already verified to belong to the org above).
-    await withSystemContext(async (tx) => {
+    // 2. Drop the materialized table. The file row was verified to belong to
+    //    the org above, and the org owns the schema it created, so the DROP
+    //    succeeds under the org context. DDL is not filtered by RLS anyway —
+    //    what authorizes it is ownership, not a bypass.
+    await withOrgContext(ctx.orgId, ctx.userId, ctx.role, async (tx) => {
       await tx.execute(sql.raw(buildDropTableSQL(file.targetTable)));
     });
 

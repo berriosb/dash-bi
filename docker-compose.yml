@@ -24,7 +24,11 @@ services:
       - "${APP_PORT:-3000}:3000"
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=postgres://${POSTGRES_USER:?POSTGRES_USER required}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB required}
+      # Rol de la app: NOSUPERUSER NOBYPASSRLS (HIGH-5). Con el superuser
+      # de bootstrap, RLS no se aplica y el aislamiento es decorativo.
+      - DATABASE_URL=postgres://${POSTGRES_APP_USER:?POSTGRES_APP_USER required}:${POSTGRES_APP_PASSWORD:?POSTGRES_APP_PASSWORD required}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB required}
+      # Solo para `pnpm db:migrate`: es el owner de las tablas.
+      - DATABASE_MIGRATION_URL=postgres://${POSTGRES_USER:?POSTGRES_USER required}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB required}
       - DATABASE_READONLY_URL=postgres://${POSTGRES_READONLY_USER:?POSTGRES_READONLY_USER required}:${POSTGRES_READONLY_PASSWORD:?POSTGRES_READONLY_PASSWORD required}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB required}
       - REDIS_URL=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD required}@redis:6379
       - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET required (>=32 chars)}
@@ -70,7 +74,11 @@ services:
     restart: unless-stopped
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=postgres://${POSTGRES_USER:?POSTGRES_USER required}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB required}
+      # Rol de la app: NOSUPERUSER NOBYPASSRLS (HIGH-5). Con el superuser
+      # de bootstrap, RLS no se aplica y el aislamiento es decorativo.
+      - DATABASE_URL=postgres://${POSTGRES_APP_USER:?POSTGRES_APP_USER required}:${POSTGRES_APP_PASSWORD:?POSTGRES_APP_PASSWORD required}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB required}
+      # Solo para `pnpm db:migrate`: es el owner de las tablas.
+      - DATABASE_MIGRATION_URL=postgres://${POSTGRES_USER:?POSTGRES_USER required}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB required}
       - REDIS_URL=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD required}@redis:6379
       - LLM_KEY_ENCRYPTION_KEY=${LLM_KEY_ENCRYPTION_KEY:?LLM_KEY_ENCRYPTION_KEY required (32 bytes hex)}
       - EMAIL_FROM=${EMAIL_FROM:-noreply@dash-bi.com}
@@ -110,10 +118,12 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}
       - POSTGRES_READONLY_USER=${POSTGRES_READONLY_USER:-dashbi_readonly}
       - POSTGRES_READONLY_PASSWORD=${POSTGRES_READONLY_PASSWORD:?POSTGRES_READONLY_PASSWORD required}
+      - POSTGRES_APP_USER=${POSTGRES_APP_USER:?POSTGRES_APP_USER required}
+      - POSTGRES_APP_PASSWORD=${POSTGRES_APP_PASSWORD:?POSTGRES_APP_PASSWORD required}
       - POSTGRES_DB=${POSTGRES_DB:-dashbi}
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./scripts/postgres/init-readonly.sql:/docker-entrypoint-initdb.d/00-init-readonly.sql:ro
+      - ./scripts/postgres/init-roles.sh:/docker-entrypoint-initdb.d/00-init-roles.sh:ro
     command: >
       postgres
         -c shared_buffers=256MB

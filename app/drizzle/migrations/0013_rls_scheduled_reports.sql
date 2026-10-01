@@ -70,13 +70,13 @@ CREATE POLICY "scheduled_report_runs_insert" ON "scheduled_report_runs"
 --      can list all three. A policy of `id = app_current_org_id()` would
 --      return exactly one, silently breaking the switcher.
 --
---   b) lib/auth/config.ts:34-100 `provisionOrgForUser` — signup. It sets
---      `app.current_org_id` to the NEW USER's id (not an org id) so the
---      `org_members` policy passes, then INSERTs the org. Under
---      `id = app_current_org_id()` that INSERT would be rejected, because
+--   b) lib/auth/config.ts `provisionOrgForUser` — signup. It INSERTs an org
+--      for a user who belongs to no org yet, and at that moment the org has
+--      no `org_members` row, so no membership-based policy can match it.
+--      Under `id = app_current_org_id()` the INSERT is also rejected, because
 --      the org's own id is not known until the row exists.
 --
---   c) lib/auth/config.ts:22-32 `uniqueSlug` — a global uniqueness probe on
+--   c) lib/auth/config.ts `uniqueSlug` — a global uniqueness probe on
 --      `orgs.slug` that must see rows from every org.
 --
 -- The obvious correct policy, "orgs this user is a member of", needs
@@ -95,3 +95,10 @@ CREATE POLICY "scheduled_report_runs_insert" ON "scheduled_report_runs"
 -- `eq(orgs.id, orgId)` / `eq(orgMembers.userId, userId)` predicates in the
 -- six handlers that read it. That is thin, and it is the last tenant-scoped
 -- table in the schema without a RLS backstop. Tracked, not forgotten.
+--
+-- RESOLVED in migration 0015, which took route (i): `orgs` is enabled and
+-- forced, with a SECURITY DEFINER membership helper. The caveat about
+-- `provisionOrgForUser` setting the *user* id as the org GUC described the
+-- code as of this migration and no longer holds — see 0015 for the measured
+-- failure that followed, and for why the fix was to generate the org id in
+-- the app rather than to widen the read policy.

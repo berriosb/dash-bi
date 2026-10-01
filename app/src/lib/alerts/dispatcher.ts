@@ -1,9 +1,16 @@
 import type { Job } from 'bullmq';
-import { eq, and, count, sql } from 'drizzle-orm';
-import { withSystemContext } from '@/db/client';
-import { alertRules } from '@/db/schema';
+import { sql } from 'drizzle-orm';
+import { db } from '@/db/client';
 import { logger } from '@/lib/logger';
 import { enqueueAlertEvaluation } from './queue';
+
+/** A row of `dashbi_due_alert_rules()`, as raw SQL returns it. */
+interface DueAlertRule {
+  id: string;
+  evaluation_interval_minutes: number;
+  last_evaluated_at: Date | null;
+  [key: string]: unknown;
+}
 
 /**
  * Dispatcher: every minute, find alert_rules that are due and enqueue
@@ -11,30 +18,21 @@ import { enqueueAlertEvaluation } from './queue';
  *
  * "Due" = enabled AND (lastEvaluatedAt IS NULL OR lastEvaluatedAt + interval <= now).
  *
- * Uses withSystemContext because the dispatcher doesn't need org
- * isolation — it processes all enabled rules in batch.
+ * The scan has to cross orgs: a platform worker belongs to no tenant and has
+ * to see every rule that is due. It is not running inside a transaction with
+ * a magically bypassed policy — it calls a named SECURITY DEFINER function
+ * (migration 0014) whose signature, search_path and EXECUTE grant can be
+ * audited. A rule's own data is then loaded per-org, under RLS.
  */
 export async function runAlertDispatcher(_job: Job): Promise<{ enqueued: number }> {
   const now = new Date();
 
-  const dueRules = await withSystemContext(async (tx) => {
-    // Find rules where the next-eval boundary has passed.
-    // Use the smaller of (lastEvaluatedAt + interval, now) so a stale
-    // dispatcher delay doesn't skip evaluations.
-    return tx
-      .select({
-        id: alertRules.id,
-        evaluationIntervalMinutes: alertRules.evaluationIntervalMinutes,
-        lastEvaluatedAt: alertRules.lastEvaluatedAt,
-      })
-      .from(alertRules)
-      .where(
-        and(
-          eq(alertRules.enabled, true),
-          sql`(${alertRules.lastEvaluatedAt} IS NULL OR ${alertRules.lastEvaluatedAt} + (${alertRules.evaluationIntervalMinutes} || ' minutes')::interval <= NOW())`,
-        ),
-      );
-  });
+  // Find rules where the next-eval boundary has passed.
+  // Use the smaller of (lastEvaluatedAt + interval, now) so a stale
+  // dispatcher delay doesn't skip evaluations.
+  const dueRules = await db.execute<DueAlertRule>(
+    sql`SELECT * FROM dashbi_due_alert_rules()`,
+  );
 
   let enqueued = 0;
   for (const rule of dueRules) {
@@ -75,8 +73,8 @@ export function nextDueAt(
  * Helper for tests: counts enabled rules.
  */
 export async function countEnabledRules(): Promise<number> {
-  const result = await withSystemContext(async (tx) => {
-    return tx.select({ value: count() }).from(alertRules).where(eq(alertRules.enabled, true));
-  });
-  return result[0]?.value ?? 0;
+  const rows = await db.execute<{ value: string }>(
+    sql`SELECT dashbi_count_enabled_alert_rules() AS value`,
+  );
+  return Number(rows[0]?.value ?? 0);
 }

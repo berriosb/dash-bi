@@ -13,6 +13,16 @@ const envSchema = z.object({
   // Database
   DATABASE_URL: z.string().url(),
   DATABASE_READONLY_URL: z.string().url(),
+  /**
+   * Owner role, for `pnpm db:migrate` only. Never used by the running app.
+   *
+   * Migrations have to own the tables: the app role is NOSUPERUSER NOBYPASSRLS
+   * (HIGH-5), and a non-owner needs explicit GRANTs on every table, which the
+   * owner role's ALTER DEFAULT PRIVILEGES provides. Optional so existing
+   * single-role setups keep working — drizzle.config.ts falls back to
+   * DATABASE_URL when it is absent.
+   */
+  DATABASE_MIGRATION_URL: z.string().url().optional(),
 
   // Redis
   REDIS_URL: z.string().url(),

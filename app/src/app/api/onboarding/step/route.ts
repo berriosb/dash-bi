@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { errorResponse } from '@/lib/errors/response';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
-import { withSystemContext } from '@/db/client';
+import { withOrgContext } from '@/db/client';
 import { users } from '@/db/schema';
 import { requireAuth } from '@/lib/auth/request';
 
@@ -36,7 +36,7 @@ export async function POST(req: Request) {
 
     const { step, dataSourceId } = parsed.data;
 
-    await withSystemContext(async (tx) => {
+    await withOrgContext(ctx.orgId, ctx.userId, ctx.role, async (tx) => {
       const updates: { currentOnboardingStep: string; onboardingDataSourceId?: string } = {
         currentOnboardingStep: step,
       };

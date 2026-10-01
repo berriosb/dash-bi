@@ -19,7 +19,8 @@ services:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./scripts/postgres/init-readonly.sql:/docker-entrypoint-initdb.d/00-init-readonly.sql:ro
+      # Rutas relativas al directorio de ESTE compose (app/), no a la raíz.
+      - ../scripts/postgres/init-roles.sh:/docker-entrypoint-initdb.d/00-init-roles.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dashbi}"]
       interval: 10s
@@ -61,7 +62,10 @@ services:
         condition: service_healthy
     environment:
       # Database
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      # Rol de la app: NOSUPERUSER NOBYPASSRLS (HIGH-5).
+      DATABASE_URL: postgresql://${POSTGRES_APP_USER}:${POSTGRES_APP_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      # Solo para `pnpm db:migrate`: es el owner de las tablas.
+      DATABASE_MIGRATION_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       DATABASE_READONLY_URL: postgresql://${POSTGRES_READONLY_USER}:${POSTGRES_READONLY_PASSWORD}@postgres:5432/${POSTGRES_DB}
       
       # Redis

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { errorResponse } from '@/lib/errors/response';
-import { withSystemContext } from '@/db/client';
+import { withOrgContext } from '@/db/client';
 import { uploadedFiles } from '@/db/schema';
 import { requireAuth } from '@/lib/auth/request';
 import { audit } from '@/lib/audit/log';
@@ -147,11 +147,9 @@ export async function POST(req: Request) {
     const inferred = inferColumns(parsed.rows);
     const proposedTable = safeTableName(upload.filename, ctx.orgId);
 
-    // Insert the file row in withSystemContext (bypasses RLS only
-    // for the metadata row; the materialized table is created later
-    // in withSystemContext too, and the rows go in via withOrgContext
-    // so RLS approves them). Sprint 1.5 MVP.
-    const fileId = await withSystemContext(async (tx) => {
+    // The metadata row goes in under the caller's org, so RLS scopes it. The
+    // materialized table is created later, in the commit route.
+    const fileId = await withOrgContext(ctx.orgId, ctx.userId, ctx.role, async (tx) => {
       const [row] = await tx
         .insert(uploadedFiles)
         .values({

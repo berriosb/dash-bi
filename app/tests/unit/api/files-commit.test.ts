@@ -1,21 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { UnauthorizedError } from '@/lib/auth/context';
 
-const { mockRequireAuth, mockRateLimit, mockTakeStore, mockWithSystemContext, mockWithOrgContext } = vi.hoisted(() => {
-  const txMock = {
-    insert: vi.fn(() => ({
-      values: vi.fn().mockReturnValue({
-        returning: vi.fn().mockResolvedValue([{ id: 'file-uuid-1' }]),
-      }),
-    })),
-  };
-  const mwc = {
+const { mockRequireAuth, mockRateLimit, mockTakeStore, mockWithOrgContext, makeOrgTx } = vi.hoisted(() => {
+  // One tx object serves every `withOrgContext` callback in the route:
+  // the file lookup needs `select`, the DDL and `loadRows` need `execute`,
+  // and the `data_sources` insert needs `insert`.
+  const makeOrgTx = (
+    fileRows: Array<{ id: string; targetTable: string }> = [
+      { id: 'file-uuid-1', targetTable: 'org_o1.sales' },
+    ],
+  ) => ({
     select: vi.fn().mockReturnValue({
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockReturnValue({
-          limit: vi.fn().mockResolvedValue([
-            { id: 'file-uuid-1', targetTable: 'org_o1.sales' },
-          ]),
+          limit: vi.fn().mockResolvedValue(fileRows),
         }),
       }),
     }),
@@ -29,19 +27,18 @@ const { mockRequireAuth, mockRateLimit, mockTakeStore, mockWithSystemContext, mo
         where: vi.fn().mockResolvedValue(undefined),
       }),
     })),
-    execute: vi.fn().mockResolvedValue({ rows: [] }),
-  };
+    execute: vi.fn().mockResolvedValue([]),
+  });
   return {
     mockRequireAuth: vi.fn(),
     mockRateLimit: vi.fn(),
     mockTakeStore: vi.fn(),
-    mockWithSystemContext: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(txMock)),
-    mockWithOrgContext: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(mwc)),
+    makeOrgTx,
+    mockWithOrgContext: vi.fn(),
   };
 });
 
 vi.mock('@/db/client', () => ({
-  withSystemContext: mockWithSystemContext,
   withOrgContext: mockWithOrgContext,
 }));
 
@@ -79,6 +76,23 @@ function makeReq(body: unknown): Request {
   });
 }
 
+/**
+ * The route issues its DDL and its row load as `sql.raw(...)` statements,
+ * so the executable text lives in the SQL object's `queryChunks` rather than
+ * in a string field. This recovers the text for assertions.
+ */
+function rawSqlText(statement: unknown): string {
+  const chunks = (statement as { queryChunks?: Array<{ value?: unknown }> })
+    .queryChunks;
+  if (!chunks) return '';
+  return chunks
+    .flatMap((chunk) =>
+      Array.isArray(chunk.value) ? (chunk.value as unknown[]) : [chunk.value],
+    )
+    .filter((part): part is string => typeof part === 'string')
+    .join('');
+}
+
 const validBody = {
   fileId: '11111111-2222-3333-4444-555555555555',
   name: 'Sales Q1',
@@ -89,53 +103,21 @@ const validBody = {
 };
 
 describe('POST /api/files/commit', () => {
+  // The tx handed to the `withOrgContext` callback. Swapped per test.
+  let orgTx: ReturnType<typeof makeOrgTx>;
+
+  const executedSql = (): string[] =>
+    orgTx.execute.mock.calls.map(([statement]) => rawSqlText(statement));
+
   beforeEach(() => {
     vi.clearAllMocks();
-    // Re-attach the mock implementations after clearAllMocks() wiped them.
-    const txMock = {
-      insert: vi.fn(() => ({
-        values: vi.fn().mockReturnValue({
-          returning: vi.fn().mockResolvedValue([{ id: 'file-uuid-1' }]),
-        }),
-      })),
-      execute: vi.fn().mockResolvedValue({ rows: [] }),
-    };
-    mockWithSystemContext.mockImplementation(
-      async (...args: unknown[]) => {
-        // withSystemContext(fn) — 1 arg
-        // The route always calls with 1 arg.
-        const fn = args[args.length - 1] as (tx: unknown) => Promise<unknown>;
-        return fn(txMock);
-      },
-    );
-    const mwc = {
-      select: vi.fn().mockReturnValue({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockReturnValue({
-            limit: vi.fn().mockResolvedValue([
-              { id: 'file-uuid-1', targetTable: 'org_o1.sales' },
-            ]),
-          }),
-        }),
-      }),
-      insert: vi.fn(() => ({
-        values: vi.fn().mockReturnValue({
-          returning: vi.fn().mockResolvedValue([{ id: 'ds-new-1' }]),
-        }),
-      })),
-      update: vi.fn(() => ({
-        set: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue(undefined),
-        }),
-      })),
-      execute: vi.fn().mockResolvedValue({ rows: [] }),
-    };
+    orgTx = makeOrgTx();
+    // withOrgContext(orgId, userId, [role,] fn) — the last arg is the callback.
+    // The mock reads the current `orgTx` at call time so tests can swap it.
     mockWithOrgContext.mockImplementation(
       async (...args: unknown[]) => {
-        // withOrgContext(orgId, userId, [role,] fn) — 3 or 4 args.
-        // The last arg is always the callback.
         const fn = args[args.length - 1] as (tx: unknown) => Promise<unknown>;
-        return fn(mwc);
+        return fn(orgTx);
       },
     );
     mockRequireAuth.mockResolvedValue({
@@ -182,34 +164,8 @@ describe('POST /api/files/commit', () => {
   });
 
   it('returns 404 when the uploaded file no longer exists', async () => {
-    // Override the mwc tx.select to return empty rows for the file lookup.
-    const mwcEmpty = {
-      select: vi.fn().mockReturnValue({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockReturnValue({
-            limit: vi.fn().mockResolvedValue([]),
-          }),
-        }),
-      }),
-      insert: vi.fn(() => ({
-        values: vi.fn().mockReturnValue({
-          returning: vi.fn().mockResolvedValue([{ id: 'ds-new-1' }]),
-        }),
-      })),
-      update: vi.fn(() => ({
-        set: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue(undefined),
-        }),
-      })),
-      execute: vi.fn().mockResolvedValue({ rows: [] }),
-    };
-    mockWithOrgContext.mockReset();
-    mockWithOrgContext.mockImplementation(
-      async (...args: unknown[]) => {
-        const fn = args[args.length - 1] as (tx: unknown) => Promise<unknown>;
-        return fn(mwcEmpty);
-      },
-    );
+    // The file lookup happens in the org context and finds no row.
+    orgTx = makeOrgTx([]);
     const res = await POST(makeReq(validBody));
     expect(res.status).toBe(404);
   });
@@ -222,15 +178,55 @@ describe('POST /api/files/commit', () => {
     expect(body.rowCount).toBe(2);
   });
 
-  it('runs the DDL inside withSystemContext', async () => {
-    await POST(makeReq(validBody));
-    // system context is where the DDL + row loading happens.
-    expect(mockWithSystemContext).toHaveBeenCalled();
+  it('issues the DDL and the row load through tx.execute on the org-scoped tx', async () => {
+    const res = await POST(makeReq(validBody));
+    expect(res.status).toBe(201);
+
+    const statements = executedSql();
+    expect(statements).toContain('CREATE SCHEMA IF NOT EXISTS "org_o1"');
+    expect(
+      statements.some((s) =>
+        s.startsWith('CREATE TABLE IF NOT EXISTS "org_o1"."sales"'),
+      ),
+    ).toBe(true);
+    expect(statements).toContain(
+      'ALTER TABLE "org_o1"."sales" ENABLE ROW LEVEL SECURITY',
+    );
+    expect(
+      statements.some((s) =>
+        s.includes('CREATE POLICY "org_isolation_sales" ON "org_o1"."sales"'),
+      ),
+    ).toBe(true);
+    expect(statements).toContain(
+      'CREATE INDEX IF NOT EXISTS "sales_name_idx" ON "org_o1"."sales"("name")',
+    );
+    // The parsed rows are loaded through the same org-scoped tx, so the
+    // per-table RLS policy sees the caller's org on every INSERT.
+    expect(
+      statements.some((s) => s.startsWith('INSERT INTO "org_o1"."sales"')),
+    ).toBe(true);
+    expect(
+      statements.some((s) => s.includes("('org-1', 1, 'Alice')")),
+    ).toBe(true);
   });
 
   it('writes the data_sources row inside withOrgContext', async () => {
     await POST(makeReq(validBody));
-    // The org context is called for the file lookup AND the data_sources insert.
+    // The org context is called for the file lookup, the DDL, the row load
+    // AND the data_sources insert.
     expect(mockWithOrgContext.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(orgTx.insert).toHaveBeenCalledTimes(1);
+    const insertedValues = (
+      orgTx.insert.mock.results[0]?.value as {
+        values: ReturnType<typeof vi.fn>;
+      }
+    ).values.mock.calls[0]?.[0] as {
+      orgId: string;
+      type: string;
+      name: string;
+    };
+    expect(insertedValues.orgId).toBe('org-1');
+    expect(insertedValues.type).toBe('csv');
+    expect(insertedValues.name).toBe('Sales Q1');
   });
 });

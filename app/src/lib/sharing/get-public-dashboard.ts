@@ -1,8 +1,19 @@
 import { eq, sql } from 'drizzle-orm';
-import { withSystemContext, withOrgContext } from '@/db/client';
+import { db, withOrgContext } from '@/db/client';
 import { publicLinks, dashboards } from '@/db/schema';
 import { audit } from '@/lib/audit/log';
 import { logger } from '@/lib/logger';
+
+/** `public_links` as raw SQL returns it: column names, not Drizzle keys. */
+interface PublicLinkRow {
+  id: string;
+  org_id: string;
+  dashboard_id: string;
+  token: string;
+  expires_at: Date | null;
+  revoked_at: Date | null;
+  [key: string]: unknown;
+}
 
 export type PublicDashboardResult =
   | { status: 'not_found' }
@@ -42,20 +53,26 @@ export type PublicDashboardResult =
  * - Writes audit log entry `public_link.viewed` with null userId (public)
  */
 export async function getPublicDashboard(token: string): Promise<PublicDashboardResult> {
-  const link = await withSystemContext(async (tx) =>
-    tx.query.publicLinks.findFirst({ where: eq(publicLinks.token, token) })
-  );
+  // Resolving the token to its org is the one step that cannot be org-scoped:
+  // nobody knows the org until the link is resolved. It is safe because the
+  // token is the credential and is unguessable, and because it happens through
+  // a named SECURITY DEFINER function (migration 0014) whose search_path and
+  // EXECUTE grant are pinned, rather than a transaction that silently reads
+  // whatever RLS allows. Everything after this runs under `withOrgContext`.
+  const link = (
+    await db.execute<PublicLinkRow>(sql`SELECT * FROM dashbi_resolve_public_link(${token})`)
+  )[0];
 
   if (!link) return { status: 'not_found' };
-  if (link.revokedAt) return { status: 'revoked' };
-  if (link.expiresAt && link.expiresAt < new Date()) return { status: 'expired' };
+  if (link.revoked_at) return { status: 'revoked' };
+  if (link.expires_at && link.expires_at < new Date()) return { status: 'expired' };
 
-  const dashboard = await withOrgContext(link.orgId, null, 'editor', async (tx) =>
-    tx.query.dashboards.findFirst({ where: eq(dashboards.id, link.dashboardId) })
+  const dashboard = await withOrgContext(link.org_id, null, 'editor', async (tx) =>
+    tx.query.dashboards.findFirst({ where: eq(dashboards.id, link.dashboard_id) })
   );
 
-  void incrementViewCount(link.id, link.orgId);
-  void audit(link.orgId, null, 'public_link.viewed', `public_link:${link.id}`);
+  void incrementViewCount(link.id, link.org_id);
+  void audit(link.org_id, null, 'public_link.viewed', `public_link:${link.id}`);
 
   if (!dashboard) return { status: 'not_found' };
 

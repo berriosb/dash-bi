@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { errorResponse } from '@/lib/errors/response';
-import { withSystemContext } from '@/db/client';
+import { withOrgContext } from '@/db/client';
 import { users } from '@/db/schema';
 import { requireAuth } from '@/lib/auth/request';
 import { eq } from 'drizzle-orm';
@@ -11,7 +11,7 @@ export async function POST(req: Request) {
   try {
     const ctx = await requireAuth(req, 'dashboard.view');
 
-    await withSystemContext(async (tx) =>
+    await withOrgContext(ctx.orgId, ctx.userId, ctx.role, (tx) =>
       tx.update(users).set({
         onboardingCompletedAt: new Date(),
         currentOnboardingStep: 'completed',

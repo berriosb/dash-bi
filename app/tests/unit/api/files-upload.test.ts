@@ -1,14 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { UnauthorizedError } from '@/lib/auth/context';
 
-const { mockRequireAuth, mockWithSystemContext, mockRateLimit } = vi.hoisted(() => ({
+const { mockRequireAuth, mockWithOrgContext, mockRateLimit } = vi.hoisted(() => ({
   mockRequireAuth: vi.fn(),
-  mockWithSystemContext: vi.fn(),
+  mockWithOrgContext: vi.fn(),
   mockRateLimit: vi.fn(),
 }));
 
 vi.mock('@/db/client', () => ({
-  withSystemContext: mockWithSystemContext,
+  withOrgContext: mockWithOrgContext,
 }));
 
 vi.mock('@/lib/auth/request', () => ({
@@ -66,6 +66,12 @@ function buildRawMultipart(filename: string, content: string, mime: string): Req
 }
 
 describe('POST /api/files/upload', () => {
+  // The tx handed to the `withOrgContext` callback, kept so the test can
+  // inspect the `uploaded_files` insert the route performs inside it.
+  let orgTx: {
+    insert: ReturnType<typeof vi.fn>;
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
     mockRequireAuth.mockResolvedValue({
@@ -75,18 +81,20 @@ describe('POST /api/files/upload', () => {
       role: 'admin',
     });
     mockRateLimit.mockReturnValue({ allowed: true, retryAfterSeconds: 0 });
-    mockWithSystemContext.mockImplementation(
-      async (fn: (tx: unknown) => Promise<unknown>) => {
-        const tx = {
-          insert: vi.fn().mockReturnValue({
-            values: vi.fn().mockReturnValue({
-              returning: vi
-                .fn()
-                .mockResolvedValue([{ id: 'file-uuid-1' }]),
-            }),
-          }),
-        };
-        return fn(tx);
+    orgTx = {
+      insert: vi.fn().mockReturnValue({
+        values: vi.fn().mockReturnValue({
+          returning: vi
+            .fn()
+            .mockResolvedValue([{ id: 'file-uuid-1' }]),
+        }),
+      }),
+    };
+    mockWithOrgContext.mockImplementation(
+      async (...args: unknown[]) => {
+        // withOrgContext(orgId, userId, [role,] fn) — the last arg is the callback.
+        const fn = args[args.length - 1] as (tx: unknown) => Promise<unknown>;
+        return fn(orgTx);
       },
     );
   });
@@ -116,6 +124,34 @@ describe('POST /api/files/upload', () => {
     expect(body.totalRows).toBe(2);
     expect(body.inferredColumns).toHaveLength(2);
     expect(body.previewRows).toHaveLength(2);
+  });
+
+  it('inserts the uploaded_files row under the caller org', async () => {
+    const req = buildRawMultipart('sales.csv', 'name,age\r\nAlice,30\r\n', 'text/csv');
+    await POST(req);
+
+    expect(mockWithOrgContext).toHaveBeenCalledWith(
+      'org-1',
+      'user-1',
+      'admin',
+      expect.any(Function),
+    );
+    const inserted = (
+      orgTx.insert.mock.results[0]?.value as {
+        values: ReturnType<typeof vi.fn>;
+      }
+    ).values.mock.calls[0]?.[0] as {
+      orgId: string;
+      originalFilename: string;
+      targetTable: string;
+      rowCount: number;
+      createdBy: string;
+    };
+    expect(inserted.orgId).toBe('org-1');
+    expect(inserted.createdBy).toBe('user-1');
+    expect(inserted.originalFilename).toBe('sales.csv');
+    expect(inserted.targetTable).toBe('org_org1.sales');
+    expect(inserted.rowCount).toBe(1);
   });
 
   it('returns 413 when the file exceeds the size cap', async () => {
