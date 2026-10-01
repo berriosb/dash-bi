@@ -1,12 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Settings, ShieldCheck, Sparkles, Palette, Check, Save } from 'lucide-react';
+import { Settings, ShieldCheck, Sparkles, Palette, Check, Save, Trash2, Loader2 } from 'lucide-react';
 import { useUIStore } from '@/stores/uiStore';
 import { MembersManager } from '@/components/settings/MembersManager';
 
@@ -17,12 +17,84 @@ export default function SettingsPage() {
   const [llmModel, setLlmModel] = useState('gpt-4o');
   const [apiKey, setApiKey] = useState('');
   const [savedMsg, setSavedMsg] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [hasApiKey, setHasApiKey] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  const handleSaveLLM = (e: React.FormEvent) => {
+  // Load the stored config on mount so the form reflects reality instead of
+  // showing defaults while claiming a key is saved.
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/organizations/llm-key')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled || !data) return;
+        setLlmProvider(data.provider ?? 'openai');
+        setLlmModel(data.model ?? 'gpt-4o');
+        setHasApiKey(Boolean(data.hasApiKey));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleSaveLLM = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSavedMsg(true);
-    setTimeout(() => setSavedMsg(false), 3000);
+    setSaveError(null);
+    setSavedMsg(false);
+
+    if (!apiKey.trim()) {
+      setSaveError('Ingresá tu API key para guardar.');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const res = await fetch('/api/organizations/llm-key', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ provider: llmProvider, model: llmModel, apiKey: apiKey.trim() }),
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setSaveError(body?.message ?? 'No se pudo guardar la configuración.');
+        return;
+      }
+
+      // The key only exists server-side from here on.
+      setApiKey('');
+      setHasApiKey(true);
+      setSavedMsg(true);
+    } catch {
+      setSaveError('No se pudo conectar con el servidor.');
+    } finally {
+      setSaving(false);
+    }
   };
+
+  // Revoking is a real need: without it, a key leaked outside the org cannot
+  // be invalidated from the product at all.
+  const handleClearLLM = useCallback(async () => {
+    setSaveError(null);
+    setSavedMsg(false);
+    setSaving(true);
+    try {
+      const res = await fetch('/api/organizations/llm-key', { method: 'DELETE' });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setSaveError(body?.message ?? 'No se pudo eliminar la API key.');
+        return;
+      }
+      setApiKey('');
+      setHasApiKey(false);
+    } catch {
+      setSaveError('No se pudo conectar con el servidor.');
+    } finally {
+      setSaving(false);
+    }
+  }, []);
 
   return (
     <div className="space-y-6 max-w-4xl">
@@ -113,19 +185,41 @@ export default function SettingsPage() {
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label className="text-xs text-slate-300">API Key ({llmProvider.toUpperCase()})</Label>
-                <Badge variant="outline" className="text-[10px] border-emerald-500/20 text-emerald-400 gap-1">
-                  <ShieldCheck className="w-3 h-3" />
-                  AES-256 Cifrado
-                </Badge>
+                <div className="flex items-center gap-2">
+                  {hasApiKey && (
+                    <Badge variant="outline" className="text-[10px] border-emerald-500/20 text-emerald-400 gap-1">
+                      <Check className="w-3 h-3" />
+                      Key configurada
+                    </Badge>
+                  )}
+                  <Badge variant="outline" className="text-[10px] border-slate-700 text-slate-400 gap-1">
+                    <ShieldCheck className="w-3 h-3" />
+                    AES-256 Cifrado
+                  </Badge>
+                </div>
               </div>
               <Input
                 type="password"
-                placeholder="sk-proj-••••••••••••••••"
+                placeholder={
+                  hasApiKey
+                    ? 'Ingresá una key nueva para reemplazarla'
+                    : 'sk-proj-••••••••••••••••'
+                }
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
+                autoComplete="off"
                 className="bg-slate-950 border-slate-800 text-xs font-mono"
               />
             </div>
+
+            {saveError && (
+              <div
+                role="alert"
+                className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs"
+              >
+                {saveError}
+              </div>
+            )}
 
             {savedMsg && (
               <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs flex items-center gap-2">
@@ -134,10 +228,35 @@ export default function SettingsPage() {
               </div>
             )}
 
-            <Button type="submit" size="sm" className="bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs gap-1.5">
-              <Save className="w-3.5 h-3.5" />
-              <span>Guardar Credenciales IA</span>
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                type="submit"
+                size="sm"
+                disabled={saving}
+                className="bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs gap-1.5"
+              >
+                {saving ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Save className="w-3.5 h-3.5" />
+                )}
+                <span>{saving ? 'Guardando…' : 'Guardar Credenciales IA'}</span>
+              </Button>
+
+              {hasApiKey && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={saving}
+                  onClick={handleClearLLM}
+                  className="border-red-500/30 text-red-400 hover:bg-red-500/10 hover:text-red-300 text-xs gap-1.5"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Eliminar key</span>
+                </Button>
+              )}
+            </div>
           </form>
         </CardContent>
       </Card>
