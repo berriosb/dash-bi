@@ -200,6 +200,87 @@ describe('T1 — Cross-tenant isolation (Postgres RLS, real DB)', () => {
     expect(crossTenantTitles).toEqual(['A secret']);
   });
 
+  itWithDb('scheduled_reports and scheduled_report_runs are isolated per tenant (migration 0013)', async () => {
+    const { users, orgs, orgMembers, dashboards, scheduledReports, scheduledReportRuns } = schemaRef();
+
+    const [orgA, orgB] = await db.insert(orgs).values([
+      { name: 'Org A', slug: 'rls-org-a' },
+      { name: 'Org B', slug: 'rls-org-b' },
+    ]).returning();
+    if (!orgA || !orgB) throw new Error('seed: orgA/orgB missing');
+
+    const [userA] = await db.insert(users).values({ email: 'rls-a@a.test', name: 'A' }).returning();
+    if (!userA) throw new Error('seed: userA missing');
+    await db.insert(orgMembers).values({
+      orgId: orgA.id, userId: userA.id, role: 'admin', joinedAt: new Date(),
+    });
+
+    const [dashA, dashB] = await db.insert(dashboards).values([
+      { orgId: orgA.id, title: 'A dash', widgets: [], createdBy: userA.id, updatedBy: userA.id },
+      { orgId: orgB.id, title: 'B dash', widgets: [], createdBy: userA.id, updatedBy: userA.id },
+    ]).returning();
+    if (!dashA || !dashB) throw new Error('seed: dashboards missing');
+
+    const [reportA, reportB] = await db.insert(scheduledReports).values([
+      {
+        orgId: orgA.id, dashboardId: dashA.id, createdBy: userA.id, cron: '0 9 * * 1',
+        timezone: 'UTC', format: 'pdf', includeBranding: false,
+        recipients: [{ email: 'cfo@org-a.test' }], enabled: true,
+        nextRunAt: new Date('2099-01-01T09:00:00Z'), title: 'A report',
+      },
+      {
+        orgId: orgB.id, dashboardId: dashB.id, createdBy: userA.id, cron: '0 9 * * 1',
+        timezone: 'UTC', format: 'pdf', includeBranding: false,
+        recipients: [{ email: 'cfo@org-b.test' }], enabled: true,
+        nextRunAt: new Date('2099-01-01T09:00:00Z'), title: 'B report',
+      },
+    ]).returning();
+    if (!reportA || !reportB) throw new Error('seed: reports missing');
+
+    await db.insert(scheduledReportRuns).values({
+      orgId: orgA.id,
+      scheduledReportId: reportA.id,
+      status: 'success',
+      startedAt: new Date('2099-01-01T09:00:00Z'),
+    });
+
+    // Org A context sees only org A's report…
+    const asOrgA = await db.transaction(async (tx) => {
+      await setRoleAndGucs(tx, orgA.id, userA.id, 'admin');
+      return tx.select({ title: scheduledReports.title }).from(scheduledReports);
+    });
+    expect(asOrgA.map((r) => r.title)).toEqual(['A report']);
+
+    // …and only org A's run.
+    const runsAsOrgA = await db.transaction(async (tx) => {
+      await setRoleAndGucs(tx, orgA.id, userA.id, 'admin');
+      return tx.select({ id: scheduledReportRuns.id }).from(scheduledReportRuns);
+    });
+    expect(runsAsOrgA).toHaveLength(1);
+
+    // No GUCs → the tables are invisible, which is the whole point of the
+    // backstop: a query that forgets `withOrgContext` returns nothing rather
+    // than every tenant's recipients.
+    const withoutGucs = await db.transaction(async (tx) => {
+      await setRoleAndGucs(tx, null, null, 'viewer');
+      return tx.select({ title: scheduledReports.title }).from(scheduledReports);
+    });
+    expect(withoutGucs).toEqual([]);
+
+    // An INSERT that claims another org is rejected by the WITH CHECK policy.
+    await expect(
+      db.transaction(async (tx) => {
+        await setRoleAndGucs(tx, orgA.id, userA.id, 'admin');
+        await tx.insert(scheduledReports).values({
+          orgId: orgB.id, dashboardId: dashB.id, createdBy: userA.id, cron: '0 9 * * 1',
+          timezone: 'UTC', format: 'pdf', includeBranding: false,
+          recipients: [{ email: 'attacker@evil.test' }], enabled: true,
+          nextRunAt: new Date('2099-01-01T09:00:00Z'), title: 'Cross-org write',
+        });
+      }),
+    ).rejects.toThrow();
+  });
+
   itWithDb('requiresPermission finds membership only when same-org GUCs are set', async () => {
     const { users, orgs, orgMembers } = schemaRef();
 
