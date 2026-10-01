@@ -12,6 +12,65 @@ export type { Query } from '@/lib/connectors/types';
 export type { ConnectorType };
 
 /**
+ * DML/DDL keywords. Shared by every SQL-backed connector so a new connector
+ * cannot ship with a weaker list than the one before it.
+ */
+const DML_DDL_KEYWORDS = [
+  'INSERT', 'UPDATE', 'DELETE', 'DROP', 'TRUNCATE', 'ALTER', 'CREATE', 'GRANT', 'REVOKE',
+] as const;
+
+/**
+ * T7 — functions a DB-issued query must never call.
+ *
+ * These exist because the read-only role is not the only thing standing
+ * between a model and the filesystem. `validateQuery` is the layer that
+ * actually decides what runs, and it used to have no file-reading function in
+ * its list at all: `SELECT pg_read_file('/etc/passwd')` passed validation.
+ *
+ * `pg_read_file` & friends read the DATABASE SERVER's filesystem, not the
+ * connector's — an AI query that reaches them turns prompt injection into
+ * arbitrary file disclosure of `/etc/passwd`, service credentials and
+ * anything else the process can read.
+ *
+ * Timing functions are timing-based DoS against the DB; the `dblink` /
+ * `pg_*` egress functions let a query use the DB as a network pivot into
+ * hosts the application itself cannot reach.
+ */
+const DANGEROUS_DB_FUNCTIONS = [
+  // Postgres server filesystem
+  'pg_read_file', 'pg_read_binary_file', 'pg_ls_dir', 'pg_stat_file',
+  // Large-object import/export
+  'lo_import', 'lo_export',
+  // MySQL server filesystem
+  'load_file', 'into outfile', 'into dumpfile',
+  // Timing / DoS
+  'pg_sleep', 'sleep', 'benchmark',
+  // Network egress from the DB
+  'dblink', 'dblink_connect', 'dblink_send_query',
+  'pg_connect_backend', 'pg_forward_wal', 'lo_create', 'lo_unlink',
+] as const;
+
+/**
+ * Build the forbidden-statement pattern for a SQL-backed connector.
+ *
+ * `extraKeywords` covers engine-specific DML (Snowflake's `MERGE`). Every
+ * dangerous function is included in all of them: a blocklist that differs per
+ * connector is how `pg_read_file` survived in the first place.
+ */
+function buildForbiddenPattern(extraKeywords: readonly string[] = []): RegExp {
+  const alternatives = [
+    ...DML_DDL_KEYWORDS,
+    ...extraKeywords,
+    ...DANGEROUS_DB_FUNCTIONS,
+  ]
+    // `into outfile` / `into dumpfile` contain a space, so escape the rest.
+    .map((kw) => kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|');
+
+  return new RegExp(`\\b(${alternatives})\\b`, 'i');
+}
+
+/**
  * T2 del threat model: validar SQL/queries generadas por IA ANTES de ejecutar.
  *
  * Defense in depth:
@@ -46,7 +105,7 @@ export function validateQuery(
     }
 
     // Prohibir DML/DDL y funciones potencialmente peligrosas (SLEEP, BENCHMARK, etc.)
-    const forbidden = /\b(INSERT|UPDATE|DELETE|DROP|TRUNCATE|ALTER|CREATE|GRANT|REVOKE|SLEEP|BENCHMARK|LOAD_FILE|OUTFILE)\b/i;
+    const forbidden = buildForbiddenPattern();
     if (forbidden.test(sql)) {
       throw new ValidationError('DML/DDL or forbidden function statements not allowed');
     }
@@ -106,7 +165,7 @@ export function validateQuery(
     if (semicolons.length > 1) {
       throw new ValidationError('Multi-statement queries not allowed');
     }
-    const forbidden = /\b(INSERT|UPDATE|DELETE|DROP|TRUNCATE|ALTER|CREATE|GRANT|REVOKE)\b/i;
+    const forbidden = buildForbiddenPattern();
     if (forbidden.test(sql)) {
       throw new ValidationError('DML/DDL statements not allowed');
     }
@@ -142,7 +201,7 @@ export function validateQuery(
     if (semicolons.length > 1) {
       throw new ValidationError('Multi-statement queries not allowed');
     }
-    const forbidden = /\b(INSERT|UPDATE|DELETE|DROP|TRUNCATE|ALTER|CREATE|GRANT|REVOKE|MERGE)\b/i;
+    const forbidden = buildForbiddenPattern(['MERGE']);
     if (forbidden.test(sql)) {
       throw new ValidationError('DML/DDL statements not allowed');
     }
@@ -167,7 +226,7 @@ export function validateQuery(
     if (semicolons.length > 1) {
       throw new ValidationError('Multi-statement queries not allowed');
     }
-    const forbidden = /\b(INSERT|UPDATE|DELETE|DROP|TRUNCATE|ALTER|CREATE|GRANT|REVOKE)\b/i;
+    const forbidden = buildForbiddenPattern();
     if (forbidden.test(sql)) {
       throw new ValidationError('DML/DDL statements not allowed');
     }
