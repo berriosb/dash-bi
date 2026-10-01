@@ -182,7 +182,7 @@ services:
       - POSTGRES_READONLY_PASSWORD=${POSTGRES_READONLY_PASSWORD}
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./scripts/postgres/init-readonly.sql:/docker-entrypoint-initdb.d/00-init-readonly.sql:ro
+      - ./scripts/postgres/init-roles.sh:/docker-entrypoint-initdb.d/00-init-roles.sh:ro
     command: >
       postgres
         -c shared_buffers=256MB
@@ -322,28 +322,56 @@ HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
 CMD ["node", "server.js"]
 ```
 
-### 3.4 `scripts/postgres/init-readonly.sql`
+### 3.4 `scripts/postgres/init-roles.sh`
+
+Crea los tres roles de Postgres y aplica los grants. Se ejecuta una vez, cuando
+la imagen oficial inicializa el data directory.
+
+> Este archivo reemplazó a los dos `init-readonly.sql` que había (raíz y
+> `app/`), que eran incompatibles entre sí: el de la raíz creaba el rol con
+> `LOGIN` y una password hardcodeada en el repo, el de `app/` lo creaba
+> `NOLOGIN`. Ninguno de los dos estaba montado en ningún `docker-compose.yml`
+> una vez introducido este. No hay que volver a crearlos.
+
+Tres roles con responsabilidades separadas:
+
+| Rol | Uso | Atributos |
+|---|---|---|
+| `POSTGRES_USER` | owner de las tablas, corre `drizzle-kit` | `SUPERUSER` |
+| `POSTGRES_APP_USER` | la aplicación | `NOSUPERUSER NOBYPASSRLS` |
+| `POSTGRES_READONLY_USER` | SQL generado por la IA | `NOSUPERUSER NOBYPASSRLS`, solo `SELECT` |
+
+La separación de `POSTGRES_USER` y `POSTGRES_APP_USER` es obligatoria, no
+cosmética (HIGH-5): la imagen oficial de Postgres crea `POSTGRES_USER` como
+`SUPERUSER`, y un superuser ignora RLS aunque la tabla tenga `ENABLE` + `FORCE
+ROW LEVEL SECURITY`. PostgreSQL 15+ además impide degradarlo con
+`ALTER ROLE ... NOSUPERUSER`:
+
+```
+ERROR:  permission denied to alter role
+DETAIL: The bootstrap user must have the SUPERUSER attribute.
+```
+
+Los passwords salen de variables de entorno; el script no tiene ninguno
+hardcodeado. Los grants sobre tablas van explícitos porque la app ya no es
+owner de ellas:
 
 ```sql
--- Crea usuario read-only para queries generadas por IA (defense in depth)
--- Se ejecuta una vez al primer start del contenedor
-
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = :'READONLY_USER') THEN
-    EXECUTE format('CREATE ROLE %I WITH LOGIN PASSWORD %L', :'READONLY_USER', :'READONLY_PASSWORD');
-  END IF;
-END
-$$;
-
--- Permisos: solo SELECT en tablas tenant-scoped (NO en tablas de sistema)
-GRANT CONNECT ON DATABASE :"DB_NAME" TO :"READONLY_USER";
-GRANT USAGE ON SCHEMA public TO :"READONLY_USER";
-GRANT SELECT ON ALL TABLES IN SCHEMA public TO :"READONLY_USER";
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO :"READONLY_USER";
-
--- IMPORTANTE: NO grant a information_schema, pg_catalog (auto-restricted)
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO :app_user;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO :app_user;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO :readonly_user;
 ```
+
+**Sobre las funciones que leen archivos del servidor** (`pg_read_file`,
+`pg_ls_dir`, `lo_import`, …): este script no concede `EXECUTE` sobre ninguna, y
+no hace falta hacerlo explícitamente. Verificado el 2026-10-01 contra
+PostgreSQL 16: `has_function_privilege('public', 'pg_read_file(text)',
+'EXECUTE')` devuelve `false`, y `SET ROLE dashbi_readonly; SELECT
+pg_read_file('/etc/passwd')` responde `permission denied for function`. La
+blocklist de `validateQuery` (`src/lib/security/validate-query.ts`) es la
+segunda capa encima de eso, y `tests/security/db-file-access.test.ts` la
+pinea.
 
 ---
 

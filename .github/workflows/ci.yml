@@ -191,9 +191,15 @@ jobs:
 
       # Migrations reference the dashbi_readonly role (GRANT statements
       # in 0002_nlqa.sql), so the role must exist before db:migrate runs.
-      # The local init-readonly.sql creates it NOLOGIN; we need LOGIN for
-      # DATABASE_READONLY_URL. Set the password and grant privileges in
-      # one shot.
+      # The CI postgres service has no init script mounted, so the role is
+      # provisioned inline here. It needs LOGIN because DATABASE_READONLY_URL
+      # connects as it, which is the whole point: the AI SQL must run as a role
+      # that cannot write. Set the password and grant privileges in one shot.
+      #
+      # `changeme` is fine and deliberate here: it is an ephemeral CI container
+      # with no published port, reachable only from the runner. The deployed
+      # stack gets its passwords from POSTGRES_READONLY_PASSWORD via
+      # scripts/postgres/init-roles.sh, which hardcodes nothing.
       - name: Provision dashbi_readonly role
         env:
           PGPASSWORD: changeme
