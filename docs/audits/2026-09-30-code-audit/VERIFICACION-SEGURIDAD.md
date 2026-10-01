@@ -18,7 +18,7 @@ Lo que SÍ se corrigió en las dos rondas es genuino y está bien hecho — no l
 | Severidad | Antes | Ahora | Controles tocados |
 |---|---:|---:|---|
 | **CRITICAL** | 1 | **0** | — (T4 cerrado) |
-| **HIGH** | 4 | **2** | T1 (parcial), HIGH-5 (no verificable) |
+| **HIGH** | 4 | **1** | T1 (parcial, `orgs`) |
 | **MEDIUM** | 4 | 4 | T3, T5, T8, T9 |
 
 **Ronda 1 — cadena `pg_read_file`:** GRANT eliminado del init script + 21 funciones peligrosas en
@@ -37,8 +37,13 @@ un blocklist compartido (`buildForbiddenPattern()`), con un test de 27 casos que
 
 ### Veredicto: **FAIL→FAIL** — 0 CRITICAL, 2 HIGH abiertos (uno no verificable aquí).
 
-Lo que mantiene el veredicto en FAIL es **HIGH-5**: si el rol de la app es superuser, toda la
-capa RLS es decorativa y T1 vuelve a ser CRITICAL. Eso solo se resuelve contra una DB real.
+**HIGH-5 estaba confirmado y ya está corregido** (§1): el rol de la app era superuser, RLS no
+se aplicaba, y la suite de integración lo nunca detectó porque creaba su propio rol no-superuser.
+Verificado empíricamente antes y después del fix.
+
+Lo que mantiene el veredicto en FAIL es **`orgs` sin RLS**: tres code paths la consultan
+cross-org de forma legítima, así que necesita un helper `SECURITY DEFINER` — es diseño, no una
+migración.
 
 ---
 
@@ -131,34 +136,84 @@ grep -rn "llmApiKeyEncrypted" src/
 sigue usando la credencial de la plataforma. La key ahora se *guarda*; todavía no se *usa* en todos
 los caminos. Cierre parcial, no total.
 
-### ❌ HIGH-5 — El rol de la app es superuser → RLS decorativa — **ABIERTO, no verificado**
+### ✅ HIGH-5 — El rol de la app es superuser → RLS decorativa — **CONFIRMADO y CORREGIDO**
 
-No cambió nada. `docker-compose.yml` sigue construyendo `DATABASE_URL` desde `${POSTGRES_USER}`,
-que la imagen oficial de Postgres crea como superuser, y no existe ningún `ALTER ROLE ... NOSUPERUSER`
-en el repo.
+**Confirmado empíricamente** el 2026-09-30 contra una base real. Dos orgs, un dashboard cada
+una, contexto seteado a la org A:
+
+| Rol con el que conecta la app | `SELECT title FROM dashboards` |
+|---|---|
+| el real de la app | `A secreto` + **`B secreto`** ← fuga cross-tenant |
+| no-superuser, mismo contexto | `A secreto` ← correcto |
+
+```
+ current_user | rolsuper | rolbypassrls
+ dashbi       | t        | t
+```
+
+**El detalle que lo hace peor de lo que parecía:** `tests/integration/postgres.ts:116` crea el rol
+como `NOSUPERUSER NOBYPASSRLS` a propósito, para que `FORCE RLS` se aplique. **La suite de
+integración valida RLS contra una configuración que no es la que se despliega.** Por eso todos los
+tests de aislamiento pasaban mientras el aislamiento no existía. Los tests probaban que RLS
+funciona; no decían nada de con qué rol conecta la app, que era lo único que estaba mal.
 
 > [!NOTE]
 > **Corrección (2026-09-30, revisión posterior).** Escribí antes "no hay Docker en esta máquina" y
 > **es falso**: Docker está instalado (`/usr/bin/docker`, cliente 29.7.2). Lo que faltaba era acceso
-> al daemon — el usuario no estaba en el grupo `docker` y el servicio estaba detenido. Resuelto con
-> `usermod -aG docker $USER` + `systemctl start docker`. No lo verifiqué cuando lo afirmé, y esa
-> frase iba a quedar en el informe para quien lo leyera después.
->
-> [`verify-high5.sh`](./verify-high5.sh) hace la verificación completa en un comando.
+> al daemon — el usuario no estaba en el grupo `docker` y el servicio estaba detenido. No lo
+> verifiqué cuando lo afirmé, y esa frase iba a quedar en el informe para quien lo leyera después.
 
-**Estado actual: el mecanismo está confirmado por lectura, lo que falta es la prueba empírica.**
+#### Por qué `ALTER ROLE … NOSUPERUSER` no era el fix
 
 ```
-docker-compose.yml:109   POSTGRES_USER=${POSTGRES_USER:-dashbi}      ← la imagen crea esto como superuser
-docker-compose.yml:27    DATABASE_URL=postgres://${POSTGRES_USER}:…   ← la app conecta con ese mismo rol
+ERROR:  permission denied to alter role
+DETAIL: The bootstrap user must have the SUPERUSER attribute.
 ```
 
-Un superuser **ignora RLS aunque la tabla tenga `ENABLE` + `FORCE ROW LEVEL SECURITY`**. Si esto es
-lo que corre en el despliegue real, la migración `0013` que acabamos de escribir no protege nada y
-**T1 sube a CRITICAL**: el fix pasa a ser `ALTER ROLE … NOSUPERUSER` y mover el DDL a un rol con
-privilegios, no agregar más policies.
+PostgreSQL 15+ **protege al bootstrap superuser** (el rol con el que la imagen crea
+`POSTGRES_USER`). No lo puede degradar ni el propio usuario —probado— ni otro superuser creado al
+efecto —también probado—. Es una guarda anti-footgun deliberada. La separación de roles tiene que
+ser de origen, no un `ALTER`.
 
-La única duda que queda es empírica: si algún despliegue usa un rol distinto al de `POSTGRES_USER`.
+#### El fix: tres roles con responsabilidades separadas
+
+| Rol | Atributos | Para qué |
+|---|---|---|
+| `POSTGRES_USER` (owner) | `SUPERUSER` | Corre `drizzle-kit`. Dueño de las tablas. |
+| `POSTGRES_APP_USER` (app) | `NOSUPERUSER NOBYPASSRLS` | **Acá sí aplica RLS.** |
+| `dashbi_readonly` | `NOSUPERUSER NOBYPASSRLS` | SQL de la IA, solo SELECT. |
+
+El rol de la app no es owner, así que necesita GRANTs explícitos sobre las tablas — RLS filtra
+filas, GRANT decide si podés tocar la tabla. Los emite el owner vía `ALTER DEFAULT PRIVILEGES`.
+
+**Verificado después del fix, con el rol real de la app:**
+
+```
+ current_user | rolsuper | rolbypassrls
+ dashbi_app   | f        | f
+
+ SELECT con contexto = Org A  →  A secreto          (1 row)
+ INSERT cross-tenant          →  ERROR: new row violates row-level security policy
+```
+
+Y el DDL del connector de archivos **sigue funcionando completo** como `NOSUPERUSER`
+(`CREATE SCHEMA` / `CREATE TABLE` / `ALTER TABLE … ENABLE|FORCE RLS` / `CREATE POLICY` /
+`CREATE INDEX`): no necesita superuser, porque es owner de lo que él mismo crea y porque DDL no
+pasa por RLS. La RLS de esas tablas también aísla.
+
+**Tests:** `tests/unit/db/app-role-not-superuser.test.ts` (13 casos) asserta el wiring desplegado
+— que `DATABASE_URL` nunca se construya desde `POSTGRES_USER`, que exista un
+`DATABASE_MIGRATION_URL` separado, y que el init script cree el rol con ambos atributos. Cubre
+**los dos** `docker-compose.yml` que hay en el repo: el de la raíz (mantenido) y
+`app/docker-compose.yml` (duplicado viejo del commit inicial, que también tenía la falla).
+
+#### Lo que este fix NO arregla
+
+`withSystemContext` sigue siendo un wrapper de transacción vacío cuyo comentario dice "Bypassea
+RLS". Ya no depende del superuser para existir, pero **no bypasea nada**: ahora está sujeto a RLS
+como cualquier otra cosa. Los 11 call sites que lo usan necesitan revisión — cuatro de ellos
+(`alerts/dispatcher`, `sharing/get-public-dashboard` y el DDL del connector) sí necesitan una
+vía de sistema real. Ese es el siguiente frente, no este commit.
 
 ---
 
@@ -498,7 +553,7 @@ porque crea un dashboard.
 
 | Control | Veredicto | Hallazgo |
 |---|---|---|
-| **T1** Aislamiento tenant | 🟠 | `scheduled_reports*` **corregido** (migración 0013). `orgs` sigue con policies inertes → **tarea de diseño**, no migración. Todo depende de HIGH-5 |
+| **T1** Aislamiento tenant | 🟡 | **HIGH-5 cerrado**: la app ya no es superuser y RLS aísla en lectura y escritura (verificado). `scheduled_reports*` con RLS. Queda `orgs`, que es **tarea de diseño** |
 | **T2** RBAC | 🟢 | **PASS.** 32/34 con permiso explícito; las 2 sin auth correctas |
 | **T3** Validación SQL | 🟡 | Blocklist de funciones **corregido** (21 funciones, patrón compartido) e identificadores **validados en el punto de uso**. Pendiente: blocklist de DML con `\b` |
 | **T4** BYOK | 🟡 | **CRITICAL cerrado**: endpoint con cifrado + UI honesta. Queda HIGH-9: `dashboards/generate` no lee la config de la org |
@@ -522,8 +577,11 @@ Por severidad real, no por orden de los informes. **Estado al cierre de esta ron
    tenant declarada tiene `rowsecurity = false`, para que esto no vuelva a pasar.
 4. ~~T4~~ — ✅ endpoint BYOK + UI honesta.
 5. ~~T3 (defense in depth)~~ — ✅ `sql-ident.ts` en los 4 sinks. Salió un bug de producción de paso.
-6. **Confirmar HIGH-5 contra una DB real** — 🔴 **es el próximo paso real.** Si el rol de la app
-   es superuser, T1 sube a CRITICAL y todo lo demás es secundario. Requiere Docker, no esta máquina.
+6. ~~Confirmar HIGH-5~~ — ✅ **confirmado y corregido**: verificado contra una DB real que la app
+   corría como superuser y que RLS no filtraba nada. Role split aplicado a los dos compose.
+6'. **`withSystemContext`** — 🔴 **es el siguiente frente real.** Sigue siendo un wrapper vacío que
+   dice "Bypassea RLS" sin hacerlo. 11 call sites: 4 necesitan `withOrgContext` (más seguro, no
+   menos) y ~4 necesitan una vía de sistema real (`SECURITY DEFINER` o rol `BYPASSRLS` dedicado).
 7. **HIGH-9** — que `dashboards/generate` (y cualquier otro consumidor) lea la config de la org,
    para que la key BYOK no solo se guarde sino que se use.
 8. **Colisión de `targetTable`** — sufijo hash en `safeTableName` (§4). Bug de integridad de datos
@@ -561,10 +619,10 @@ cada uno hace bien lo suyo; ninguno verifica que hagan lo mismo.
 - **Los gates sí corrieron al cierre de las correcciones**, a diferencia de la primera pasada que
   fue análisis estático: `pnpm typecheck` ✅ · `pnpm lint:strict` ✅ (0 warnings) ·
   `pnpm test` ✅ 1083 tests / 124 archivos · `pnpm build` ✅.
-- **HIGH-5 sigue sin la prueba empírica.** La causa no es que falte Docker (está instalado), sino
-  que mi sesión de shell quedó con los grupos previos al `usermod` y no puede abrir el socket.
-  Corrible con [`verify-high5.sh`](./verify-high5.sh) desde tu shell. El mecanismo ya está
-  confirmado por lectura del compose (§1) — lo que falta es el `rolsuper` en vivo.
+- **HIGH-5 quedó verificado empíricamente** con [`verify-high5.sh`](./verify-high5.sh), primero
+  para confirmarlo y después para comprobar el fix. El script tuvo dos bugs míos que corregí: la
+  espera por `pg_isready` le pegaba al servidor temporal que usa la imagen para los init scripts,
+  y `EMAIL_PROVIDER=mock` no pasa el schema de env.
 - **El test de RLS de `scheduled_reports` no se ejecutó localmente**: requiere Testcontainers
   (Docker), así que solo correrá en CI con `RLS_TESTS_REQUIRED=1`. **No lo cuento como verificado.**
 - **No verifiqué en runtime la explotabilidad de la cadena de `pg_read_file`**: los 5 eslabones

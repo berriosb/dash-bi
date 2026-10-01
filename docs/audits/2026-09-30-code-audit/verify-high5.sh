@@ -51,22 +51,38 @@ export POSTGRES_USER="$PG_USER" POSTGRES_PASSWORD="$PG_PASS" POSTGRES_DB="$PG_DB
 export POSTGRES_PORT=5432 POSTGRES_READONLY_USER="${POSTGRES_READONLY_USER:-dashbi_readonly}"
 export POSTGRES_READONLY_PASSWORD="${POSTGRES_READONLY_PASSWORD:-dashbi_readonly_local_dev_password}"
 # Vars no relacionadas que el compose también exige. Valores de relleno: este
-# script solo levanta el servicio `postgres`, no la app.
-export APP_PORT=3000 BETTER_AUTH_SECRET=verify-high5-local-only \
+# script solo levanta el servicio `postgres`, no la app, así que no se validan
+# contra el schema de env. Deben ser sintácticamente válidos igual, porque
+# `pnpm db:migrate` los lee si después querés aplicar el schema a mano.
+export APP_PORT=3000 BETTER_AUTH_SECRET=verify-high5-local-only-secret-32chars-min \
   BETTER_AUTH_URL=http://localhost:3000 NEXT_PUBLIC_APP_URL=http://localhost:3000 \
-  LLM_KEY_ENCRYPTION_KEY=verify-high5-local-only-32-byte-key!!!! \
-  PDF_WORKER_SECRET=verify-high5-local-only EMAIL_PROVIDER=mock EMAIL_FROM=verify@example.invalid \
+  LLM_KEY_ENCRYPTION_KEY=abababababababababababababababababababababababababababababababab \
+  PDF_WORKER_SECRET=verify-high5-local-only EMAIL_PROVIDER=resend EMAIL_FROM=verify@example.invalid \
   RESEND_API_KEY= LOG_LEVEL=info REDIS_PORT=6379 REDIS_PASSWORD=verify-high5-local-only
 
 # ── 3. Levantar solo postgres ────────────────────────────────────────────────
 say "3/5  Levantar postgres"
 docker compose up -d postgres
-for i in {1..30}; do
-  if docker compose exec -T postgres pg_isready -q -U "$PG_USER" -d "$PG_DB" 2>/dev/null; then
-    echo "    postgres listo (~$((i))s)"; break
-  fi
-  [[ $i -eq 30 ]] && die "postgres no respondió a tiempo"
-  sleep 1
+
+# Wait for the container HEALTHCHECK, not for pg_isready. The official image
+# runs a throwaway server to execute the init scripts and then restarts the
+# real one, and pg_isready answers OK against that temporary server — so a
+# pg_isready loop reports ready during the shutdown window and the first real
+# query fails with "the database system is shutting down".
+for i in {1..60}; do
+  state="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' \
+    "$(docker compose ps -q postgres)" 2>/dev/null || true)"
+  case "$state" in
+    healthy|running)
+      # `healthy` when the healthcheck is configured; fall back to a real
+      # query, which is the only reliable signal either way.
+      if docker compose exec -T postgres psql -U "$PG_USER" -d "$PG_DB" -tAc 'SELECT 1' >/dev/null 2>&1; then
+        echo "    postgres listo (~$((i * 2))s)"; break
+      fi
+      ;;
+  esac
+  [[ $i -eq 60 ]] && die "postgres no respondió a tiempo"
+  sleep 2
 done
 
 # ── 4. LA PREGUNTA ───────────────────────────────────────────────────────────
@@ -89,13 +105,19 @@ if [[ "$rolsuper" == "t" ]]; then
     ⛔ HIGH-5 CONFIRMADO — T1 sube a CRITICAL.
 
     Un superuser ignora RLS por completo, aunque la tabla tenga
-    ENABLE + FORCE ROW LEVEL SECURITY. Las policies que acabamos de
-    escribir en la migración 0013 no se están aplicando.
+    ENABLE + FORCE ROW LEVEL SECURITY. Las policies no se aplican.
 
-    El fix NO es agregar más policies: es
-      ALTER ROLE <rol_de_la_app> NOSUPERUSER;
-    y mover el DDL (migraciones, CREATE TABLE del connector) a un rol
-    con privilegios, como ya se hace con dashbi_readonly.
+    Y ojo con el fix: no alcanza con `ALTER ROLE <rol> NOSUPERUSER`.
+    PostgreSQL 15+ protege al bootstrap superuser — el rol con el que la
+    imagen oficial crea POSTGRES_USER. El error es:
+
+        ERROR:  permission denied to alter role
+        DETAIL: The bootstrap user must have the SUPERUSER attribute.
+
+    No lo puede degradar ni el propio usuario ni otro superuser. La única
+    vía es que POSTGRES_USER deje de ser el rol de la app: que sea un rol
+    owner/migrations aparte, y que la app conecte con un LOGIN
+    NOSUPERUSER NOBYPASSRLS que posea sus propias tablas.
 EOF
   exit 2
 else
