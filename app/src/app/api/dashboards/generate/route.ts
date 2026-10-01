@@ -73,18 +73,33 @@ export async function POST(req: Request) {
     const rawSchema = await connector.getSchema();
     const prunedSchema = pruneSchemaForPrompt(rawSchema, prompt);
     const dsType = (connector.type === 'stripe' || connector.type === 'sheets' ? connector.type : 'postgres') as 'postgres' | 'stripe' | 'sheets';
-    const gateway = new AiGateway();
-    // NOTE: this route builds the gateway with defaults, so it does NOT
-    // use the org's BYOK provider/model (unlike /api/nlqa/ask). Usage is
-    // recorded with the same values actually used so the cost row is
-    // truthful; the BYOK inconsistency is tracked separately.
-    const provider = 'openai';
-    const modelName = 'gpt-4o';
 
-    const [planRow] = await withOrgContext(ctx.orgId, ctx.userId, ctx.role, async (tx) =>
-      tx.select({ plan: orgs.plan }).from(orgs).where(eq(orgs.id, ctx.orgId)),
+    // HIGH-9: this route used to build `new AiGateway()` with no arguments and
+    // hardcode openai/gpt-4o, so an org's BYOK key was stored by the endpoint
+    // and then never used here. `recordLLMUsage` recorded the values actually
+    // spent, which is what made it invisible: the cost row agreed with itself
+    // while the org's provider was ignored and the call was billed to the
+    // platform. Same resolution /api/nlqa/ask and /api/widgets/explain do.
+    const [orgConfig] = await withOrgContext(ctx.orgId, ctx.userId, ctx.role, async (tx) =>
+      tx
+        .select({
+          plan: orgs.plan,
+          llmProvider: orgs.llmProvider,
+          llmModel: orgs.llmModel,
+          llmApiKeyEncrypted: orgs.llmApiKeyEncrypted,
+        })
+        .from(orgs)
+        .where(eq(orgs.id, ctx.orgId)),
     );
-    await assertOrgCanSpendLlm(ctx.orgId, ctx.userId, planRow?.plan ?? 'free');
+
+    const provider = (orgConfig?.llmProvider ?? 'openai') as 'openai' | 'anthropic' | 'gemini';
+    const modelName = orgConfig?.llmModel ?? 'gpt-4o';
+    const apiKeyEncrypted = orgConfig?.llmApiKeyEncrypted ?? undefined;
+
+    // Budget gate BEFORE the gateway spends a token, not after.
+    await assertOrgCanSpendLlm(ctx.orgId, ctx.userId, orgConfig?.plan ?? 'free');
+
+    const gateway = new AiGateway(provider, modelName, apiKeyEncrypted);
 
     let responsePayload: {
       dashboard: Dashboard & { id?: string };

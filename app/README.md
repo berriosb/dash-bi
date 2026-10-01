@@ -27,7 +27,7 @@ app/
 │   ├── 0000_initial.sql
 │   └── 0001_rls_policies.sql
 ├── scripts/
-│   ├── postgres/init-readonly.sql   ← defense in depth (read-only DB user)
+│   ├── postgres/init-roles.sh       ← crea los 3 roles de Postgres (HIGH-5)
 │   └── setup-rls.ts                 ← programmatic RLS setup
 └── src/
     ├── app/                    ← Next.js App Router

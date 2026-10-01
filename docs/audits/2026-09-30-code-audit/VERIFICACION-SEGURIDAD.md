@@ -9,17 +9,17 @@
 
 ## Respuesta corta
 
-**Actualización 2026-09-30 (2.ª ronda de correcciones): el CRITICAL que quedaba está cerrado.**
-Los cuatro CRITICAL originales terminarán **cuatro de cuatro corregidos**, y de los HIGH
-abiertos quedan dos, uno de los cuales depende de una verificación que esta máquina no puede hacer.
+**Actualización 2026-10-01 (3.ª ronda): quedan 0 CRITICAL, 0 HIGH y 1 MEDIUM de seguridad.**
 
-Lo que SÍ se corrigió en las dos rondas es genuino y está bien hecho — no lo minimizo.
+De los diez controles del threat model, **siete están en verde**. Los tres que quedan
+abiertos (T3 blocklist de DML, T10 audit de 4 rutas menores, colisión de `targetTable`) son
+deuda real pero ya no tienen severidad de incidente de seguridad.
 
 | Severidad | Antes | Ahora | Controles tocados |
 |---|---:|---:|---|
 | **CRITICAL** | 1 | **0** | — (T4 cerrado) |
-| **HIGH** | 4 | **1** | T1 (parcial, `orgs`) |
-| **MEDIUM** | 4 | 4 | T3, T5, T8, T9 |
+| **HIGH** | 4 | **0** | T1 cerrado, HIGH-5 cerrado, HIGH-9 cerrado |
+| **MEDIUM** | 4 | **1** | T5, T8, T9 cerrados; queda T3 (blocklist de DML) |
 
 **Ronda 1 — cadena `pg_read_file`:** GRANT eliminado del init script + 21 funciones peligrosas en
 un blocklist compartido (`buildForbiddenPattern()`), con un test de 27 casos que la pinea.
@@ -28,14 +28,21 @@ un blocklist compartido (`buildForbiddenPattern()`), con un test de 27 casos que
 
 - **T4 (BYOK)** — cerrado. Endpoint `GET/PUT/DELETE /api/organizations/llm-key`, cifrado con
   AES-256-GCM, la key nunca sale por el hilo, auditoría sin material de key. 9 tests.
-- **T10 (audit log)** — cerrado. 5 rutas mutantes ahora auditan; 9 tests.
-- **T1 (RLS)** — cerrado donde era seguro: migración `0013` aplica `ENABLE`+`FORCE`+policies a
-  `scheduled_reports` y `scheduled_report_runs`. `orgs` **no** se migró a propósito, con el
-  motivo documentado en la propia migración.
+- **T10 (audit log)** — cerrado en las 5 rutas sensibles; 5 tests. 4 rutas menores siguen abiertas.
+- **T1 (RLS)** — cerrado. 0013 cubre `scheduled_reports*`; 0015 cubre `orgs` por membresía.
 - **T3 (identificadores en `sql.raw`)** — cerrado, y de paso destapó un **bug funcional de
   producción** (§4).
 
-### Veredicto: **FAIL→FAIL** — 0 CRITICAL, 2 HIGH abiertos (uno no verificable aquí).
+**Ronda 3 — los MEDIUM y HIGH que quedaban:**
+
+- **HIGH-9** — `dashboards/generate` ya usa el BYOK de la org.
+- **T8** — las 9 rutas restantes migradas al contrato canónico; se fueron dos fugas reales de
+  `error.message` (una exponía un DSN).
+- **T9** — `test-channel` rate-limited.
+- **T5** — `redactError()` + Pino.
+- **T7** — los dos `init-readonly.sql` eliminados; eran código muerto contradictorio.
+
+### Veredicto: **FAIL → PASS en severidad.** 0 CRITICAL, 0 HIGH, 1 MEDIUM de deuda.
 
 **HIGH-5 estaba confirmado y ya está corregido** (§1): el rol de la app era superuser, RLS no
 se aplicaba, y la suite de integración lo nunca detectó porque creaba su propio rol no-superuser.
@@ -602,15 +609,15 @@ porque crea un dashboard.
 
 | Control | Veredicto | Hallazgo |
 |---|---|---|
-| **T1** Aislamiento tenant | 🟡 | **HIGH-5 cerrado**: la app ya no es superuser y RLS aísla en lectura y escritura (verificado). `scheduled_reports*` con RLS. Queda `orgs`, que es **tarea de diseño** |
+| **T1** Aislamiento tenant | 🟢 | **Cerrado.** HIGH-5 corregido y verificado; `orgs` migrada a RLS por membresía (0015) con helper `SECURITY DEFINER`. Las 14 tablas tenant con RLS |
 | **T2** RBAC | 🟢 | **PASS.** 32/34 con permiso explícito; las 2 sin auth correctas |
-| **T3** Validación SQL | 🟡 | Blocklist de funciones **corregido** (21 funciones, patrón compartido) e identificadores **validados en el punto de uso**. Pendiente: blocklist de DML con `\b` |
-| **T4** BYOK | 🟡 | **CRITICAL cerrado**: endpoint con cifrado + UI honesta. Queda HIGH-9: `dashboards/generate` no lee la config de la org |
-| **T5** Logs | 🟡 | Redacción bien. 3 `console.error` logueando objetos de error de email |
+| **T3** Validación SQL | 🟡 | Blocklist de funciones corregido (21 funciones) e identificadores validados en el punto de uso. Pendiente: blocklist de DML con `\b` |
+| **T4** BYOK | 🟢 | **Cerrado.** Endpoint con cifrado + UI honesta + HIGH-9: `dashboards/generate` ya lee la config de la org |
+| **T5** Logs | 🟢 | **Cerrado.** `redactError()` + Pino en los 3 sitios; guard que prohíbe `console.*` en todo `src/lib/auth` |
 | **T6** SSRF | 🟢 | **PASS con mérito.** Valida en el punto de uso + `redirect: 'manual'` |
-| **T7** Read-only | 🟡 | Cadena de `pg_read_file` **cerrada**. Sigue el desajuste entre los dos `init-readonly.sql` |
-| **T8** Errores | 🟡 | 23/34 canónicos. 9 pendientes; uno devuelve `message` crudo |
-| **T9** Rate limit | 🟡 | Rutas LLM cubiertas. `test-channel` sin límite y hace fetch saliente |
+| **T7** Read-only | 🟢 | Cadena de `pg_read_file` cerrada **y** los dos `init-readonly.sql` eliminados. La segunda capa la da Postgres, no un script |
+| **T8** Errores | 🟢 | **Cerrado.** 34/34 canónicos (2 exenciones justificadas). Guard de cobertura que falla el build si vuelve a crecer |
+| **T9** Rate limit | 🟢 | **Cerrado.** `test-channel` con doble límite org+IP, antes de tocar la DB |
 | **T10** Audit log | 🟡 | **5 de 9 corregidas** (las sensibles). 4 menores abiertas |
 
 ---
@@ -621,25 +628,32 @@ Por severidad real, no por orden de los informes. **Estado al cierre de esta ron
 
 1. ~~T7 + T3 (blocklist)~~ — ✅ GRANT eliminado + 21 funciones en `buildForbiddenPattern()`, 27 tests.
 2. ~~T10~~ — ✅ 5 rutas auditadas, 5 tests.
-3. ~~T1 (parcial)~~ — ✅ `scheduled_reports*` con RLS. **`orgs` sigue abierto** y requiere helper
-   `SECURITY DEFINER`; no es una migración. Falta además un step de CI que falle si una tabla
-   tenant declarada tiene `rowsecurity = false`, para que esto no vuelva a pasar.
+3. ~~T1~~ — ✅ `scheduled_reports*` con RLS (0013) y **`orgs` con RLS por membresía (0015)**,
+   con helper `SECURITY DEFINER` para leer `org_members` sin recursión. `withSystemContext`
+   eliminado en 0014: era un wrapper vacío y sus 4 call sites cross-org migraron a
+   funciones `SECURITY DEFINER`.
 4. ~~T4~~ — ✅ endpoint BYOK + UI honesta.
 5. ~~T3 (defense in depth)~~ — ✅ `sql-ident.ts` en los 4 sinks. Salió un bug de producción de paso.
 6. ~~Confirmar HIGH-5~~ — ✅ **confirmado y corregido**: verificado contra una DB real que la app
    corría como superuser y que RLS no filtraba nada. Role split aplicado a los dos compose.
-6'. **`withSystemContext`** — 🔴 **es el siguiente frente real.** Sigue siendo un wrapper vacío que
-   dice "Bypassea RLS" sin hacerlo. 11 call sites: 4 necesitan `withOrgContext` (más seguro, no
-   menos) y ~4 necesitan una vía de sistema real (`SECURITY DEFINER` o rol `BYPASSRLS` dedicado).
-7. **HIGH-9** — que `dashboards/generate` (y cualquier otro consumidor) lea la config de la org,
-   para que la key BYOK no solo se guarde sino que se use.
-8. **Colisión de `targetTable`** — sufijo hash en `safeTableName` (§4). Bug de integridad de datos
-   intra-tenant, no de aislamiento.
-9. **T9** — rate limit en `test-channel`.
-10. **T8** — migrar las 9 rutas restantes al contrato canónico. Mecánico, y ya está el patrón.
-11. **T5** — los 3 `console.error` de `auth/config.ts`.
-12. **Unificar los dos `init-readonly.sql`** (raíz vs `app/`): el de la raíz tiene
-    `WITH LOGIN PASSWORD 'dashbi_readonly_password'` hardcodeada.
+7. ~~HIGH-9~~ — ✅ `dashboards/generate` lee `llmProvider`/`llmModel`/`llmApiKeyEncrypted` de la org
+   y construye el `AiGateway` con eso, en create y en edit. La fila de costo ahora nombra el
+   provider realmente usado, que es lo que escondía el bug.
+8. ~~T9~~ — ✅ `test-channel` con límite doble org+IP, evaluado **antes** de la lectura de la
+   regla: si el check fuera posterior, un caller throttled podría seguir enumerando qué rule ids
+   existen en la org por timing.
+9. ~~T8~~ — ✅ 34/34 handlers con el contrato canónico. Las 2 exenciones (`auth/[...all]`,
+   `health`) están nombradas en el guard.
+10. ~~T5~~ — ✅ `redactError()` en `lib/redact.ts`: reduce el error a `{name, message}`, saca
+    URLs completas y **descarta `cause`**. Passar a Pino solo no alcanzaba — `redact.paths` matchea
+    nombres de campo, y un token embebido en el mensaje no matchea ninguno.
+11. ~~Unificar los dos `init-readonly.sql`~~ — ✅ **eliminados los dos.** No los unifiqué: ninguno
+    estaba montado en ningún compose desde que entró `init-roles.sh`, así que eran código muerto y
+    contradictorio (uno `LOGIN` con password hardcodeada, el otro `NOLOGIN`).
+
+**Abierto:** la colisión de `targetTable` (sufijo hash en `safeTableName`, §4) — bug de
+integridad de datos intra-tenant, no de aislamiento. Requiere decisión de diseño sobre qué
+pasa cuando dos archivos del mismo org colisionan, no un parche.
 
 **Lo que NO hay que tocar:** el filtro PII (recién arreglado y verificado), T6/SSRF, T2/RBAC,
 el cifrado, y las 13 migraciones salvo el `ENABLE` faltante de `orgs`.

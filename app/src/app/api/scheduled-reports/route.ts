@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
+import { errorResponse } from '@/lib/errors/response';
 import { z } from 'zod';
 import { withOrgContext } from '@/db/client';
 import { scheduledReports } from '@/db/schema';
 import { requireAuth } from '@/lib/auth/request';
-import { toUserError, getOrGenerateCorrelationId } from '@/lib/errors/to-user-error';
 import { parseCronAndNextRun, isValidCron } from '@/lib/reports/cron';
 import { audit } from '@/lib/audit/log';
 import { eq, desc } from 'drizzle-orm';
@@ -25,7 +25,6 @@ const createReportSchema = z.object({
 });
 
 export async function GET(req: Request) {
-  const correlationId = getOrGenerateCorrelationId(req);
   try {
     const { orgId, userId } = await requireAuth(req, 'dashboard.view');
 
@@ -39,13 +38,11 @@ export async function GET(req: Request) {
 
     return NextResponse.json({ reports });
   } catch (err: unknown) {
-    const userErr = toUserError(err, correlationId);
-    return NextResponse.json({ error: userErr.message }, { status: 400 });
+    return errorResponse(err, req);
   }
 }
 
 export async function POST(req: Request) {
-  const correlationId = getOrGenerateCorrelationId(req);
   try {
     const { orgId, userId } = await requireAuth(req, 'dashboard.create');
     const body = await req.json();
@@ -94,7 +91,6 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ report }, { status: 201 });
   } catch (err: unknown) {
-    const userErr = toUserError(err, correlationId);
-    return NextResponse.json({ error: userErr.message }, { status: 400 });
+    return errorResponse(err, req);
   }
 }

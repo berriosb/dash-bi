@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { errorResponse } from '@/lib/errors/response';
 import { requireAuth } from '@/lib/auth/request';
 import { instantiateTemplate } from '@/lib/templates/service';
 import { z } from 'zod';
@@ -36,7 +37,11 @@ export async function POST(
     return NextResponse.json({ dashboard }, { status: 201 });
   } catch (error) {
     if (error instanceof Response) return error;
-    const message = error instanceof Error ? error.message : 'Error al instanciar plantilla';
-    return NextResponse.json({ error: message }, { status: 400 });
+    // This used to forward `error.message` verbatim to the client under a hard
+    // 400. Whatever `instantiateTemplate` threw — a Postgres constraint name, a
+    // connection string fragment, a stack-shaped driver message — went out over
+    // the wire, and always with a 400 even when the real failure was a 404 or a
+    // 500. `toUserError` maps known codes and sanitises the rest.
+    return errorResponse(error, req);
   }
 }

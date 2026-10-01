@@ -1,10 +1,9 @@
 import { NextResponse } from 'next/server';
+import { errorResponse } from '@/lib/errors/response';
 import { eq, and, desc } from 'drizzle-orm';
 import { withOrgContext } from '@/db/client';
 import { alertEvents } from '@/db/schema';
 import { requireAuth } from '@/lib/auth/request';
-import { getOrGenerateCorrelationId, toUserError } from '@/lib/errors/to-user-error';
-import { statusFromCode } from '@/lib/errors/types';
 
 /**
  * GET /api/alert-rules/[id]/events — history of fire events for an alert
@@ -20,7 +19,6 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const correlationId = getOrGenerateCorrelationId(req);
   try {
     const { orgId, userId } = await requireAuth(req, 'dashboard.viewAlerts');
 
@@ -38,7 +36,6 @@ export async function GET(
 
     return NextResponse.json({ events });
   } catch (err: unknown) {
-    const appError = toUserError(err, correlationId);
-    return NextResponse.json(appError, { status: statusFromCode(appError.code) });
+    return errorResponse(err, req);
   }
 }

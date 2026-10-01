@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
+import { errorResponse } from '@/lib/errors/response';
 import { z } from 'zod';
 import { withOrgContext } from '@/db/client';
 import { scheduledReports, scheduledReportRuns } from '@/db/schema';
 import { requireAuth } from '@/lib/auth/request';
-import { toUserError, getOrGenerateCorrelationId } from '@/lib/errors/to-user-error';
 import { parseCronAndNextRun, isValidCron } from '@/lib/reports/cron';
 import { audit } from '@/lib/audit/log';
 import { eq, and, desc } from 'drizzle-orm';
@@ -28,7 +28,6 @@ export async function GET(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const correlationId = getOrGenerateCorrelationId(req);
   try {
     const { orgId, userId } = await requireAuth(req, 'dashboard.view');
     const { id } = await params;
@@ -56,8 +55,7 @@ export async function GET(
 
     return NextResponse.json({ report, runs });
   } catch (err: unknown) {
-    const userErr = toUserError(err, correlationId);
-    return NextResponse.json({ error: userErr.message }, { status: 400 });
+    return errorResponse(err, req);
   }
 }
 
@@ -65,7 +63,6 @@ export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const correlationId = getOrGenerateCorrelationId(req);
   try {
     const { orgId, userId } = await requireAuth(req, 'dashboard.edit');
     const { id } = await params;
@@ -105,8 +102,7 @@ export async function PATCH(
 
     return NextResponse.json({ report: updated });
   } catch (err: unknown) {
-    const userErr = toUserError(err, correlationId);
-    return NextResponse.json({ error: userErr.message }, { status: 400 });
+    return errorResponse(err, req);
   }
 }
 
@@ -114,7 +110,6 @@ export async function DELETE(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const correlationId = getOrGenerateCorrelationId(req);
   try {
     const { orgId, userId } = await requireAuth(req, 'dashboard.delete');
     const { id } = await params;
@@ -134,7 +129,6 @@ export async function DELETE(
 
     return NextResponse.json({ success: true, id });
   } catch (err: unknown) {
-    const userErr = toUserError(err, correlationId);
-    return NextResponse.json({ error: userErr.message }, { status: 400 });
+    return errorResponse(err, req);
   }
 }

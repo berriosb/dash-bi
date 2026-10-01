@@ -103,10 +103,14 @@ export default function DataSourcesPage() {
       if (res.ok && data?.ok) {
         toast({ title: 'Conexión exitosa', description: `${id} responde correctamente.` });
       } else {
+        // The canonical error contract exposes `message`; the rate-limit
+        // branch of this endpoint still returns `error`. Read both so the
+        // toast keeps its detail on either shape.
+        const detail = data?.message ?? data?.error;
         toast({
           variant: 'destructive',
           title: 'No pudimos conectar',
-          description: data?.error ?? 'Verificá las credenciales y volvé a intentar.',
+          description: detail ?? 'Verificá las credenciales y volvé a intentar.',
         });
       }
       queryClient.invalidateQueries({ queryKey: ['data-sources'] });

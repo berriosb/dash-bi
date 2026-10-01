@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
+import { errorResponse } from '@/lib/errors/response';
 import { eq, and, desc, count } from 'drizzle-orm';
 import { withOrgContext } from '@/db/client';
 import { alertRules, dashboards, orgs } from '@/db/schema';
 import { requireAuth } from '@/lib/auth/request';
 import { audit } from '@/lib/audit/log';
-import { getOrGenerateCorrelationId, toUserError } from '@/lib/errors/to-user-error';
-import { AppErrorException, statusFromCode } from '@/lib/errors/types';
+import { getOrGenerateCorrelationId } from '@/lib/errors/to-user-error';
+import { AppErrorException } from '@/lib/errors/types';
 import {
   CreateAlertRuleSchema,
   ensureLimit,
@@ -109,8 +110,7 @@ export async function POST(
 
     return NextResponse.json({ rule }, { status: 201 });
   } catch (err: unknown) {
-    const appError = toUserError(err, correlationId);
-    return NextResponse.json(appError, { status: statusFromCode(appError.code) });
+    return errorResponse(err, req);
   }
 }
 
@@ -119,7 +119,6 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id: dashboardId } = await params;
-  const correlationId = getOrGenerateCorrelationId(req);
   try {
     const { orgId, userId } = await requireAuth(req, 'dashboard.viewAlerts');
 
@@ -136,7 +135,6 @@ export async function GET(
     // and "test channel" buttons that re-auth the send.
     return NextResponse.json({ rules });
   } catch (err: unknown) {
-    const appError = toUserError(err, correlationId);
-    return NextResponse.json(appError, { status: statusFromCode(appError.code) });
+    return errorResponse(err, req);
   }
 }

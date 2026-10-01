@@ -10,8 +10,19 @@ import { validateQuery, ValidationError } from '@/lib/security/validate-query';
  * `SELECT pg_read_file('/etc/passwd')` passed validation and executed with
  * the AI-query role's privileges.
  *
- * The GRANT is removed; this suite is the belt to that suspenders — it pins
- * the blocklist so a future edit cannot silently reopen the path.
+ * The GRANT is removed. That init script is gone entirely now — it and its
+ * root-level twin were both dead code that no compose file ever mounted, and
+ * `scripts/postgres/init-roles.sh` replaced them.
+ *
+ * What actually enforces this at the database level is PostgreSQL itself.
+ * Verified 2026-10-01 against PostgreSQL 16: `has_function_privilege('public',
+ * 'pg_read_file(text)', 'EXECUTE')` is false, and running the read as
+ * `dashbi_readonly` answers `permission denied for function pg_read_file`.
+ * These functions are not granted to PUBLIC out of the box.
+ *
+ * This suite is therefore belt to that suspenders — it pins the blocklist so a
+ * future edit cannot silently reopen the path, and so the guarantee does not
+ * rest on a Postgres default nobody has written down.
  */
 
 const FILE_READERS = [

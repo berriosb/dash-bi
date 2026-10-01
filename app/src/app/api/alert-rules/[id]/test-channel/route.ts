@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
+import { errorResponse } from '@/lib/errors/response';
 import { eq, and } from 'drizzle-orm';
 import { z } from 'zod';
 import { withOrgContext } from '@/db/client';
 import { alertRules } from '@/db/schema';
 import { requireAuth } from '@/lib/auth/request';
-import { getOrGenerateCorrelationId, toUserError } from '@/lib/errors/to-user-error';
-import { statusFromCode } from '@/lib/errors/types';
+import { getOrGenerateCorrelationId } from '@/lib/errors/to-user-error';
+import { checkRateLimit } from '@/lib/rate-limit';
 import { decryptApiKey } from '@/lib/security/encryption';
 import { deliverToChannel } from '@/lib/alerts/channels';
 import type { AlertCondition, AlertChannelConfig } from '@/lib/alerts/types';
@@ -23,6 +24,23 @@ const bodySchema = z.object({
   channelIndex: z.number().int().min(0),
 });
 
+/**
+ * T9: this route makes an outbound HTTP request, so it is rate limited on two
+ * axes. Per org, so one tenant cannot spend a shared allowance; per IP, so a
+ * single org with many members cannot route around the org bucket.
+ *
+ * The numbers are deliberately tighter than the AI routes. An AI call costs
+ * money and returns JSON; this one opens a connection to an arbitrary public
+ * host chosen by the caller and hands back whatever comes back, which makes it
+ * usable as a port scanner and as a DoS reflector. 5/min per org, 15/min per IP.
+ */
+const TEST_CHANNEL_PER_ORG = { capacity: 5, refillPerSecond: 5 / 60 };
+const TEST_CHANNEL_PER_IP = { capacity: 15, refillPerSecond: 15 / 60 };
+
+function getClientIp(req: Request): string {
+  return req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
+}
+
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -31,6 +49,27 @@ export async function POST(
   const correlationId = getOrGenerateCorrelationId(req);
   try {
     const { orgId, userId } = await requireAuth(req, 'dashboard.alert');
+
+    // Before the DB read, not after: if the check ran later, a throttled
+    // caller could still probe which rule ids exist in the org by timing.
+    const orgLimit = checkRateLimit({ ...TEST_CHANNEL_PER_ORG, key: `test-channel:org:${orgId}` });
+    if (!orgLimit.allowed) {
+      return NextResponse.json(
+        { error: 'rate_limited', scope: 'org', retryAfterSeconds: orgLimit.retryAfterSeconds },
+        { status: 429, headers: { 'Retry-After': String(orgLimit.retryAfterSeconds) } },
+      );
+    }
+
+    const ipLimit = checkRateLimit({
+      ...TEST_CHANNEL_PER_IP,
+      key: `test-channel:ip:${getClientIp(req)}`,
+    });
+    if (!ipLimit.allowed) {
+      return NextResponse.json(
+        { error: 'rate_limited', scope: 'ip', retryAfterSeconds: ipLimit.retryAfterSeconds },
+        { status: 429, headers: { 'Retry-After': String(ipLimit.retryAfterSeconds) } },
+      );
+    }
 
     const body = await req.json();
     const { channelIndex } = bodySchema.parse(body);
@@ -73,8 +112,7 @@ export async function POST(
 
     return NextResponse.json({ result });
   } catch (err: unknown) {
-    const appError = toUserError(err, correlationId);
-    return NextResponse.json(appError, { status: statusFromCode(appError.code) });
+    return errorResponse(err, req);
   }
 }
 
