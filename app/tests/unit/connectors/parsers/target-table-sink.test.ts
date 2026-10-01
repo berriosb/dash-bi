@@ -9,6 +9,7 @@ import {
 import type { InferredColumn } from '@/lib/connectors/parsers/infer-types';
 import type { Tx } from '@/db/client';
 
+const FILE_ID = 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa';
 const ORG_ID = 'f47ac10b-58cc-4372-a567-0e02b2c3d479';
 
 const COLUMNS: InferredColumn[] = [
@@ -43,7 +44,7 @@ function fakeTx() {
 describe('loadRows — the INSERT sink must validate the target table', () => {
   it('quotes the target table instead of interpolating it raw', async () => {
     const { tx, executed } = fakeTx();
-    const target = safeTableName('Customers Q1.csv', ORG_ID);
+    const target = safeTableName('Customers Q1.csv', ORG_ID, FILE_ID);
 
     await loadRows(tx, target, ORG_ID, COLUMNS, [{ 'Order Date': '2024-01-02', Amount: 10 }]);
 
@@ -70,7 +71,7 @@ describe('loadRows — the INSERT sink must validate the target table', () => {
 
   it('escapes row values that try to break out of the literal', async () => {
     const { tx, executed } = fakeTx();
-    const target = safeTableName('Customers.csv', ORG_ID);
+    const target = safeTableName('Customers.csv', ORG_ID, FILE_ID);
 
     await loadRows(
       tx,
@@ -90,7 +91,7 @@ describe('SEAM: the table name produced at upload is the one the DDL accepts', (
   // and threw `targetTable must be schema-qualified`. Each side had tests, so
   // unit coverage was green while `POST /api/files/commit` always failed.
   it('safeTableName output flows into every DDL builder', () => {
-    const target = safeTableName('Customers Q1.csv', ORG_ID);
+    const target = safeTableName('Customers Q1.csv', ORG_ID, FILE_ID);
 
     expect(target).toMatch(/^org_[a-z0-9]+\.[a-z0-9_]+$/);
     expect(() => buildCreateTableSQL(target, COLUMNS)).not.toThrow();
@@ -99,8 +100,8 @@ describe('SEAM: the table name produced at upload is the one the DDL accepts', (
   });
 
   it('keeps the org prefix so two orgs never share a schema', () => {
-    const a = safeTableName('sales.csv', ORG_ID);
-    const b = safeTableName('sales.csv', '00000000-0000-0000-0000-000000000001');
+    const a = safeTableName('sales.csv', ORG_ID, FILE_ID);
+    const b = safeTableName('sales.csv', '00000000-0000-0000-0000-000000000001', FILE_ID);
     expect(a.split('.')[0]).not.toBe(b.split('.')[0]);
   });
 });

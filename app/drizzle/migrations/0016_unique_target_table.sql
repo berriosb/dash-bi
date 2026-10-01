@@ -1,0 +1,44 @@
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 0016 — UNIQUE en (org_id, target_table).
+--
+-- Por qué
+-- -------
+-- `targetTable` se derivaba SOLO del nombre del archivo, sin desambiguar. Dos
+-- filenames que normalizan al mismo string compartían la misma tabla Postgres
+-- dentro de la misma org. Medido antes del fix, no razonado:
+--
+--   "Reporte de Ventas.csv"    ->  org_xxx.reporte_de_ventas
+--   "Reporte de Ventas.xlsx"   ->  org_xxx.reporte_de_ventas
+--   "reporte-de-ventas.csv"    ->  org_xxx.reporte_de_ventas
+--
+-- Tres archivos, una tabla. Tres filas en `uploaded_files` apuntando a la
+-- misma, y el segundo `POST /api/files/commit` chocaba.
+--
+-- La app ya no puede producir ese nombre: `safeTableName` deriva el sufijo del
+-- `fileId`, que es único por construcción. Este índice es el respaldo: sin él,
+-- una regresión futura en la app volvería a storing dos filas con la misma
+-- tabla y la base no lo advertiría, que es exactamente cómo pasó la primera
+-- vez. El índice previo (`uploaded_files_target_table_idx`) era NO único, y por
+-- eso el bug pudo guardarse en silencio.
+--
+-- Nota sobre datos existentes: si una base ya tiene dos filas con la misma
+-- tabla, este `CREATE UNIQUE INDEX` falla. Es el comportamiento correcto — es
+-- preferible que la migración se niegue a correr a queormalizar el dato
+-- destructivo — pero conviene revisar antes de aplicar:
+--
+--   SELECT org_id, target_table, count(*)
+--   FROM uploaded_files GROUP BY 1,2 HAVING count(*) > 1;
+--
+-- Si la consulta devuelve filas, hay que resolverlas antes de aplicar la
+-- migración: renombrando la tabla materializada y actualizando `target_table`.
+--
+-- El índice viejo no se elimina: sigue sirviendo para el patrón de acceso
+-- real, que filtra por org.
+--
+-- Las filas existentes conservan su nombre viejo y siguen funcionando: el
+-- nombre se lee siempre de la base (15 call sites) y no se re-deriva del
+-- filename en ningún lado. Solo los uploads nuevos reciben el esquema con
+-- sufijo.
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE UNIQUE INDEX IF NOT EXISTS "uploaded_files_org_target_uniq"
+  ON "uploaded_files" USING btree ("org_id", "target_table");

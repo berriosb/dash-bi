@@ -651,9 +651,22 @@ Por severidad real, no por orden de los informes. **Estado al cierre de esta ron
     estaba montado en ningún compose desde que entró `init-roles.sh`, así que eran código muerto y
     contradictorio (uno `LOGIN` con password hardcodeada, el otro `NOLOGIN`).
 
-**Abierto:** la colisión de `targetTable` (sufijo hash en `safeTableName`, §4) — bug de
-integridad de datos intra-tenant, no de aislamiento. Requiere decisión de diseño sobre qué
-pasa cuando dos archivos del mismo org colisionan, no un parche.
+**Abierto:** ninguno de los diez controles del threat model queda con un hallazgo
+de seguridad abierto. La deuda restante es de otro tipo:
+
+- **Blocklist de DML con `\b`** — la anotación quedó obsoleta. `buildForbiddenPattern()`
+  ya construye `\\b(...)\\b`. No es un pendiente real, y no lo "arreglé" para
+  que la lista pareciera más corta.
+- **`audit()` en 3 rutas** que sí mutan: `templates/[id]/instantiate` crea un
+  dashboard, `onboarding/complete` y `onboarding/step` crean org y membresía.
+  Sin registro de auditoría.
+- **Colisión de `targetTable`** — ✅ **CORREGIDA** (migración `0016`). El informe
+  original la describía como "sufijo hash en `safeTableName`", lo cual era
+  inexacto: no había hash ni desambiguación alguna. Medido antes del fix, cinco
+  nombres de archivo colapsaban a dos tablas. Ahora el sufijo sale del `fileId`
+  —nunca del filename— más un índice **único** en `(org_id, target_table)`, que
+  es el respaldo real: el índice anterior no era único, y por eso la base
+  guardaba dos filas apuntando a la misma tabla sin advertir nada.
 
 **Lo que NO hay que tocar:** el filtro PII (recién arreglado y verificado), T6/SSRF, T2/RBAC,
 el cifrado, y las 13 migraciones salvo el `ENABLE` faltante de `orgs`.

@@ -118,7 +118,13 @@ describe('POST /api/files/upload', () => {
     const res = await POST(req);
     expect(res.status).toBe(201);
     const body = await res.json();
-    expect(body.fileId).toBe('file-uuid-1');
+    // The route now generates the id itself rather than letting the column
+    // default do it, because `targetTable` is derived from it. The DB
+    // adapter mock echoes whatever `id` the route passed in, so the response
+    // is the route's own UUID.
+    expect(body.fileId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
     expect(body.format).toBe('csv');
     expect(body.name).toBe('sales.csv');
     expect(body.totalRows).toBe(2);
@@ -141,6 +147,7 @@ describe('POST /api/files/upload', () => {
         values: ReturnType<typeof vi.fn>;
       }
     ).values.mock.calls[0]?.[0] as {
+      id: string;
       orgId: string;
       originalFilename: string;
       targetTable: string;
@@ -150,8 +157,18 @@ describe('POST /api/files/upload', () => {
     expect(inserted.orgId).toBe('org-1');
     expect(inserted.createdBy).toBe('user-1');
     expect(inserted.originalFilename).toBe('sales.csv');
-    expect(inserted.targetTable).toBe('org_org1.sales');
     expect(inserted.rowCount).toBe(1);
+
+    // The id is generated in the route, not by the column default, so the
+    // table name can be derived from it. That is the whole point: the name
+    // used to come from the filename alone, and two uploads that normalised
+    // to the same string shared one Postgres table. Asserting a fixed
+    // string here would just re-freeze whatever the scheme happens to be
+    // today, so assert the relationship instead.
+    expect(inserted.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+
+    const suffix = inserted.id.replace(/-/g, '').slice(0, 8);
+    expect(inserted.targetTable).toBe(`org_org1.sales_${suffix}`);
   });
 
   it('returns 413 when the file exceeds the size cap', async () => {
