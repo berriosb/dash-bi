@@ -207,6 +207,55 @@ pasa por RLS. La RLS de esas tablas también aísla.
 **los dos** `docker-compose.yml` que hay en el repo: el de la raíz (mantenido) y
 `app/docker-compose.yml` (duplicado viejo del commit inicial, que también tenía la falla).
 
+#### `withSystemContext`: el nombre era la vulnerabilidad
+
+Corregido HIGH-5, apareció el segundo problema que escondía. `withSystemContext()` era
+`db.transaction(fn)` con un comentario que decía *"Bypassea RLS"*. **Nunca lo hizo.** Solo
+parecía funcionar porque el rol era superuser y para un superuser RLS no aplica.
+
+Verificado contra la base, no razonado: con el rol de la app y sin GUC,
+`SELECT count(*) FROM alert_rules` devuelve **0**. `app_current_org_id()` devuelve el UUID
+cero cuando no hay GUC, así que toda tabla con RLS se lee vacía y toda escritura falla el
+`WITH CHECK`. **Al mergear HIGH-5, los 11 call sites se apagaban en silencio** — y se
+manifestaban como bug de datos, no de seguridad.
+
+**6 nunca fueron una operación de sistema.** Un handler sabe en qué org actúa:
+
+| Call site | Qué hace | Ahora |
+|---|---|---|
+| `files/upload` | INSERT `uploaded_files` | `withOrgContext` |
+| `files/commit` | bloque DDL + INSERT `loadRows` | `withOrgContext` |
+| `files/[id]` | DROP TABLE | `withOrgContext` |
+| `onboarding/complete` | UPDATE `users` | `withOrgContext` |
+| `onboarding/step` | UPDATE `users` | `withOrgContext` |
+
+Migrarlos es **más seguro, no menos**: pasan a estar sujetos a RLS.
+
+El DDL merece precisión: **no necesitaba ningún bypass.** La app es owner de los schemas por
+org que ella misma crea, tiene `CREATE` sobre la base, y **DDL no pasa por RLS**. El comentario
+que había ahí —*"the dashbi role owns the table and bypasses FORCE RLS"*— dejó de ser cierto el
+día que se aplicó `FORCE RLS`; lo único que lo sostenía era el superuser.
+
+**4 sí cruzan orgs de verdad:** un worker de plataforma que escanea todos los tenants, y un
+token público inguesable que hay que resolver antes de conocer la org. Esos pasan ahora por
+funciones `SECURITY DEFINER` con nombre (migración `0014`), que tienen firma, `search_path`
+pineado y un GRANT auditable:
+
+| Función | Para qué |
+|---|---|
+| `dashbi_due_alert_rules` | dispatcher |
+| `dashbi_count_enabled_alert_rules` | helper de tests |
+| `dashbi_load_alert_rule` | evaluator (devuelve la fila compuesta) |
+| `dashbi_resolve_public_link` | sharing |
+
+`REVOKE … FROM PUBLIC` es la sentencia que carga el peso: las funciones tienen EXECUTE para
+PUBLIC por defecto, y PUBLIC no es un rol del que uno se pueda revocar a sí mismo. Sin ese
+revoke, `dashbi_readonly` — el rol del SQL que genera la IA — podría llamarlas y leer todos
+los tenants, que es exactamente el agujero que HIGH-5 acaba de cerrar.
+
+**El nombre quedó documentado como trampa**, y un guard de 39 tests falla el build si algún
+handler vuelve a usarlo.
+
 #### Lo que este fix NO arregla
 
 `withSystemContext` sigue siendo un wrapper de transacción vacío cuyo comentario dice "Bypassea
