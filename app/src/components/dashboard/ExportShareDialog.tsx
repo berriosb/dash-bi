@@ -2,7 +2,6 @@
 
 import * as React from 'react';
 import { createPortal } from 'react-dom';
-import html2canvas from 'html2canvas';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
@@ -135,6 +134,9 @@ export function ExportShareDialog({
 
     setIsPngExporting(true);
     try {
+      // Loaded on demand: ~194 KB that only the PNG export needs, so it must
+      // not sit in the initial chunk of every dashboard view.
+      const { default: html2canvas } = await import('html2canvas');
       const canvas = await html2canvas(el as HTMLElement, {
         backgroundColor: null,
         scale: 2,
