@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { errorResponse } from '@/lib/errors/response';
+import { randomUUID } from 'node:crypto';
 import { withOrgContext } from '@/db/client';
 import { uploadedFiles } from '@/db/schema';
 import { requireAuth } from '@/lib/auth/request';
@@ -145,14 +146,25 @@ export async function POST(req: Request) {
     }
 
     const inferred = inferColumns(parsed.rows);
-    const proposedTable = safeTableName(upload.filename, ctx.orgId);
+
+    // The id is generated here rather than by the column default so the
+    // table name can be derived from it. `targetTable` used to come from the
+    // filename alone, so "Reporte de Ventas.csv" and "Reporte de Ventas.xlsx"
+    // in the same org shared one Postgres table — two `uploaded_files` rows,
+    // one table, and the database accepted it because the index on
+    // (org_id, target_table) was not unique. The name is stored on the row
+    // and every later read comes from the database, so it does not need to be
+    // re-derivable from the filename.
+    const fileId = randomUUID();
+    const proposedTable = safeTableName(upload.filename, ctx.orgId, fileId);
 
     // The metadata row goes in under the caller's org, so RLS scopes it. The
     // materialized table is created later, in the commit route.
-    const fileId = await withOrgContext(ctx.orgId, ctx.userId, ctx.role, async (tx) => {
+    const inserted = await withOrgContext(ctx.orgId, ctx.userId, ctx.role, async (tx) => {
       const [row] = await tx
         .insert(uploadedFiles)
         .values({
+          id: fileId,
           orgId: ctx.orgId,
           name: upload.filename.replace(/\.(csv|tsv|txt|xlsx|xls)$/i, ''),
           originalFilename: upload.filename,
@@ -164,10 +176,10 @@ export async function POST(req: Request) {
           createdBy: ctx.userId,
         })
         .returning({ id: uploadedFiles.id });
-      return row?.id;
+      return row;
     });
 
-    if (!fileId) {
+    if (!inserted) {
       throw new Error('Failed to insert uploaded_files row');
     }
 
