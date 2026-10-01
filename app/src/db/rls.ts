@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { db, withSystemContext } from './client';
+import { parseBareIdent, quoteIdent } from '@/lib/connectors/parsers/sql-ident';
 
 /**
  * Habilita Row Level Security en todas las tablas tenant-scoped.
@@ -18,6 +19,9 @@ export async function enableRLS(): Promise<void> {
     // user-scoped for conversations (user_id).
     'nlqa_conversations',
     'nlqa_messages',
+    // Sprint 3: alerting tables, tenant-scoped (org_id).
+    'alert_rules',
+    'alert_events',
   ];
   // NOTE: 'users', 'accounts', 'verifications' are GLOBAL (not tenant-scoped).
   // Better-auth manages them; RLS not enabled because access is gated by better-auth session + JWT.
@@ -25,9 +29,13 @@ export async function enableRLS(): Promise<void> {
 
   await withSystemContext(async () => {
     for (const table of tables) {
-      await db.execute(sql.raw(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY`));
+      // These come from a literal in this file, so validation is defense in
+      // depth — but it costs nothing and keeps every `sql.raw` identifier in
+      // the codebase going through the same grammar (T3).
+      const ident = quoteIdent(parseBareIdent(table, 'rls table'));
+      await db.execute(sql.raw(`ALTER TABLE ${ident} ENABLE ROW LEVEL SECURITY`));
       // FORCE también para table owners (defense in depth)
-      await db.execute(sql.raw(`ALTER TABLE ${table} FORCE ROW LEVEL SECURITY`));
+      await db.execute(sql.raw(`ALTER TABLE ${ident} FORCE ROW LEVEL SECURITY`));
     }
   });
 }
@@ -87,6 +95,19 @@ export async function createRLSPolicies(): Promise<void> {
     // protegida por user_id, así que las messages de esa conv son seguras).
     `CREATE POLICY nlqa_messages_isolation ON nlqa_messages
       USING (org_id = current_setting('app.current_org_id')::uuid)`,
+
+    // Sprint 3: alert_rules — filtra por org_id.
+    // Uses the null-safe app_current_org_id() helper from
+    // 0004_rls_null_safe.sql, not the bare current_setting()::uuid used by
+    // the older policies above: without the missing-ok flag, current_setting
+    // raises instead of returning NULL when the GUC was never set, so an
+    // anonymous caller would error rather than match zero rows.
+    `CREATE POLICY alert_rules_isolation ON alert_rules
+      USING (org_id = app_current_org_id())`,
+
+    // Sprint 3: alert_events — filtra por org_id (mismo criterio null-safe)
+    `CREATE POLICY alert_events_isolation ON alert_events
+      USING (org_id = app_current_org_id())`,
   ];
 
   await withSystemContext(async () => {
@@ -94,7 +115,13 @@ export async function createRLSPolicies(): Promise<void> {
       // DROP primero (idempotente)
       const policyName = policy.match(/CREATE POLICY (\w+)/)?.[1];
       if (policyName) {
-        await db.execute(sql.raw(`DROP POLICY IF EXISTS ${policyName} ON ${getTableFromPolicy(policy)}`));
+        const quotedPolicy = quoteIdent(parseBareIdent(policyName, 'policy'));
+        const table = getTableFromPolicy(policy);
+        await db.execute(
+          sql.raw(
+            `DROP POLICY IF EXISTS ${quotedPolicy} ON ${quoteIdent(parseBareIdent(table, 'rls table'))}`,
+          ),
+        );
       }
       await db.execute(sql.raw(policy));
     }

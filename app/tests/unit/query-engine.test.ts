@@ -6,16 +6,18 @@ import type { QueryResult } from '@/lib/connectors/types';
 
 describe('Query Engine Cache & Hydration', () => {
   it('generates deterministic cache keys', () => {
-    const key1 = generateCacheKey('org-1', 'ds-1', { kind: 'sql', sql: 'SELECT * FROM users' });
-    const key2 = generateCacheKey('org-1', 'ds-1', { kind: 'sql', sql: 'SELECT * FROM users' });
-    const key3 = generateCacheKey('org-2', 'ds-1', { kind: 'sql', sql: 'SELECT * FROM users' });
+    const key1 = generateCacheKey('org-1', 'ds-1', { kind: 'sql', sql: 'SELECT * FROM users' }, 'admin');
+    const key2 = generateCacheKey('org-1', 'ds-1', { kind: 'sql', sql: 'SELECT * FROM users' }, 'admin');
+    const key3 = generateCacheKey('org-2', 'ds-1', { kind: 'sql', sql: 'SELECT * FROM users' }, 'admin');
+    const viewerKey = generateCacheKey('org-1', 'ds-1', { kind: 'sql', sql: 'SELECT * FROM users' }, 'viewer');
 
     expect(key1).toBe(key2);
     expect(key1).not.toBe(key3); // Tenant isolated
+    expect(key1).not.toBe(viewerKey); // Role isolated — a viewer must not read an admin's entry
   });
 
   it('stores and retrieves cache entries within TTL', async () => {
-    const key = generateCacheKey('org-1', 'ds-1', { test: true });
+    const key = generateCacheKey('org-1', 'ds-1', { test: true }, 'admin');
     const result: QueryResult = {
       rows: [{ id: 1, name: 'Test' }],
       rowCount: 1,

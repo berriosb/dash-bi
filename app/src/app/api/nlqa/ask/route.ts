@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { errorResponse } from '@/lib/errors/response';
 import { z } from 'zod';
 import { eq, desc, asc } from 'drizzle-orm';
 import { withOrgContext } from '@/db/client';
@@ -8,12 +9,10 @@ import { resolveConnector } from '@/lib/query-engine/resolve';
 import { executeWithTimeout } from '@/lib/query-engine/execute';
 import { AiGateway, type NLQAHistoryTurn } from '@/lib/ai/gateway';
 import { recordLLMUsage, assertOrgCanSpendLlm } from '@/lib/ai/quota';
-import { validateQuery } from '@/lib/security/validate-query';
+import { validateQuery, ValidationError } from '@/lib/security/validate-query';
 import { audit } from '@/lib/audit/log';
 import { checkRateLimit } from '@/lib/rate-limit';
 import { logger } from '@/lib/logger';
-import { toUserError, getOrGenerateCorrelationId } from '@/lib/errors/to-user-error';
-import { statusFromCode } from '@/lib/errors/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,15 +23,6 @@ const AskBodySchema = z.object({
 });
 
 const MAX_HISTORY_TURNS = 6;
-
-function errorResponse(error: unknown, req: Request) {
-  const correlationId = getOrGenerateCorrelationId(req);
-  const appError = toUserError(error, correlationId);
-  return NextResponse.json(appError, {
-    status: statusFromCode(appError.code),
-    headers: { 'x-correlation-id': correlationId },
-  });
-}
 
 export async function POST(req: Request) {
   try {
@@ -198,7 +188,7 @@ export async function POST(req: Request) {
     }
 
     try {
-      validateQuery({ kind: 'sql', sql: sqlResult.sql }, dataSourceType);
+      validateQuery({ kind: 'sql', sql: sqlResult.sql }, dataSourceType, ctx.role);
     } catch (err) {
       logger.warn({ sql: sqlResult.sql, error: err }, 'NLQA SQL failed validation');
       const message = 'La IA generó una query inválida. Reformulá tu pregunta.';
@@ -220,9 +210,18 @@ export async function POST(req: Request) {
         connector,
         dataSourceId,
         { kind: 'sql', sql: sqlResult.sql, params: sqlResult.params as never },
-        { timeoutMs: 30000, retries: 0 },
+        { timeoutMs: 30000, retries: 0, role: ctx.role },
       );
     } catch (execErr) {
+      // executeWithTimeout re-validates the same query with the same role
+      // (see execute.ts). A role rejection is a policy decision, not a
+      // server fault, so it must answer with the same 422 the validateQuery
+      // branch above returns — not a 500.
+      if (execErr instanceof ValidationError) {
+        logger.warn({ sql: sqlResult.sql, error: execErr }, 'NLQA SQL rejected by role policy');
+        const message = 'La IA generó una query inválida. Reformulá tu pregunta.';
+        return NextResponse.json({ error: 'sql_validation_failed', message }, { status: 422 });
+      }
       const message = execErr instanceof Error ? execErr.message : 'Error ejecutando la query';
       return NextResponse.json({ error: 'query_execution_failed', message }, { status: 500 });
     }

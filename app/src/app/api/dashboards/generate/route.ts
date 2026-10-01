@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { errorResponse } from '@/lib/errors/response';
 import { eq, and } from 'drizzle-orm';
 import { withOrgContext } from '@/db/client';
 import { dashboards, orgs } from '@/db/schema';
@@ -10,8 +11,7 @@ import { AiGateway } from '@/lib/ai/gateway';
 import { recordLLMUsage, assertOrgCanSpendLlm } from '@/lib/ai/quota';
 import { checkRateLimit } from '@/lib/rate-limit';
 import { audit } from '@/lib/audit/log';
-import { toUserError, getOrGenerateCorrelationId } from '@/lib/errors/to-user-error';
-import { statusFromCode } from '@/lib/errors/types';
+import { getOrGenerateCorrelationId } from '@/lib/errors/to-user-error';
 import type { ThemeId, Dashboard, Widget } from '@/lib/widgets/types';
 import { z } from 'zod';
 
@@ -28,15 +28,6 @@ const GenerateBodySchema = z.object({
 
 function getClientIp(req: Request): string {
   return req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
-}
-
-function errorResponse(error: unknown, req: Request) {
-  const correlationId = getOrGenerateCorrelationId(req);
-  const appError = toUserError(error, correlationId);
-  return NextResponse.json(appError, {
-    status: statusFromCode(appError.code),
-    headers: { 'x-correlation-id': correlationId },
-  });
 }
 
 export async function POST(req: Request) {
@@ -147,7 +138,7 @@ export async function POST(req: Request) {
       );
       let finalWidgets = newWidgets;
       if (toHydrate.length > 0) {
-        const hydrated = await hydrateDashboard(ctx.orgId, ctx.userId, toHydrate);
+        const hydrated = await hydrateDashboard(ctx.orgId, ctx.userId, toHydrate, ctx.role);
         const byId = new Map(hydrated.map((h) => [h.id, h]));
         finalWidgets = newWidgets.map((w) => byId.get(w.id) ?? w);
       }
@@ -204,7 +195,7 @@ export async function POST(req: Request) {
         latencyMs: Date.now() - generatedStartedAt,
       });
 
-      const hydratedWidgets = await hydrateDashboard(ctx.orgId, ctx.userId, generated.widgets);
+      const hydratedWidgets = await hydrateDashboard(ctx.orgId, ctx.userId, generated.widgets, ctx.role);
 
       const [saved] = await withOrgContext(ctx.orgId, ctx.userId, ctx.role, async (tx) =>
         tx.insert(dashboards).values({

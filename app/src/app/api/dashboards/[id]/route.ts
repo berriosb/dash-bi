@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
+import { errorResponse } from '@/lib/errors/response';
 import { eq, and, desc } from 'drizzle-orm';
 import { withOrgContext } from '@/db/client';
 import { dashboards, dashboardVersions } from '@/db/schema';
 import { requireAuth } from '@/lib/auth/request';
 import { hydrateDashboard } from '@/lib/query-engine/dashboard';
-import { toUserError, getOrGenerateCorrelationId } from '@/lib/errors/to-user-error';
-import { statusFromCode } from '@/lib/errors/types';
+import { audit } from '@/lib/audit/log';
 import { z } from 'zod';
 
 export const dynamic = 'force-dynamic';
@@ -43,15 +43,6 @@ const UpdateDashboardSchema = z.object({
   updatedAt: z.string().datetime().optional(),
 });
 
-function errorResponse(error: unknown, req: Request) {
-  const correlationId = getOrGenerateCorrelationId(req);
-  const appError = toUserError(error, correlationId);
-  return NextResponse.json(appError, {
-    status: statusFromCode(appError.code),
-    headers: { 'x-correlation-id': correlationId },
-  });
-}
-
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
@@ -65,7 +56,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       return NextResponse.json({ error: 'Dashboard not found' }, { status: 404 });
     }
 
-    const hydratedWidgets = await hydrateDashboard(ctx.orgId, ctx.userId, (dashboard.widgets ?? []) as Parameters<typeof hydrateDashboard>[2]);
+    // `role` is the 4th parameter, so `widgets` stays at index 2.
+    const hydratedWidgets = await hydrateDashboard(ctx.orgId, ctx.userId, (dashboard.widgets ?? []) as Parameters<typeof hydrateDashboard>[2], ctx.role);
 
     return NextResponse.json({
       dashboard: {
@@ -132,6 +124,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       });
     });
 
+    // `nextVersion` is scoped to the transaction above, so the trail records
+    // which fields changed rather than the resulting version number.
+    await audit(ctx.orgId, ctx.userId, 'dashboard.updated', `dashboard:${id}`, {
+      metadata: { changed: Object.keys(body) },
+      req,
+    });
+
     return NextResponse.json({ ok: true });
   } catch (error) {
     return errorResponse(error, req);
@@ -146,6 +145,8 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
     await withOrgContext(ctx.orgId, ctx.userId, ctx.role, async (tx) =>
       tx.delete(dashboards).where(and(eq(dashboards.id, id), eq(dashboards.orgId, ctx.orgId)))
     );
+
+    await audit(ctx.orgId, ctx.userId, 'dashboard.deleted', `dashboard:${id}`, { req });
 
     return NextResponse.json({ ok: true });
   } catch (error) {

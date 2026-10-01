@@ -5,6 +5,7 @@ import { scheduledReports } from '@/db/schema';
 import { requireAuth } from '@/lib/auth/request';
 import { toUserError, getOrGenerateCorrelationId } from '@/lib/errors/to-user-error';
 import { parseCronAndNextRun, isValidCron } from '@/lib/reports/cron';
+import { audit } from '@/lib/audit/log';
 import { eq, desc } from 'drizzle-orm';
 
 const createReportSchema = z.object({
@@ -79,6 +80,17 @@ export async function POST(req: Request) {
         })
         .returning();
     });
+
+    if (report) {
+      await audit(orgId, userId, 'scheduled_report.created', `scheduled_report:${report.id}`, {
+        metadata: {
+          dashboardId: payload.dashboardId,
+          cron: payload.cron,
+          recipients: payload.recipients.map((r) => r.email),
+        },
+        req,
+      });
+    }
 
     return NextResponse.json({ report }, { status: 201 });
   } catch (err: unknown) {

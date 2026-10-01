@@ -5,6 +5,7 @@ import { scheduledReports, scheduledReportRuns } from '@/db/schema';
 import { requireAuth } from '@/lib/auth/request';
 import { toUserError, getOrGenerateCorrelationId } from '@/lib/errors/to-user-error';
 import { parseCronAndNextRun, isValidCron } from '@/lib/reports/cron';
+import { audit } from '@/lib/audit/log';
 import { eq, and, desc } from 'drizzle-orm';
 
 const updateReportSchema = z.object({
@@ -97,6 +98,11 @@ export async function PATCH(
       return NextResponse.json({ error: 'Reporte programado no encontrado' }, { status: 404 });
     }
 
+    await audit(orgId, userId, 'scheduled_report.updated', `scheduled_report:${id}`, {
+      metadata: { changed: Object.keys(updateValues) },
+      req,
+    });
+
     return NextResponse.json({ report: updated });
   } catch (err: unknown) {
     const userErr = toUserError(err, correlationId);
@@ -123,6 +129,8 @@ export async function DELETE(
     if (!deleted) {
       return NextResponse.json({ error: 'Reporte programado no encontrado' }, { status: 404 });
     }
+
+    await audit(orgId, userId, 'scheduled_report.deleted', `scheduled_report:${id}`, { req });
 
     return NextResponse.json({ success: true, id });
   } catch (err: unknown) {

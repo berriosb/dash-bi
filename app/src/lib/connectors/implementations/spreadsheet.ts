@@ -2,6 +2,7 @@ import { sql, eq } from 'drizzle-orm';
 import { db, withOrgContext, type Tx } from '@/db/client';
 import { uploadedFiles } from '@/db/schema';
 import { validateQuery } from '@/lib/security/validate-query';
+import { parseQualifiedIdent } from '@/lib/connectors/parsers/sql-ident';
 import type {
   Connector,
   ConnectorConfig,
@@ -81,7 +82,11 @@ export class SpreadsheetConnector implements Connector {
         return { ok: false, latencyMs: Date.now() - start, error: 'File not found' };
       }
       // Smoke-test: SELECT 1 FROM <targetTable> LIMIT 1
-      await db.execute(sql.raw(`SELECT 1 FROM ${file.targetTable} LIMIT 1`));
+      // The identifier is validated + quoted here, not at write time: this
+      // value comes back out of a `text` column, and this runs outside the
+      // `withOrgContext` transaction that the other queries use.
+      const target = parseQualifiedIdent(file.targetTable);
+      await db.execute(sql.raw(`SELECT 1 FROM ${target.sql} LIMIT 1`));
       return { ok: true, latencyMs: Date.now() - start };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

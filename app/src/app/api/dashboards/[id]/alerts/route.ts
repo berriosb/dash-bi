@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
 import { eq, and, desc, count } from 'drizzle-orm';
 import { withOrgContext } from '@/db/client';
-import { alertRules, orgs } from '@/db/schema';
+import { alertRules, dashboards, orgs } from '@/db/schema';
 import { requireAuth } from '@/lib/auth/request';
 import { audit } from '@/lib/audit/log';
 import { getOrGenerateCorrelationId, toUserError } from '@/lib/errors/to-user-error';
-import { statusFromCode } from '@/lib/errors/types';
+import { AppErrorException, statusFromCode } from '@/lib/errors/types';
 import {
   CreateAlertRuleSchema,
   ensureLimit,
@@ -62,6 +62,21 @@ export async function POST(
     const sqlWithLimit = ensureLimit(validated.querySql, 1);
     validateQuery({ kind: 'sql', sql: sqlWithLimit }, 'postgres');
 
+    // Tenant ownership: `alert_rules` has no RLS policies, so the dashboard
+    // must be proven to belong to the caller's org before we hang a rule on
+    // it. A dashboard that exists in another org is reported as "not found"
+    // (404) so the response never reveals that it exists.
+    const [dashboard] = await withOrgContext(orgId, userId, async (tx) => {
+      return tx
+        .select({ id: dashboards.id })
+        .from(dashboards)
+        .where(and(eq(dashboards.id, dashboardId), eq(dashboards.orgId, orgId)))
+        .limit(1);
+    });
+    if (!dashboard) {
+      throw new AppErrorException('not_found');
+    }
+
     const [rule] = await withOrgContext(orgId, userId, async (tx) => {
       return tx
         .insert(alertRules)
@@ -112,7 +127,7 @@ export async function GET(
       return tx
         .select()
         .from(alertRules)
-        .where(eq(alertRules.dashboardId, dashboardId))
+        .where(and(eq(alertRules.dashboardId, dashboardId), eq(alertRules.orgId, orgId)))
         .orderBy(desc(alertRules.createdAt));
     });
 

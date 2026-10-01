@@ -19,6 +19,11 @@ const DropdownMenuContent = React.forwardRef<
       sideOffset={sideOffset}
       className={cn(
         'z-50 min-w-[12rem] overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-lg',
+        // Radix publishes `--radix-dropdown-menu-content-available-height` but
+        // never applies `maxHeight` itself, so without this clamp `overflow-hidden`
+        // silently cuts off any menu taller than the space it opens into. It only
+        // became visible when menu items grew to multi-line descriptions.
+        'max-h-[var(--radix-dropdown-menu-content-available-height)] overflow-y-auto',
         'data-[state=open]:animate-in data-[state=closed]:animate-out',
         className,
       )}

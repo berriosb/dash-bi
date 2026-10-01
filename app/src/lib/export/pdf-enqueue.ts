@@ -40,6 +40,9 @@ export type PdfEnqueueOptions = {
  * - url: the print route URL with a one-time token (worker uses this to fetch)
  * - options: pageSize (Letter or A4)
  * - branding: { logoUrl } for org-specific branding in the PDF header
+ * - orgId / userId / dashboardId: ownership stamped into the job so
+ *   getPdfJobStatus can reject job ids that belong to another tenant.
+ *   Additive: the worker (render-pdf.ts) still reads only url/options/branding.
  */
 export async function enqueuePdfExport(opts: PdfEnqueueOptions): Promise<string> {
   const pageSize = opts.pageSize ?? 'Letter';
@@ -54,6 +57,9 @@ export async function enqueuePdfExport(opts: PdfEnqueueOptions): Promise<string>
       url,
       options: { pageSize },
       branding,
+      orgId: opts.orgId,
+      userId: opts.userId,
+      dashboardId: opts.dashboardId,
     },
     {
       removeOnComplete: PDF_JOB_REMOVE_ON_COMPLETE,
@@ -70,15 +76,44 @@ export type PdfJobStatus =
   | { status: 'completed'; buffer: Buffer }
   | { status: 'failed'; reason?: string };
 
+export type PdfJobOwner = {
+  orgId: string;
+  dashboardId: string;
+};
+
 /**
- * Get the status of a previously enqueued PDF job.
+ * Get the status of a previously enqueued PDF job, scoped to its owner.
+ *
+ * BullMQ job ids are sequential integers, so `?jobId=N` walks every
+ * tenant's exports. Redis is not covered by RLS, so the job payload is the
+ * only ownership signal available here: a job whose stamped orgId or
+ * dashboardId does not match `expected` is reported as `not_found` — the
+ * same answer as an id that never existed, so iterating ids learns nothing.
+ *
+ * A legacy payload enqueued before this check existed has no `orgId`; it
+ * fails the comparison and is reported as `not_found` (fail closed).
+ *
+ * `userId` is persisted for traceability but never compared: the boundary is
+ * org, not user, so any member of the owning org can download the export.
  *
  * Returns a discriminated union. Callers (the API route) translate to
  * HTTP responses / file downloads accordingly.
  */
-export async function getPdfJobStatus(jobId: string): Promise<PdfJobStatus> {
+export async function getPdfJobStatus(
+  jobId: string,
+  expected: PdfJobOwner
+): Promise<PdfJobStatus> {
   const job = await getQueue().getJob(jobId);
   if (!job) return { status: 'not_found' };
+
+  const data = (job.data ?? {}) as Partial<PdfJobOwner>;
+  if (data.orgId !== expected.orgId || data.dashboardId !== expected.dashboardId) {
+    logger.warn(
+      { jobId, jobOrgId: data.orgId, jobDashboardId: data.dashboardId },
+      'pdf-export: rejected job status lookup for foreign job'
+    );
+    return { status: 'not_found' };
+  }
 
   if (await job.isCompleted()) {
     const returnvalue = job.returnvalue as { buffer: Buffer } | undefined;

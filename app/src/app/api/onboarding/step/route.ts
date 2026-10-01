@@ -1,11 +1,10 @@
 import { NextResponse } from 'next/server';
+import { errorResponse } from '@/lib/errors/response';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { withSystemContext } from '@/db/client';
 import { users } from '@/db/schema';
 import { requireAuth } from '@/lib/auth/request';
-import { toUserError, getOrGenerateCorrelationId } from '@/lib/errors/to-user-error';
-import { statusFromCode } from '@/lib/errors/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,15 +20,6 @@ const StepBodySchema = z.object({
   step: z.enum(VALID_STEPS),
   dataSourceId: z.string().uuid().optional(),
 });
-
-function errorResponse(error: unknown, req: Request) {
-  const correlationId = getOrGenerateCorrelationId(req);
-  const appError = toUserError(error, correlationId);
-  return NextResponse.json(appError, {
-    status: statusFromCode(appError.code),
-    headers: { 'x-correlation-id': correlationId },
-  });
-}
 
 export async function POST(req: Request) {
   try {

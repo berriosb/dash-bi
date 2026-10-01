@@ -37,12 +37,30 @@ export function normalizeHeaders(raw: string[]): string[] {
   });
 }
 
+/**
+ * Build the schema-qualified Postgres name for an uploaded file.
+ *
+ * One schema per org (`org_<orgid>`), one table per file (`<basename>`).
+ * The dot is load-bearing: every DDL builder in `load.ts` requires
+ * `schema.table`, and the RLS policy is written per table. This function
+ * used to emit `org_<orgid>_<basename>` with no dot, so
+ * `POST /api/files/commit` always threw `targetTable must be
+ * schema-qualified` — the upload succeeded and the commit could never run.
+ *
+ * Both parts stay inside `[a-z_][a-z0-9_]*` and under 63 chars, which is
+ * exactly what `parseQualifiedIdent` accepts. Keeping the producer inside
+ * the validator's grammar is deliberate: the validator is the security
+ * boundary, and this is what keeps the happy path inside it.
+ */
 export function safeTableName(originalFilename: string, orgId: string): string {
-  // Postgres identifier: org_<safe-orgid>_<safe-basename>
   const base = originalFilename
     .replace(/\.(csv|tsv|txt|xlsx|xls)$/i, '')
     .toLowerCase();
-  const orgPart = orgId.replace(/[^a-z0-9]/gi, '');
+  const orgPart = orgId.replace(/[^a-z0-9]/gi, '').slice(0, 16);
   const namePart = normalizeHeader(base).slice(0, 40);
-  return `org_${orgPart.slice(0, 16)}_${namePart}`;
+  // A degenerate org id or filename normalizes to nothing; keep both
+  // identifiers non-empty so the result is always a valid pair.
+  const schema = orgPart ? `org_${orgPart}` : 'org_unknown';
+  const table = namePart || 'upload';
+  return `${schema}.${table}`;
 }

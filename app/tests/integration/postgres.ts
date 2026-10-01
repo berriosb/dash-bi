@@ -9,7 +9,18 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import * as schema from '@/db/schema';
 
-const RESET_SQL = `
+/**
+ * Tables dropped between tests, children before parents.
+ *
+ * Exported so tests/unit/db/test-harness-reset.test.ts can assert that every
+ * table in the Drizzle schema appears here. A table missing from this list
+ * survives a reset with its rows intact while the tables it points at are
+ * dropped and recreated — so the next `applyMigrations()` re-adds a foreign key
+ * and fails on the orphans. That failure surfaces as a confusing FK violation
+ * in whichever test happens to run second, not as "you forgot to update the
+ * harness".
+ */
+export const RESET_SQL = `
 DROP TABLE IF EXISTS alert_events CASCADE;
 DROP TABLE IF EXISTS alert_rules CASCADE;
 DROP TABLE IF EXISTS nlqa_messages CASCADE;
@@ -20,6 +31,9 @@ DROP TABLE IF EXISTS public_links CASCADE;
 DROP TABLE IF EXISTS dashboard_versions CASCADE;
 DROP TABLE IF EXISTS dashboards CASCADE;
 DROP TABLE IF EXISTS data_sources CASCADE;
+DROP TABLE IF EXISTS uploaded_files CASCADE;
+DROP TABLE IF EXISTS scheduled_report_runs CASCADE;
+DROP TABLE IF EXISTS scheduled_reports CASCADE;
 DROP TABLE IF EXISTS org_members CASCADE;
 DROP TABLE IF EXISTS verifications CASCADE;
 DROP TABLE IF EXISTS accounts CASCADE;

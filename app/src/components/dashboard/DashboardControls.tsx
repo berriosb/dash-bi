@@ -12,6 +12,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Palette, Check, Sparkles } from 'lucide-react';
 import type { ThemeId, ArchetypeId } from '@/lib/widgets/types';
+import { ARCHETYPES } from '@/lib/widgets/archetypes';
 import { useToast } from '@/hooks/use-toast';
 
 const THEME_OPTIONS: Array<{ id: ThemeId; label: string; description: string }> = [
@@ -19,17 +20,30 @@ const THEME_OPTIONS: Array<{ id: ThemeId; label: string; description: string }> 
   { id: 'corporate', label: 'Corporate', description: 'Formal, Bloomberg style, neutros.' },
 ];
 
-const ARCHETYPE_OPTIONS: Array<{ id: ArchetypeId; label: string; description: string }> = [
-  { id: 'kpi-grid', label: 'Vista general', description: 'Cuadrícula de KPIs destacados.' },
-  { id: 'hero-focus', label: 'Métrica destacada', description: 'Una métrica principal grande + soporte.' },
-  { id: 'executive-summary', label: 'Resumen ejecutivo', description: 'KPIs + gráficos de tendencia.' },
-  { id: 'finance-report', label: 'Reporte financiero', description: 'Tablas + totales.' },
-  { id: 'sales-pipeline', label: 'Pipeline comercial', description: 'Embudo + conversión.' },
-  { id: 'cohort-matrix', label: 'Análisis de cohortes', description: 'Heatmap de retención.' },
-  { id: 'operations-live', label: 'Monitoreo operativo', description: 'Live, alertas, contadores.' },
-  { id: 'growth-metrics', label: 'Métricas de crecimiento', description: 'Curva, activación, retención.' },
-  { id: 'custom', label: 'Composición personalizada', description: 'Mantener layout actual.' },
+/**
+ * Short Spanish labels only. The description shown under each one is read from
+ * the canonical ARCHETYPES registry, so the menu can never promise a widget the
+ * renderer does not build — the earlier hand-written copy described a "heatmap
+ * de retención" and an "embudo" that no slot in archetypes.ts allows, and
+ * WidgetRenderer only ships kpi / line / bar / pie / area / scatter / table.
+ */
+const ARCHETYPE_MENU: Array<{ id: ArchetypeId; label: string; description: string }> = [
+  { id: 'kpi-grid', label: 'Vista general', description: '' },
+  { id: 'hero-focus', label: 'Métrica destacada', description: '' },
+  { id: 'executive-summary', label: 'Resumen ejecutivo', description: '' },
+  { id: 'finance-report', label: 'Reporte financiero', description: '' },
+  { id: 'sales-pipeline', label: 'Pipeline comercial', description: '' },
+  { id: 'cohort-matrix', label: 'Análisis de cohortes', description: '' },
+  { id: 'operations-live', label: 'Monitoreo operativo', description: '' },
+  { id: 'growth-metrics', label: 'Métricas de crecimiento', description: '' },
+  { id: 'custom', label: 'Composición personalizada', description: 'Mantener el layout actual.' },
 ];
+
+const ARCHETYPE_OPTIONS: Array<{ id: ArchetypeId; label: string; description: string }> =
+  ARCHETYPE_MENU.map((opt) => ({
+    ...opt,
+    description: opt.description || ARCHETYPES[opt.id as Exclude<ArchetypeId, 'custom'>]?.description || '',
+  }));
 
 interface DashboardControlsProps {
   theme: ThemeId;
@@ -70,7 +84,7 @@ export function DashboardControls({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="outline" size="sm" className="gap-1.5">
-            <Palette className="w-3.5 h-3.5 text-purple-400" />
+            <Palette className="w-3.5 h-3.5 text-secondary" />
             <span>Tema: {THEME_OPTIONS.find((t) => t.id === theme)?.label ?? theme}</span>
           </Button>
         </DropdownMenuTrigger>
@@ -85,7 +99,7 @@ export function DashboardControls({
             >
               <div className="flex items-center gap-2 w-full">
                 <span className="font-medium">{opt.label}</span>
-                {theme === opt.id && <Check className="w-3.5 h-3.5 ml-auto text-emerald-400" />}
+                {theme === opt.id && <Check className="w-3.5 h-3.5 ml-auto text-success" />}
               </div>
               <span className="text-xs text-muted-foreground">{opt.description}</span>
             </DropdownMenuItem>
@@ -96,7 +110,7 @@ export function DashboardControls({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="outline" size="sm" className="gap-1.5">
-            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+            <Sparkles className="w-3.5 h-3.5 text-warning" />
             <span>Disposición: {ARCHETYPE_OPTIONS.find((a) => a.id === archetype)?.label ?? archetype}</span>
           </Button>
         </DropdownMenuTrigger>
@@ -111,7 +125,7 @@ export function DashboardControls({
             >
               <div className="flex items-center gap-2 w-full">
                 <span className="font-medium">{opt.label}</span>
-                {archetype === opt.id && <Check className="w-3.5 h-3.5 ml-auto text-emerald-400" />}
+                {archetype === opt.id && <Check className="w-3.5 h-3.5 ml-auto text-success" />}
               </div>
               <span className="text-xs text-muted-foreground">{opt.description}</span>
             </DropdownMenuItem>

@@ -12,6 +12,65 @@ export type { Query } from '@/lib/connectors/types';
 export type { ConnectorType };
 
 /**
+ * DML/DDL keywords. Shared by every SQL-backed connector so a new connector
+ * cannot ship with a weaker list than the one before it.
+ */
+const DML_DDL_KEYWORDS = [
+  'INSERT', 'UPDATE', 'DELETE', 'DROP', 'TRUNCATE', 'ALTER', 'CREATE', 'GRANT', 'REVOKE',
+] as const;
+
+/**
+ * T7 — functions a DB-issued query must never call.
+ *
+ * These exist because the read-only role is not the only thing standing
+ * between a model and the filesystem. `validateQuery` is the layer that
+ * actually decides what runs, and it used to have no file-reading function in
+ * its list at all: `SELECT pg_read_file('/etc/passwd')` passed validation.
+ *
+ * `pg_read_file` & friends read the DATABASE SERVER's filesystem, not the
+ * connector's — an AI query that reaches them turns prompt injection into
+ * arbitrary file disclosure of `/etc/passwd`, service credentials and
+ * anything else the process can read.
+ *
+ * Timing functions are timing-based DoS against the DB; the `dblink` /
+ * `pg_*` egress functions let a query use the DB as a network pivot into
+ * hosts the application itself cannot reach.
+ */
+const DANGEROUS_DB_FUNCTIONS = [
+  // Postgres server filesystem
+  'pg_read_file', 'pg_read_binary_file', 'pg_ls_dir', 'pg_stat_file',
+  // Large-object import/export
+  'lo_import', 'lo_export',
+  // MySQL server filesystem
+  'load_file', 'into outfile', 'into dumpfile',
+  // Timing / DoS
+  'pg_sleep', 'sleep', 'benchmark',
+  // Network egress from the DB
+  'dblink', 'dblink_connect', 'dblink_send_query',
+  'pg_connect_backend', 'pg_forward_wal', 'lo_create', 'lo_unlink',
+] as const;
+
+/**
+ * Build the forbidden-statement pattern for a SQL-backed connector.
+ *
+ * `extraKeywords` covers engine-specific DML (Snowflake's `MERGE`). Every
+ * dangerous function is included in all of them: a blocklist that differs per
+ * connector is how `pg_read_file` survived in the first place.
+ */
+function buildForbiddenPattern(extraKeywords: readonly string[] = []): RegExp {
+  const alternatives = [
+    ...DML_DDL_KEYWORDS,
+    ...extraKeywords,
+    ...DANGEROUS_DB_FUNCTIONS,
+  ]
+    // `into outfile` / `into dumpfile` contain a space, so escape the rest.
+    .map((kw) => kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|');
+
+  return new RegExp(`\\b(${alternatives})\\b`, 'i');
+}
+
+/**
  * T2 del threat model: validar SQL/queries generadas por IA ANTES de ejecutar.
  *
  * Defense in depth:
@@ -46,7 +105,7 @@ export function validateQuery(
     }
 
     // Prohibir DML/DDL y funciones potencialmente peligrosas (SLEEP, BENCHMARK, etc.)
-    const forbidden = /\b(INSERT|UPDATE|DELETE|DROP|TRUNCATE|ALTER|CREATE|GRANT|REVOKE|SLEEP|BENCHMARK|LOAD_FILE|OUTFILE)\b/i;
+    const forbidden = buildForbiddenPattern();
     if (forbidden.test(sql)) {
       throw new ValidationError('DML/DDL or forbidden function statements not allowed');
     }
@@ -106,7 +165,7 @@ export function validateQuery(
     if (semicolons.length > 1) {
       throw new ValidationError('Multi-statement queries not allowed');
     }
-    const forbidden = /\b(INSERT|UPDATE|DELETE|DROP|TRUNCATE|ALTER|CREATE|GRANT|REVOKE)\b/i;
+    const forbidden = buildForbiddenPattern();
     if (forbidden.test(sql)) {
       throw new ValidationError('DML/DDL statements not allowed');
     }
@@ -142,7 +201,7 @@ export function validateQuery(
     if (semicolons.length > 1) {
       throw new ValidationError('Multi-statement queries not allowed');
     }
-    const forbidden = /\b(INSERT|UPDATE|DELETE|DROP|TRUNCATE|ALTER|CREATE|GRANT|REVOKE|MERGE)\b/i;
+    const forbidden = buildForbiddenPattern(['MERGE']);
     if (forbidden.test(sql)) {
       throw new ValidationError('DML/DDL statements not allowed');
     }
@@ -167,7 +226,7 @@ export function validateQuery(
     if (semicolons.length > 1) {
       throw new ValidationError('Multi-statement queries not allowed');
     }
-    const forbidden = /\b(INSERT|UPDATE|DELETE|DROP|TRUNCATE|ALTER|CREATE|GRANT|REVOKE)\b/i;
+    const forbidden = buildForbiddenPattern();
     if (forbidden.test(sql)) {
       throw new ValidationError('DML/DDL statements not allowed');
     }
@@ -183,8 +242,15 @@ export function validateQuery(
  * El viewer:
  *   - Solo puede SELECT (ya cubierto por regex arriba)
  *   - No puede acceder a columnas sensibles marcadas (PII masking)
+ *
+ * The lookarounds replace `\b` on purpose: `\b` is NOT a boundary between
+ * `_` and a word character, so every snake_case column (`user_password`,
+ * `customer_ssn`, `billing_tax_id`, `token_type`) used to walk straight
+ * through this filter. Negating `[A-Za-z0-9]` makes `_` a valid boundary
+ * while still leaving `tokenizer` alone.
  */
-const SENSITIVE_COLUMN_PATTERN = /\b(password|secret|api_key|apiKey|token|ssn|tax_id|credit_card|card_number|cvv)\b/i;
+const SENSITIVE_COLUMN_PATTERN =
+  /(?<![A-Za-z0-9])(password|secret|api_key|apiKey|token|ssn|tax_id|credit_card|card_number|cvv)(?![A-Za-z0-9])/i;
 
 /**
  * A wildcard projection returns every column, so it necessarily returns
@@ -192,10 +258,24 @@ const SENSITIVE_COLUMN_PATTERN = /\b(password|secret|api_key|apiKey|token|ssn|ta
  * pattern above cannot see it — a viewer could exfiltrate `password`,
  * `token` and `ssn` with a bare `SELECT * FROM users`.
  *
- * `*` and `alias.*` are blocked; `COUNT(*)` is exempt because it
- * aggregates to a single number and leaks nothing.
+ * The previous regex demanded a `[\s,(]` before the star, so a SQL comment
+ * wedged in between hid it. Instead we mask the stars that belong to an
+ * aggregate — `COUNT(*)` aggregates to a single number and leaks nothing —
+ * and reject whatever `*` survives. A SQL
+ * comment cannot hide a projection star, it can only add one, so this fails
+ * closed.
+ *
+ * Accepted false positives, both from the fail-closed direction: a column
+ * named `password_reset_required_at` is now rejected by the sensitive
+ * pattern, and a `*` anywhere that is not an aggregate star — an arithmetic
+ * `2 * 3`, a LIKE pattern `'a*b'` — is now rejected. `SELECT 2 * 3` was
+ * already rejected by the old pattern, so that part is not a regression.
+ * A SQL comment stripper would narrow this further but is deliberately NOT
+ * used: mishandling a string literal there is a fail-open hole, which is
+ * strictly worse than an over-block.
  */
-const WILDCARD_PROJECTION = /(^|[\s,(])(?:[A-Za-z_][A-Za-z0-9_]*\s*\.\s*)?\*(?!\s*\))/;
+const AGGREGATE_STAR =
+  /\b(?:count|sum|avg|min|max|array_agg|json_agg)\s*\(\s*\*\s*\)/gi;
 
 export function assertRolePermissions(sql: string, role: OrgRole): void {
   if (role !== 'viewer') return;
@@ -206,7 +286,7 @@ export function assertRolePermissions(sql: string, role: OrgRole): void {
     );
   }
 
-  if (WILDCARD_PROJECTION.test(sql)) {
+  if (sql.replace(AGGREGATE_STAR, '()').includes('*')) {
     throw new ValidationError(
       'Role viewer cannot use wildcard projection (SELECT *); name the columns explicitly',
     );

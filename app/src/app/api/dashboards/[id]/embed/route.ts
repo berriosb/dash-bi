@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { errorResponse } from '@/lib/errors/response';
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
 import { requireAuth } from '@/lib/auth/request';
@@ -6,8 +7,6 @@ import { withOrgContext } from '@/db/client';
 import { dashboards } from '@/db/schema';
 import { generateEmbedToken, buildIframeSnippet } from '@/lib/embed/token';
 import { audit } from '@/lib/audit/log';
-import { toUserError, getOrGenerateCorrelationId } from '@/lib/errors/to-user-error';
-import { statusFromCode } from '@/lib/errors/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,15 +17,6 @@ const embedSchema = z.object({
   allowExport: z.boolean().default(false),
   expiresInDays: z.number().min(1).max(365).optional(),
 });
-
-function errorResponse(error: unknown, req: Request) {
-  const correlationId = getOrGenerateCorrelationId(req);
-  const appError = toUserError(error, correlationId);
-  return NextResponse.json(appError, {
-    status: statusFromCode(appError.code),
-    headers: { 'x-correlation-id': correlationId },
-  });
-}
 
 export async function POST(
   req: Request,

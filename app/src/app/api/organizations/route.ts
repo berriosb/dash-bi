@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { errorResponse } from "@/lib/errors/response";
 import { and, asc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { withOrgContext } from "@/db/client";
@@ -8,24 +9,13 @@ import { ForbiddenError } from "@/lib/auth/context";
 import { audit } from "@/lib/audit/log";
 import {
   getOrGenerateCorrelationId,
-  toUserError,
 } from "@/lib/errors/to-user-error";
-import { statusFromCode } from "@/lib/errors/types";
 
 export const dynamic = "force-dynamic";
 
 const SwitchOrganizationSchema = z.object({
   orgId: z.string().min(1).max(64),
 });
-
-function errorResponse(error: unknown, req: Request) {
-  const correlationId = getOrGenerateCorrelationId(req);
-  const appError = toUserError(error, correlationId);
-  return NextResponse.json(appError, {
-    status: statusFromCode(appError.code),
-    headers: { "x-correlation-id": correlationId },
-  });
-}
 
 export async function GET(req: Request) {
   try {

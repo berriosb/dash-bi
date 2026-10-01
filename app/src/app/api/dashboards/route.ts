@@ -1,12 +1,11 @@
 import { NextResponse } from 'next/server';
+import { errorResponse } from '@/lib/errors/response';
 import { desc, eq } from 'drizzle-orm';
 import { withOrgContext } from '@/db/client';
 import { dashboards } from '@/db/schema';
 import { requireAuth } from '@/lib/auth/request';
 import { logRequest } from '@/lib/logger';
 import { audit } from '@/lib/audit/log';
-import { toUserError, getOrGenerateCorrelationId } from '@/lib/errors/to-user-error';
-import { statusFromCode } from '@/lib/errors/types';
 import type { ThemeId } from '@/lib/widgets/types';
 import { z } from 'zod';
 
@@ -43,16 +42,6 @@ const CreateDashboardSchema = z.object({
     .optional(),
   archetypeVariant: ArchetypeVariantSchema.optional(),
 });
-
-function errorResponse(error: unknown, req: Request, fallbackStatus = 500) {
-  const correlationId = getOrGenerateCorrelationId(req);
-  const appError = toUserError(error, correlationId);
-  const status = appError.code === 'internal_server_error' ? fallbackStatus : statusFromCode(appError.code);
-  return NextResponse.json(appError, {
-    status,
-    headers: { 'x-correlation-id': correlationId },
-  });
-}
 
 export async function GET(req: Request) {
   const { correlationId, logger: reqLogger } = logRequest(req);
