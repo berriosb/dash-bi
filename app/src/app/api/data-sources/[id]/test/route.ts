@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { errorResponse } from '@/lib/errors/response';
 import { resolveConnector } from '@/lib/query-engine/resolve';
 import { requireAuth } from '@/lib/auth/request';
 import { checkRateLimit } from '@/lib/rate-limit';
@@ -29,9 +30,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
     return NextResponse.json(result);
   } catch (error: unknown) {
-    return NextResponse.json(
-      { ok: false, error: error instanceof Error ? error.message : 'Internal error' },
-      { status: 500 },
-    );
+    // This used to echo `error.message` back. For a connector test that
+    // message is routinely a DSN: `getaddrinfo ENOTFOUND db.internal` or
+    // `password authentication failed for user "dashbi_readonly"`, host and
+    // role name included. That is infrastructure reconnaissance handed to any
+    // authenticated user who can press "test connection".
+    return errorResponse(error, req);
   }
 }

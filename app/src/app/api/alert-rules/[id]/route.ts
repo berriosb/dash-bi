@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
+import { errorResponse } from '@/lib/errors/response';
 import { eq, and } from 'drizzle-orm';
 import { withOrgContext } from '@/db/client';
 import { alertRules } from '@/db/schema';
 import { requireAuth } from '@/lib/auth/request';
 import { audit } from '@/lib/audit/log';
-import { getOrGenerateCorrelationId, toUserError } from '@/lib/errors/to-user-error';
-import { statusFromCode } from '@/lib/errors/types';
+import { getOrGenerateCorrelationId } from '@/lib/errors/to-user-error';
 import {
   UpdateAlertRuleSchema,
   ensureLimit,
@@ -83,8 +83,7 @@ export async function PATCH(
 
     return NextResponse.json({ ok: true });
   } catch (err: unknown) {
-    const appError = toUserError(err, correlationId);
-    return NextResponse.json(appError, { status: statusFromCode(appError.code) });
+    return errorResponse(err, req);
   }
 }
 
@@ -113,7 +112,6 @@ export async function DELETE(
 
     return NextResponse.json({ ok: true });
   } catch (err: unknown) {
-    const appError = toUserError(err, correlationId);
-    return NextResponse.json(appError, { status: statusFromCode(appError.code) });
+    return errorResponse(err, req);
   }
 }
