@@ -1,0 +1,10 @@
+{
+  "$comment": "Baseline for `pnpm audit:check`. Only change a number DOWN, or when an advisory is removed upstream. Raising a number requires updating docs/security/accepted-advisories.md with a justification.",
+  "critical": 0,
+  "high": 3,
+  "allowedHighAdvisories": [
+    "1139346",
+    "1193685",
+    "1240992"
+  ]
+}

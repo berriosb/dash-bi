@@ -23,6 +23,7 @@ WORKDIR /app
 
 # Install deps
 COPY package.json pnpm-lock.yaml ./
+COPY vendor ./vendor
 RUN pnpm install --frozen-lockfile
 
 # Copy source. The worker is a tsx-runtime script (no separate build
@@ -30,7 +31,8 @@ RUN pnpm install --frozen-lockfile
 # For a thinner image, compile to JS with `pnpm worker:pdf:build` and
 # copy the compiled output here. We keep the tsx path for now to mirror
 # the npm script and avoid drift between dev and prod.
-COPY tsconfig.json ./
+COPY tsconfig.json tsconfig.worker.json drizzle.config.ts ./
+COPY drizzle ./drizzle
 COPY src ./src
 COPY scripts ./scripts
 

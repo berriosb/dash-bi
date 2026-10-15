@@ -10,10 +10,14 @@ vi.mock('@/db/client', () => ({
 
 vi.mock('ioredis', () => {
   return {
-    default: vi.fn().mockImplementation(() => ({
-      ping: vi.fn().mockResolvedValue('PONG'),
-      quit: vi.fn().mockResolvedValue('OK'),
-    })),
+    // `new Redis()`: Vitest 4 requires the implementation to be a
+    // function/class, so the arrow is replaced by a regular function.
+    default: vi.fn().mockImplementation(function () {
+      return {
+        ping: vi.fn().mockResolvedValue('PONG'),
+        quit: vi.fn().mockResolvedValue('OK'),
+      };
+    }),
   };
 });
 

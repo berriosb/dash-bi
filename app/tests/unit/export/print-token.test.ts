@@ -17,8 +17,14 @@ const mockRedisInstance = {
 // the constructor's `mockReturnValue`, so we use `vi.clearAllMocks()` in
 // beforeEach and explicitly clear the per-test `mockResolvedValueOnce` queue.
 vi.mock('ioredis', () => ({
-  default: vi.fn(() => mockRedisInstance),
-  Redis: vi.fn(() => mockRedisInstance),
+  // `new Redis()` needs a constructible implementation; Vitest 4 rejects
+  // arrow functions here (it validated them only lazily before).
+  default: vi.fn(function () {
+    return mockRedisInstance;
+  }),
+  Redis: vi.fn(function () {
+    return mockRedisInstance;
+  }),
 }));
 
 vi.mock('@/lib/logger', () => ({

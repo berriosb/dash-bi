@@ -33,9 +33,12 @@ vi.mock('@/lib/audit/log', () => ({
 
 vi.mock('@/lib/ai/gateway', () => {
   return {
-    AiGateway: vi.fn().mockImplementation(() => ({
-      explainWidgetData: mockExplainWidgetData,
-    })),
+    // The route builds `new AiGateway(...)`. Vitest 4 checks that the
+    // implementation is constructible before applying `new`, so this is a
+    // regular function, not an arrow.
+    AiGateway: vi.fn().mockImplementation(function () {
+      return { explainWidgetData: mockExplainWidgetData };
+    }),
   };
 });
 

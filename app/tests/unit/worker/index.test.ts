@@ -25,7 +25,11 @@ const {
 });
 
 vi.mock('bullmq', () => ({
-  Worker: vi.fn(() => mockWorkerInstance),
+  // Vitest 4 validates that a mocked implementation is constructible before
+  // applying `new`, so a plain `function` replaces what used to be an arrow.
+  Worker: vi.fn(function () {
+    return mockWorkerInstance;
+  }),
 }));
 
 vi.mock('@/worker/render-pdf', () => ({

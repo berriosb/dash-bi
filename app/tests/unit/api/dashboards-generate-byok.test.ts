@@ -118,10 +118,15 @@ describe('POST /api/dashboards/generate — BYOK (HIGH-9)', () => {
       return callback(fakeTx);
     });
 
-    mockAiGateway.mockImplementation(() => ({
-      generateDashboard: mockGenerateDashboard,
-      generateNLQAEdit: mockGenerateNLQAEdit,
-    }));
+    // The route builds `new AiGateway(...)`. Vitest 4 checks that the
+    // implementation is constructible before applying `new`, so this is a
+    // regular function, not an arrow.
+    mockAiGateway.mockImplementation(function () {
+      return {
+        generateDashboard: mockGenerateDashboard,
+        generateNLQAEdit: mockGenerateNLQAEdit,
+      };
+    });
   });
 
   it('builds the gateway with the org provider, model and encrypted key', async () => {

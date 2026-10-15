@@ -12,6 +12,8 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-dashbi}
       POSTGRES_USER: ${POSTGRES_USER:-dashbi}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}
+      POSTGRES_APP_USER: ${POSTGRES_APP_USER:-dashbi_app}
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:?POSTGRES_APP_PASSWORD required}
       # Read-only user para queries ejecutadas por IA (defense in depth)
       POSTGRES_READONLY_USER: ${POSTGRES_READONLY_USER:-dashbi_readonly}
       POSTGRES_READONLY_PASSWORD: ${POSTGRES_READONLY_PASSWORD:?POSTGRES_READONLY_PASSWORD required}
@@ -121,10 +123,18 @@ services:
       redis:
         condition: service_healthy
     environment:
+      DATABASE_URL: postgresql://${POSTGRES_APP_USER:-dashbi_app}:${POSTGRES_APP_PASSWORD}@postgres:5432/${POSTGRES_DB:-dashbi}
+      DATABASE_MIGRATION_URL: postgresql://${POSTGRES_USER:-dashbi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-dashbi}
+      DATABASE_READONLY_URL: postgresql://${POSTGRES_READONLY_USER:-dashbi_readonly}:${POSTGRES_READONLY_PASSWORD}@postgres:5432/${POSTGRES_DB:-dashbi}
       REDIS_URL: redis://redis:6379
+      LLM_KEY_ENCRYPTION_KEY: ${LLM_KEY_ENCRYPTION_KEY:?LLM_KEY_ENCRYPTION_KEY required (32 bytes hex)}
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-resend}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-dash-bi <noreply@dash-bi.com>}
       PDF_WORKER_PORT: 3001
       PDF_WORKER_SECRET: ${PDF_WORKER_SECRET:?PDF_WORKER_SECRET required}
       NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+      INTERNAL_APP_URL: ${INTERNAL_APP_URL:-http://app:3000}
       NODE_ENV: ${NODE_ENV:-production}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       # Chrome limits

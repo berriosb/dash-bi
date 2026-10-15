@@ -3,7 +3,7 @@ import { z } from 'zod';
 // Validación runtime de env vars con Zod
 // Falla rápido en boot si falta algo crítico
 
-const envSchema = z.object({
+export const envSchema = z.object({
   // App
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   NEXT_PUBLIC_APP_URL: z.string().url().default('http://localhost:3000'),
@@ -37,7 +37,7 @@ const envSchema = z.object({
   GOOGLE_REDIRECT_URI: z.string().url().optional(),
 
   // Email
-  EMAIL_PROVIDER: z.enum(['resend', 'postmark', 'ses', 'nodemailer']).default('resend'),
+  EMAIL_PROVIDER: z.enum(['resend', 'postmark', 'ses', 'nodemailer', 'mock']).default('resend'),
   RESEND_API_KEY: z.string().optional(),
   EMAIL_FROM: z.string().default('dash-bi <noreply@dash-bi.com>'),
 

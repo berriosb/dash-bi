@@ -14,6 +14,24 @@ name: dashbi
 # secret gates.
 
 services:
+  migrate:
+    build:
+      context: ./app
+      dockerfile: Dockerfile.migrate
+    image: dashbi/migrate:${VERSION:-latest}
+    # One-shot: applies the schema and exits. `restart: no` is explicit so a
+    # failed migration is not retried in a loop that hides the error.
+    restart: 'no'
+    environment:
+      # The one role that owns the schema. Both `drizzle-kit migrate`
+      # (DATABASE_MIGRATION_URL) and `scripts/setup-rls.ts` read it; the
+      # app's own DATABASE_URL must never point here (HIGH-5).
+      - DATABASE_MIGRATION_URL=postgres://${POSTGRES_USER:?POSTGRES_USER required}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB required}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [dashbi]
+
   app:
     build:
       context: ./app
@@ -50,6 +68,13 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      # The app image is a `standalone` bundle with no drizzle-kit, so the
+      # schema cannot be migrated from inside it. `migrate` applies the
+      # pending migrations plus the RLS policies and then exits;
+      # `service_completed_successfully` is what stops a new build from
+      # serving traffic against the previous schema.
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
       interval: 30s
@@ -79,10 +104,15 @@ services:
       - DATABASE_URL=postgres://${POSTGRES_APP_USER:?POSTGRES_APP_USER required}:${POSTGRES_APP_PASSWORD:?POSTGRES_APP_PASSWORD required}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB required}
       # Solo para `pnpm db:migrate`: es el owner de las tablas.
       - DATABASE_MIGRATION_URL=postgres://${POSTGRES_USER:?POSTGRES_USER required}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB required}
+      - DATABASE_READONLY_URL=postgres://${POSTGRES_READONLY_USER:?POSTGRES_READONLY_USER required}:${POSTGRES_READONLY_PASSWORD:?POSTGRES_READONLY_PASSWORD required}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB required}
       - REDIS_URL=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD required}@redis:6379
       - LLM_KEY_ENCRYPTION_KEY=${LLM_KEY_ENCRYPTION_KEY:?LLM_KEY_ENCRYPTION_KEY required (32 bytes hex)}
+      - PDF_WORKER_SECRET=${PDF_WORKER_SECRET:?PDF_WORKER_SECRET required (>=16 chars)}
+      - EMAIL_PROVIDER=${EMAIL_PROVIDER:-resend}
+      - RESEND_API_KEY=${RESEND_API_KEY:-}
       - EMAIL_FROM=${EMAIL_FROM:-noreply@dash-bi.com}
       - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+      - INTERNAL_APP_URL=${INTERNAL_APP_URL:-http://app:3000}
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - EXPORTS_DIR=/var/lib/dash-bi/exports
     depends_on:

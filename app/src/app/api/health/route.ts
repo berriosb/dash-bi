@@ -28,15 +28,19 @@ export async function GET() {
 
   // Check Redis
   const redisStart = Date.now();
+  let redis: Redis | null = null;
   try {
     const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
-    const redis = new Redis(redisUrl, { maxRetriesPerRequest: 1, connectTimeout: 1000, lazyConnect: false });
+    redis = new Redis(redisUrl, { maxRetriesPerRequest: 1, connectTimeout: 1000, lazyConnect: false });
     await redis.ping();
-    await redis.quit();
     checks.services.redis = { ok: true, latencyMs: Date.now() - redisStart };
   } catch {
     checks.services.redis = { ok: false, latencyMs: Date.now() - redisStart };
     if (checks.status === 'ok') checks.status = 'degraded';
+  } finally {
+    if (redis) {
+      await redis.quit().catch(() => {});
+    }
   }
 
   const httpStatus = checks.status === 'ok' ? 200 : checks.status === 'degraded' ? 200 : 503;
