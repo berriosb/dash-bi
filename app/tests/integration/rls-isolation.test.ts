@@ -310,4 +310,111 @@ describe('T1 — Cross-tenant isolation (Postgres RLS, real DB)', () => {
     });
     expect(txVisible?.orgId).toBe(orgA.id);
   });
+
+  itWithDb('org_members_isolation allows same-org listing and admin invites while blocking cross-org writes (migration 0017)', async () => {
+    const { users, orgs, orgMembers } = schemaRef();
+
+    const [orgA, orgB] = await db.insert(orgs).values([
+      { name: 'Org A', slug: 'members-org-a' },
+      { name: 'Org B', slug: 'members-org-b' },
+    ]).returning();
+    if (!orgA || !orgB) throw new Error('seed: orgs missing');
+
+    const [adminA, editorA, invitee, userB] = await db.insert(users).values([
+      { email: 'admin-a@test.invalid', name: 'Admin A' },
+      { email: 'editor-a@test.invalid', name: 'Editor A' },
+      { email: 'invitee@test.invalid', name: 'Invitee' },
+      { email: 'user-b@test.invalid', name: 'User B' },
+    ]).returning();
+    if (!adminA || !editorA || !invitee || !userB) throw new Error('seed: users missing');
+
+    await db.insert(orgMembers).values([
+      { orgId: orgA.id, userId: adminA.id, role: 'admin', joinedAt: new Date() },
+      { orgId: orgA.id, userId: editorA.id, role: 'editor', joinedAt: new Date() },
+      { orgId: orgB.id, userId: userB.id, role: 'admin', joinedAt: new Date() },
+    ]);
+
+    // 1. Admin A lists members of Org A: sees both adminA and editorA, and NOT userB
+    const listedByAdminA = await db.transaction(async (tx) => {
+      await setRoleAndGucs(tx, orgA.id, adminA.id, 'admin');
+      return tx.select({ userId: orgMembers.userId }).from(orgMembers).where(eq(orgMembers.orgId, orgA.id));
+    });
+    expect(listedByAdminA.map((m) => m.userId).sort()).toEqual([adminA.id, editorA.id].sort());
+
+    // 2. Admin A invites `invitee` (different userId) into Org A
+    const invitedRow = await db.transaction(async (tx) => {
+      await setRoleAndGucs(tx, orgA.id, adminA.id, 'admin');
+      const [created] = await tx
+        .insert(orgMembers)
+        .values({
+          orgId: orgA.id,
+          userId: invitee.id,
+          role: 'viewer',
+          invitedBy: adminA.id,
+          joinedAt: new Date(),
+        })
+        .returning();
+      return created;
+    });
+    expect(invitedRow?.userId).toBe(invitee.id);
+
+    // 3. Cross-org insert into Org B while scoped to Org A is rejected by WITH CHECK
+    await expect(
+      db.transaction(async (tx) => {
+        await setRoleAndGucs(tx, orgA.id, adminA.id, 'admin');
+        await tx.insert(orgMembers).values({
+          orgId: orgB.id,
+          userId: invitee.id,
+          role: 'viewer',
+          joinedAt: new Date(),
+        });
+      }),
+    ).rejects.toThrow();
+  });
+
+  itWithDb('dashbi_due_scheduled_reports works across orgs for app role and dashbi_readonly cannot read auth tables (migration 0017)', async () => {
+    const { users, orgs, dashboards, scheduledReports } = schemaRef();
+
+    const [orgA] = await db.insert(orgs).values({ name: 'Org A', slug: 'sched-org-a' }).returning();
+    const [userA] = await db.insert(users).values({ email: 'sched@a.test', name: 'A' }).returning();
+    if (!orgA || !userA) throw new Error('seed missing');
+
+    const [dashA] = await db.insert(dashboards).values({
+      orgId: orgA.id, title: 'Dash A', widgets: [], createdBy: userA.id, updatedBy: userA.id,
+    }).returning();
+    if (!dashA) throw new Error('seed dashA missing');
+
+    await db.insert(scheduledReports).values({
+      orgId: orgA.id,
+      dashboardId: dashA.id,
+      createdBy: userA.id,
+      cron: '0 9 * * 1',
+      timezone: 'UTC',
+      format: 'pdf',
+      includeBranding: false,
+      recipients: [{ email: 'cfo@org-a.test' }],
+      enabled: true,
+      nextRunAt: new Date('2020-01-01T00:00:00Z'),
+      title: 'Due report',
+    });
+
+    const due = await db.transaction(async (tx) => {
+      await tx.execute(sql.raw('SET LOCAL ROLE dashbi'));
+      return tx.execute<{ title: string }>(sql`SELECT title FROM dashbi_due_scheduled_reports(NOW())`);
+    });
+    expect(due.map((r) => r.title)).toEqual(['Due report']);
+
+    // dashbi_readonly must not have SELECT privilege on sensitive auth/system tables
+    const privs = await db.execute<{ tablename: string; can_select: boolean }>(sql`
+      SELECT t.tablename,
+             has_table_privilege('dashbi_readonly', format('public.%I', t.tablename), 'SELECT') AS can_select
+      FROM pg_tables t
+      WHERE t.schemaname = 'public'
+        AND t.tablename IN ('users', 'sessions', 'accounts', 'verifications', 'data_sources', 'public_links', 'orgs', 'org_members', 'audit_log', 'alert_rules')
+    `);
+    expect(privs.length).toBe(10);
+    for (const row of privs) {
+      expect(row.can_select, `dashbi_readonly can still SELECT from public.${row.tablename}`).toBe(false);
+    }
+  });
 });
