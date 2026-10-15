@@ -1,7 +1,9 @@
 import { decryptApiKey } from '@/lib/security/encryption';
 import { validateQuery } from '@/lib/security/validate-query';
 import { validatePostgresHost, SSRFError } from '@/lib/security/validate-connection';
-import type { Connector, ConnectorConfig, ConnectorSchema, Query, QueryResult } from '../types';
+import { throwIfAborted } from '../types';
+import type { Connector, ConnectorConfig, ConnectorSchema, ExecuteQueryOptions,
+  Query, QueryResult } from '../types';
 
 export type ShopifyConfig = {
   shopUrl: string;
@@ -118,7 +120,13 @@ export class ShopifyConnector implements Connector {
     };
   }
 
-  async executeQuery<T = Record<string, unknown>>(query: Query): Promise<QueryResult<T>> {
+  async executeQuery<T = Record<string, unknown>>(
+    query: Query,
+    opts?: ExecuteQueryOptions,
+  ): Promise<QueryResult<T>> {
+    throwIfAborted(opts?.signal);
+    // Pure validator: only a throw here matters for Shopify, since the
+    // resource is chosen by reading the SQL and the request is REST.
     validateQuery(query, 'shopify');
 
     const start = Date.now();
@@ -132,6 +140,7 @@ export class ShopifyConnector implements Connector {
 
     const res = await fetch(`${this.baseUrl}/${resource}.json?limit=250`, {
       headers: this.headers,
+      signal: opts?.signal,
     });
 
     if (!res.ok) {

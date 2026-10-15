@@ -1,6 +1,8 @@
 import { google } from 'googleapis';
 import { decryptApiKey } from '@/lib/security/encryption';
-import type { Connector, ConnectorConfig, ConnectorSchema, Query, QueryResult } from '../types';
+import { throwIfAborted } from '../types';
+import type { Connector, ConnectorConfig, ConnectorSchema, ExecuteQueryOptions,
+  Query, QueryResult } from '../types';
 
 export type SheetsConfig = {
   refreshTokenEncrypted: string;
@@ -79,7 +81,11 @@ export class SheetsConnector implements Connector {
     return { tables };
   }
 
-  async executeQuery<T = Record<string, unknown>>(query: Query): Promise<QueryResult<T>> {
+  async executeQuery<T = Record<string, unknown>>(
+    query: Query,
+    opts?: ExecuteQueryOptions,
+  ): Promise<QueryResult<T>> {
+    throwIfAborted(opts?.signal);
     if (query.kind !== 'sheets') {
       throw new Error('Sheets connector only supports sheet queries');
     }

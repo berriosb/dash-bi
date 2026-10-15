@@ -2,7 +2,9 @@ import postgres from 'postgres';
 import { decryptApiKey } from '@/lib/security/encryption';
 import { validateQuery } from '@/lib/security/validate-query';
 import { validatePostgresHost, SSRFError } from '@/lib/security/validate-connection';
-import type { Connector, ConnectorConfig, ConnectorSchema, Query, QueryResult } from '../types';
+import { throwIfAborted } from '../types';
+import type { Connector, ConnectorConfig, ConnectorSchema, ExecuteQueryOptions,
+  Query, QueryResult } from '../types';
 
 export type PostgresConfig = {
   host: string;
@@ -14,10 +16,46 @@ export type PostgresConfig = {
   allowedSchemas?: string[];
 };
 
+const MAX_CACHED_POOLS = 50;
+const postgresPools = new Map<string, ReturnType<typeof postgres>>();
+
+function getOrCreatePostgresPool(
+  key: string,
+  config: PostgresConfig,
+): ReturnType<typeof postgres> {
+  const existing = postgresPools.get(key);
+  if (existing) return existing;
+
+  if (postgresPools.size >= MAX_CACHED_POOLS) {
+    const oldestKey = postgresPools.keys().next().value;
+    if (oldestKey) {
+      const oldestPool = postgresPools.get(oldestKey);
+      postgresPools.delete(oldestKey);
+      void oldestPool?.end({ timeout: 5 }).catch(() => {});
+    }
+  }
+
+  const client = postgres({
+    host: config.host,
+    port: config.port,
+    database: config.database,
+    username: config.username,
+    password: config.password,
+    ssl: config.ssl ? 'require' : false,
+    max: 5,
+    idle_timeout: 20,
+    connect_timeout: 10,
+    transform: { undefined: null },
+  });
+  postgresPools.set(key, client);
+  return client;
+}
+
 export class PostgresConnector implements Connector {
   type = 'postgres' as const;
   private client: ReturnType<typeof postgres>;
   private config: PostgresConfig;
+  private poolKey: string;
 
   constructor(connectorConfig: ConnectorConfig) {
     const rawConfig = decryptApiKey(connectorConfig.configEncrypted);
@@ -37,18 +75,8 @@ export class PostgresConnector implements Connector {
       throw new SSRFError(`Invalid Postgres host: ${(err as Error).message}`);
     }
 
-    this.client = postgres({
-      host: this.config.host,
-      port: this.config.port,
-      database: this.config.database,
-      username: this.config.username,
-      password: this.config.password,
-      ssl: this.config.ssl ? 'require' : false,
-      max: 5,
-      idle_timeout: 20,
-      connect_timeout: 10,
-      transform: { undefined: null },
-    });
+    this.poolKey = `${connectorConfig.id}:${connectorConfig.configEncrypted}`;
+    this.client = getOrCreatePostgresPool(this.poolKey, this.config);
   }
 
   async testConnection(): Promise<{ ok: boolean; latencyMs: number; error?: string }> {
@@ -100,16 +128,25 @@ export class PostgresConnector implements Connector {
     return result;
   }
 
-  async executeQuery<T = Record<string, unknown>>(query: Query): Promise<QueryResult<T>> {
+  async executeQuery<T = Record<string, unknown>>(
+    query: Query,
+    opts?: ExecuteQueryOptions,
+  ): Promise<QueryResult<T>> {
+    // postgres.js 3.x exposes no way to cancel an in-flight statement, so
+    // the signal is only honored for a query that has not been issued yet.
+    // The bound on a runaway query is `statement_timeout` on the server
+    // side, not this path.
+    throwIfAborted(opts?.signal);
     if (query.kind !== 'sql') {
       throw new Error('Postgres connector only supports SQL queries');
     }
 
-    // Safety validation
-    validateQuery(query, 'postgres');
+    // Safety validation. `validateQuery` is pure: the normalized SQL (LIMIT
+    // injected or clamped) comes back as the return value, so the statement
+    // sent to the driver is derived here instead of read off `query`.
+    const sqlStr = validateQuery(query, 'postgres') ?? query.sql;
 
     const start = Date.now();
-    const sqlStr = query.sql;
     const params = (query.params as unknown[]) || [];
 
     const rows = await this.client.unsafe(sqlStr, params as never[]);
@@ -123,6 +160,7 @@ export class PostgresConnector implements Connector {
   }
 
   async close(): Promise<void> {
+    postgresPools.delete(this.poolKey);
     await this.client.end();
   }
 }

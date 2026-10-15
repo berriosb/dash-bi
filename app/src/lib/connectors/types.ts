@@ -64,11 +64,48 @@ export type QueryResult<T = Record<string, unknown>> = {
   truncated?: boolean;
 };
 
+export interface ExecuteQueryOptions {
+  /**
+   * Cancellation signal, aborted by `executeWithTimeout` when the deadline
+   * passes.
+   *
+   * Implementations MUST honor it in whatever way the underlying driver
+   * allows, and MUST reject with the signal's `reason` once aborted rather
+   * than resolving with a partial result. Drivers that cannot interrupt an
+   * in-flight statement (postgres.js 3.x has no cancel API) may only check
+   * `signal.aborted` before issuing — documented per implementation.
+   */
+  signal?: AbortSignal;
+
+  /**
+   * The caller's deadline in milliseconds.
+   *
+   * Distinct from `signal`: some SDKs (stripe-node) can only bound a
+   * request with a timeout and have no way to observe an AbortSignal, so
+   * they use this instead. Connectors that can do real cancellation should
+   * use `signal`.
+   */
+  timeoutMs?: number;
+}
+
 export interface Connector {
   type: ConnectorType;
   testConnection(): Promise<{ ok: boolean; latencyMs: number; error?: string }>;
   getSchema(): Promise<ConnectorSchema>;
-  executeQuery<T = Record<string, unknown>>(query: Query): Promise<QueryResult<T>>;
+  executeQuery<T = Record<string, unknown>>(
+    query: Query,
+    opts?: ExecuteQueryOptions,
+  ): Promise<QueryResult<T>>;
+}
+
+/**
+ * Rejects with the signal's reason when the signal is already aborted, so a
+ * caller can short-circuit before touching the network or the pool.
+ */
+export function throwIfAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) {
+    throw signal.reason instanceof Error ? signal.reason : new Error('Query aborted');
+  }
 }
 
 export function pruneSchemaForPrompt(schema: ConnectorSchema, userPrompt: string, maxTables = 15): ConnectorSchema {

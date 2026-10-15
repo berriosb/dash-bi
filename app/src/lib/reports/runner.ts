@@ -4,20 +4,60 @@ import { parseCronAndNextRun } from './cron';
 import { enqueuePdfExport } from '@/lib/export/pdf-enqueue';
 import { sendEmail } from '@/lib/email';
 import { logger } from '@/lib/logger';
-import { eq, lte, and } from 'drizzle-orm';
+import { eq, lte, and, sql } from 'drizzle-orm';
 
 export interface ProcessDueReportsOptions {
   now?: Date;
 }
 
+interface DueReportRow {
+  id: string;
+  orgId: string;
+  dashboardId: string;
+  createdBy: string;
+  cron: string;
+  enabled: boolean;
+  includeBranding: boolean;
+  recipients: Array<{ email: string }>;
+  nextRunAt: Date;
+  title?: string | null;
+}
+
+function normalizeDueReportRow(raw: Record<string, unknown>): DueReportRow {
+  return {
+    id: String(raw.id),
+    orgId: String(raw.orgId ?? raw.org_id),
+    dashboardId: String(raw.dashboardId ?? raw.dashboard_id),
+    createdBy: String(raw.createdBy ?? raw.created_by),
+    cron: String(raw.cron),
+    enabled: Boolean(raw.enabled),
+    includeBranding: Boolean(raw.includeBranding ?? raw.include_branding),
+    recipients: (raw.recipients as Array<{ email: string }>) ?? [],
+    nextRunAt:
+      raw.nextRunAt instanceof Date
+        ? raw.nextRunAt
+        : raw.next_run_at instanceof Date
+          ? raw.next_run_at
+          : new Date(String(raw.nextRunAt ?? raw.next_run_at)),
+    title: (raw.title as string | null | undefined) ?? null,
+  };
+}
+
 export async function processDueScheduledReports(options: ProcessDueReportsOptions = {}) {
   const now = options.now ?? new Date();
 
-  // 1. Fetch all enabled reports where nextRunAt <= now
-  const dueReports = await db
-    .select()
-    .from(scheduledReports)
-    .where(and(eq(scheduledReports.enabled, true), lte(scheduledReports.nextRunAt, now)));
+  // 1. Fetch all enabled reports where nextRunAt <= now via SECURITY DEFINER helper
+  const dueReports: DueReportRow[] =
+    typeof (db as { execute?: unknown }).execute === 'function'
+      ? (
+          await db.execute<Record<string, unknown>>(
+            sql`SELECT * FROM dashbi_due_scheduled_reports(${now.toISOString()}::timestamptz)`,
+          )
+        ).map(normalizeDueReportRow)
+      : await db
+          .select()
+          .from(scheduledReports)
+          .where(and(eq(scheduledReports.enabled, true), lte(scheduledReports.nextRunAt, now)));
 
   logger.info({ count: dueReports.length, now: now.toISOString() }, 'Running processDueScheduledReports');
 

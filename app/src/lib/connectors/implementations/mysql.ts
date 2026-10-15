@@ -2,7 +2,9 @@ import mysql from 'mysql2/promise';
 import { decryptApiKey } from '@/lib/security/encryption';
 import { validateQuery } from '@/lib/security/validate-query';
 import { validatePostgresHost, SSRFError } from '@/lib/security/validate-connection';
-import type { Connector, ConnectorConfig, ConnectorSchema, Query, QueryResult } from '../types';
+import { throwIfAborted } from '../types';
+import type { Connector, ConnectorConfig, ConnectorSchema, ExecuteQueryOptions,
+  Query, QueryResult } from '../types';
 
 export type MysqlConfig = {
   host: string;
@@ -13,10 +15,42 @@ export type MysqlConfig = {
   ssl?: boolean;
 };
 
+const MAX_CACHED_POOLS = 50;
+const mysqlPools = new Map<string, mysql.Pool>();
+
+function getOrCreateMysqlPool(key: string, config: MysqlConfig): mysql.Pool {
+  const existing = mysqlPools.get(key);
+  if (existing) return existing;
+
+  if (mysqlPools.size >= MAX_CACHED_POOLS) {
+    const oldestKey = mysqlPools.keys().next().value;
+    if (oldestKey) {
+      const oldestPool = mysqlPools.get(oldestKey);
+      mysqlPools.delete(oldestKey);
+      void oldestPool?.end().catch(() => {});
+    }
+  }
+
+  const pool = mysql.createPool({
+    host: config.host,
+    port: config.port ?? 3306,
+    database: config.database,
+    user: config.username,
+    password: config.password,
+    ssl: config.ssl ? { rejectUnauthorized: false } : undefined,
+    connectionLimit: 5,
+    connectTimeout: 10000,
+    idleTimeout: 20000,
+  });
+  mysqlPools.set(key, pool);
+  return pool;
+}
+
 export class MysqlConnector implements Connector {
   type = 'mysql' as const;
   private pool: mysql.Pool;
   private config: MysqlConfig;
+  private poolKey: string;
 
   constructor(connectorConfig: ConnectorConfig) {
     const rawConfig = decryptApiKey(connectorConfig.configEncrypted);
@@ -31,16 +65,13 @@ export class MysqlConnector implements Connector {
       throw new SSRFError(`Invalid MySQL host: ${(err as Error).message}`);
     }
 
-    this.pool = mysql.createPool({
-      host: this.config.host,
-      port: this.config.port ?? 3306,
-      database: this.config.database,
-      user: this.config.username,
-      password: this.config.password,
-      ssl: this.config.ssl ? { rejectUnauthorized: false } : undefined,
-      connectionLimit: 5,
-      connectTimeout: 10000,
-    });
+    this.poolKey = `${connectorConfig.id}:${connectorConfig.configEncrypted}`;
+    this.pool = getOrCreateMysqlPool(this.poolKey, this.config);
+  }
+
+  async close(): Promise<void> {
+    mysqlPools.delete(this.poolKey);
+    await this.pool.end();
   }
 
   async testConnection(): Promise<{ ok: boolean; latencyMs: number; error?: string }> {
@@ -86,15 +117,23 @@ export class MysqlConnector implements Connector {
     return { tables };
   }
 
-  async executeQuery<T = Record<string, unknown>>(query: Query): Promise<QueryResult<T>> {
+  async executeQuery<T = Record<string, unknown>>(
+    query: Query,
+    opts?: ExecuteQueryOptions,
+  ): Promise<QueryResult<T>> {
+    // mysql2 has no portable cancel for a running statement on a pooled
+    // connection; the signal is honored only before the query is issued.
+    throwIfAborted(opts?.signal);
     if (query.kind !== 'sql') {
       throw new Error('MySQL connector expects SQL query');
     }
 
-    validateQuery(query, 'mysql');
+    // `validateQuery` is pure; the normalized SQL (LIMIT injected or clamped)
+    // is what has to reach the driver.
+    const sqlStr = validateQuery(query, 'mysql') ?? query.sql;
 
     const start = Date.now();
-    const [rows] = (await this.pool.query(query.sql, query.params ?? [])) as unknown as [T[]];
+    const [rows] = (await this.pool.query(sqlStr, query.params ?? [])) as unknown as [T[]];
     const executionTimeMs = Date.now() - start;
 
     const rowArray = Array.isArray(rows) ? rows : [];

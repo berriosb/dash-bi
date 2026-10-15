@@ -88,8 +88,9 @@ export async function runAlertEvaluator(
   }
 
   // 3. Re-validate SQL at evaluate time (defense in depth)
+  const queryObj = { kind: 'sql' as const, sql: r.querySql };
   try {
-    validateQuery({ kind: 'sql', sql: r.querySql }, 'postgres');
+    validateQuery(queryObj, 'postgres');
   } catch (err) {
     await markEvaluationFailed(r, correlationId, err);
     throw err;
@@ -98,8 +99,8 @@ export async function runAlertEvaluator(
   // 4. Execute query against read-only DB role
   let value: number | string | null;
   try {
-    const rows = await withOrgContextReadOnly(r.orgId, '', async (tx) => {
-      return tx.execute(r.querySql as never);
+    const rows = await withOrgContextReadOnly(r.orgId, null, async (tx) => {
+      return tx.execute(sql.raw(queryObj.sql));
     });
     value = extractValue(rows, r.queryColumns.value);
   } catch (err) {

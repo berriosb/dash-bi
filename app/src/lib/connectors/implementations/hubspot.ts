@@ -1,6 +1,8 @@
 import { decryptApiKey } from '@/lib/security/encryption';
 import { validateQuery } from '@/lib/security/validate-query';
-import type { Connector, ConnectorConfig, ConnectorSchema, Query, QueryResult } from '../types';
+import { throwIfAborted } from '../types';
+import type { Connector, ConnectorConfig, ConnectorSchema, ExecuteQueryOptions,
+  Query, QueryResult } from '../types';
 
 export type HubspotConfig = {
   accessToken: string;
@@ -128,7 +130,13 @@ export class HubspotConnector implements Connector {
     };
   }
 
-  async executeQuery<T = Record<string, unknown>>(query: Query): Promise<QueryResult<T>> {
+  async executeQuery<T = Record<string, unknown>>(
+    query: Query,
+    opts?: ExecuteQueryOptions,
+  ): Promise<QueryResult<T>> {
+    throwIfAborted(opts?.signal);
+    // Pure validator: only the throw matters for Hubspot, the request below
+    // is REST and never interpolates the SQL.
     validateQuery(query, 'hubspot');
 
     const start = Date.now();
@@ -141,7 +149,7 @@ export class HubspotConnector implements Connector {
       url.searchParams.set('properties', properties.join(','));
     }
 
-    const res = await fetch(url.toString(), { headers: this.headers });
+    const res = await fetch(url.toString(), { headers: this.headers, signal: opts?.signal });
 
     if (!res.ok) {
       throw new Error(`Hubspot query failed with HTTP ${res.status}`);

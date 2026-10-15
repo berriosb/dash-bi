@@ -62,35 +62,62 @@ export async function executeWithTimeout(
     throw new QueryCircuitOpenError(connectorId);
   }
 
-  // Sprint 1: validar ANTES de ejecutar (T2 SQL injection defense)
+  // Sprint 1: validar ANTES de ejecutar (T2 SQL injection defense).
+  //
+  // `validateQuery` is pure: it returns the SQL with the LIMIT injected or
+  // clamped and leaves `query` alone, so the statement that actually runs
+  // is built here. Reusing the caller's object would skip the LIMIT
+  // entirely now that nothing writes back.
+  let effectiveQuery = query;
   if (shouldValidate) {
-    // Sprint 1.5: spreadsheet queries carry their own SQL inside the
-    // `kind: 'spreadsheet'` discriminator. validateQuery expects a
-    // `{kind:'sql'}` shape, so we project before validating.
-    const queryForValidation =
-      query.kind === 'spreadsheet'
-        ? { kind: 'sql' as const, sql: query.sql, params: query.params }
-        : query;
-    validateQuery(queryForValidation, connector.type, opts.role);
+    const normalizedSql = validateQuery(query, connector.type, opts.role);
+    if (normalizedSql !== undefined) {
+      effectiveQuery = { ...query, sql: normalizedSql } as Query;
+    }
   }
 
   const start = Date.now();
 
   for (let attempt = 0; attempt <= retries; attempt++) {
+    let timerId: ReturnType<typeof setTimeout> | undefined;
+    // One controller per attempt. On timeout it is aborted with the same
+    // QueryTimeoutError the race rejects with, so a connector that honors
+    // `signal` stops the work instead of leaving it running against the
+    // customer's database after the caller already gave up. Without this
+    // the connection stays pinned until Postgres/MySQL finishes a query
+    // nobody is waiting for, which is how a few slow dashboards starve
+    // the pool.
+    const controller = new AbortController();
     try {
       const result = await Promise.race([
-        connector.executeQuery(query),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new QueryTimeoutError(timeoutMs)), timeoutMs),
-        ),
+        connector.executeQuery(effectiveQuery, { signal: controller.signal, timeoutMs }),
+        new Promise<never>((_, reject) => {
+          timerId = setTimeout(() => {
+            const timeoutError = new QueryTimeoutError(timeoutMs);
+            controller.abort(timeoutError);
+            reject(timeoutError);
+          }, timeoutMs);
+        }),
       ]);
 
       recordSuccess(connectorId);
       return { ...result, executionTimeMs: Date.now() - start };
     } catch (error) {
-      if (attempt === retries) {
+      // A connector that honored the abort rejects with the same
+      // QueryTimeoutError. Map anything else the abort surfaced back to the
+      // timeout so the caller sees one error type, not a driver-specific
+      // AbortError after the deadline already passed.
+      if (controller.signal.aborted && !(error instanceof QueryTimeoutError)) {
+        recordFailure(connectorId);
+        throw controller.signal.reason;
+      }
+      if (attempt === retries || error instanceof QueryTimeoutError) {
         recordFailure(connectorId);
         throw error;
+      }
+    } finally {
+      if (timerId !== undefined) {
+        clearTimeout(timerId);
       }
     }
   }

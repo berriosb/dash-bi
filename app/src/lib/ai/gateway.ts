@@ -7,6 +7,7 @@ import { validateDashboardWithArchetype } from '@/lib/widgets/validator';
 import type { LLMProvider, GenerateDashboardInput, LLMUsage } from './types';
 import { toLLMUsage } from './types';
 import type { Dashboard, Widget, WidgetType } from '@/lib/widgets/types';
+import type { ConnectorType } from '@/lib/connectors/types';
 
 type GeneratedWidget = {
   type: WidgetType;
@@ -94,7 +95,7 @@ export interface NLQAHistoryTurn {
 export interface NLQAGenerateSqlInput {
   question: string;
   schemaInfo: string;
-  dataSourceType: 'postgres' | 'stripe' | 'sheets';
+  dataSourceType: ConnectorType;
   history?: NLQAHistoryTurn[];
 }
 
@@ -116,7 +117,7 @@ export interface NLQAGenerateEditInput {
     widgets: Widget[];
   };
   schemaInfo: string;
-  dataSourceType: 'postgres' | 'stripe' | 'sheets';
+  dataSourceType: ConnectorType;
 }
 
 export interface NLQAEditResult {

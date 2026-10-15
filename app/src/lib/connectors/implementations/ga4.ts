@@ -1,5 +1,13 @@
 import { decryptApiKey } from '@/lib/security/encryption';
-import type { Connector, ConnectorConfig, ConnectorSchema, Query, QueryResult } from '../types';
+import { throwIfAborted } from '../types';
+import type {
+  Connector,
+  ConnectorConfig,
+  ConnectorSchema,
+  ExecuteQueryOptions,
+  Query,
+  QueryResult,
+} from '../types';
 
 export type GA4Config = {
   accessToken: string;
@@ -141,7 +149,11 @@ export class GA4Connector implements Connector {
     };
   }
 
-  async executeQuery<T = Record<string, unknown>>(query: Query): Promise<QueryResult<T>> {
+  async executeQuery<T = Record<string, unknown>>(
+    query: Query,
+    opts?: ExecuteQueryOptions,
+  ): Promise<QueryResult<T>> {
+    throwIfAborted(opts?.signal);
     if (query.kind !== 'ga4') {
       throw new Error('GA4 expects a `ga4` query (metrics/dimensions/dateRange)');
     }
@@ -175,6 +187,7 @@ export class GA4Connector implements Connector {
       method: 'POST',
       headers: this.headers,
       body: JSON.stringify(requestBody),
+      signal: opts?.signal,
     });
 
     if (!res.ok) {

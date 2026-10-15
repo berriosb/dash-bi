@@ -1,6 +1,8 @@
 import Stripe from 'stripe';
 import { decryptApiKey } from '@/lib/security/encryption';
-import type { Connector, ConnectorConfig, ConnectorSchema, Query, QueryResult, StripeOperation } from '../types';
+import { throwIfAborted } from '../types';
+import type { Connector, ConnectorConfig, ConnectorSchema, ExecuteQueryOptions,
+  Query, QueryResult, StripeOperation } from '../types';
 
 export type StripeConfig = {
   apiKey: string;
@@ -86,17 +88,27 @@ export class StripeConnector implements Connector {
     return STRIPE_SCHEMA;
   }
 
-  async executeQuery<T = Record<string, unknown>>(query: Query): Promise<QueryResult<T>> {
+  async executeQuery<T = Record<string, unknown>>(
+    query: Query,
+    opts?: ExecuteQueryOptions,
+  ): Promise<QueryResult<T>> {
+    throwIfAborted(opts?.signal);
     if (query.kind !== 'stripe') {
       throw new Error('Stripe connector only supports stripe operations');
     }
+
+    // stripe-node 17 has no AbortSignal in its request options; its only
+    // deadline mechanism is `timeout`. Without it a timed-out charge list
+    // keeps a socket open against the customer's Stripe account.
+    const requestOpts =
+      opts?.timeoutMs !== undefined ? { timeout: opts.timeoutMs } : undefined;
 
     const op = query.operation as StripeOperation;
     const start = Date.now();
 
     switch (op.type) {
       case 'listCharges': {
-        const charges = await this.client.charges.list(op.params);
+        const charges = await this.client.charges.list(op.params, requestOpts);
         const rows = charges.data.map((c) => ({
           id: c.id,
           amount: c.amount,
@@ -113,7 +125,7 @@ export class StripeConnector implements Connector {
       }
 
       case 'listSubscriptions': {
-        const subs = await this.client.subscriptions.list(op.params);
+        const subs = await this.client.subscriptions.list(op.params, requestOpts);
         const rows = subs.data.map((s) => ({
           id: s.id,
           status: s.status,
@@ -131,7 +143,7 @@ export class StripeConnector implements Connector {
       }
 
       case 'listCustomers': {
-        const customers = await this.client.customers.list(op.params);
+        const customers = await this.client.customers.list(op.params, requestOpts);
         const rows = customers.data.map((c) => ({
           id: c.id,
           email: c.email,
@@ -146,7 +158,7 @@ export class StripeConnector implements Connector {
       }
 
       case 'listInvoices': {
-        const invoices = await this.client.invoices.list(op.params);
+        const invoices = await this.client.invoices.list(op.params, requestOpts);
         const rows = invoices.data.map((i) => ({
           id: i.id,
           amount_due: i.amount_due,
@@ -172,10 +184,10 @@ export class StripeConnector implements Connector {
         }[op.params.period];
 
         const since = now - periodSeconds * op.params.count;
-        const charges = await this.client.charges.list({
-          created: { gte: since },
-          limit: 100,
-        });
+        const charges = await this.client.charges.list(
+          { created: { gte: since }, limit: 100 },
+          requestOpts,
+        );
 
         const buckets = new Map<string, number>();
         for (const charge of charges.data) {

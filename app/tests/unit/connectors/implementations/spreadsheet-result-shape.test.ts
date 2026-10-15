@@ -8,11 +8,12 @@ const ORG_ID = '11111111-1111-1111-1111-111111111111';
 const FILE_ID = 'file-1';
 
 const mockWithOrgContext = vi.fn();
+const mockWithOrgContextReadOnly = vi.fn();
 
 vi.mock('@/db/client', () => ({
   db: { execute: vi.fn(), transaction: vi.fn() },
   withOrgContext: (...args: unknown[]) => mockWithOrgContext(...args),
-  withOrgContextReadOnly: vi.fn(),
+  withOrgContextReadOnly: (...args: unknown[]) => mockWithOrgContextReadOnly(...args),
 }));
 
 function buildConfig(): ConnectorConfig {
@@ -57,10 +58,15 @@ describe('SpreadsheetConnector.executeQuery — result shape', () => {
   beforeEach(() => vi.clearAllMocks());
 
   function runWith(executeResult: unknown) {
-    const tx = fakeTx(executeResult);
+    // The metadata lookup uses the app role; the query itself runs on the
+    // read-only role, so both fakes have to answer for this file to run.
     mockWithOrgContext.mockImplementation(async (...args: unknown[]) => {
       const fn = args[args.length - 1] as (t: unknown) => Promise<unknown>;
-      return fn(tx);
+      return fn(fakeTx(executeResult));
+    });
+    mockWithOrgContextReadOnly.mockImplementation(async (...args: unknown[]) => {
+      const fn = args[args.length - 1] as (t: unknown) => Promise<unknown>;
+      return fn(fakeTx(executeResult));
     });
     return new SpreadsheetConnector(buildConfig()).executeQuery(QUERY);
   }
