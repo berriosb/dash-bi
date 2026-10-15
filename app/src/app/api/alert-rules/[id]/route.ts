@@ -10,6 +10,7 @@ import {
   UpdateAlertRuleSchema,
   ensureLimit,
   assertConditionInvariants,
+  encryptAlertChannels,
 } from '@/lib/alerts/schemas';
 import { validateQuery } from '@/lib/security/validate-query';
 
@@ -56,7 +57,9 @@ export async function PATCH(
     if (validated.consecutiveBreachesToFire !== undefined) {
       updates.consecutiveBreachesToFire = validated.consecutiveBreachesToFire;
     }
-    if (validated.channels !== undefined) updates.channels = validated.channels;
+    if (validated.channels !== undefined) {
+      updates.channels = encryptAlertChannels(validated.channels);
+    }
     if (validated.cooldownMinutes !== undefined) {
       updates.cooldownMinutes = validated.cooldownMinutes;
     }

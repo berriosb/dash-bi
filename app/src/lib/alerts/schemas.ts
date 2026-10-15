@@ -9,7 +9,8 @@
  */
 import { z } from 'zod';
 import { validateOutboundUrl } from '@/lib/security/validate-connection';
-import type { AlertCondition, AlertPlan } from './types';
+import { encryptApiKey, decryptApiKey } from '@/lib/security/encryption';
+import type { AlertChannelConfig, AlertCondition, AlertPlan } from './types';
 import { ALERT_LIMITS } from './types';
 
 // ─────────────────────────────────────────────────────────────────
@@ -111,6 +112,111 @@ export const UpdateAlertRuleSchema = CreateAlertRuleSchema.partial().extend({
 // ─────────────────────────────────────────────────────────────────
 // Coercion + injection helpers
 // ─────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────
+// Secret handling for channels
+// ─────────────────────────────────────────────────────────────────
+
+/**
+ * Placeholder returned in place of a stored secret. The client renders
+ * labels and "test channel" actions, never the raw endpoint, so the
+ * ciphertext has no reason to leave the server either.
+ */
+export const REDACTED_SECRET = '[REDACTED]';
+
+/**
+ * True when `value` is a payload this module produced (i.e. already
+ * encrypted with the same master key).
+ *
+ * Both directions are idempotent because a rule can be rewritten from a
+ * form that was populated by `GET` (masked) or migrated from plaintext:
+ * re-encrypting a ciphertext would produce a value that decrypts to
+ * base64 noise instead of the URL, silently breaking every delivery.
+ */
+function isEncrypted(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length === 0) return false;
+  try {
+    decryptApiKey(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Encrypt the secret-bearing fields of an alert channel list so a
+ * Slack webhook URL or a custom webhook endpoint is never stored in
+ * plaintext. Non-secret fields (`channelLabel`, `recipients`, …) pass
+ * through untouched.
+ *
+ * Note: `AlertChannelConfigSchema` validates the *plaintext* shape, so
+ * encryption must happen after Zod parsing — a round-tripped channel
+ * would otherwise fail `.url()`.
+ */
+export function encryptAlertChannels(
+  channels: AlertChannelConfig[] | null | undefined,
+): AlertChannelConfig[] {
+  if (!Array.isArray(channels)) return [];
+  return channels.map((channel) => {
+    if (channel.type === 'slack' && !isEncrypted(channel.webhookUrl)) {
+      return { ...channel, webhookUrl: encryptApiKey(channel.webhookUrl) };
+    }
+    if (channel.type === 'webhook' && !isEncrypted(channel.url)) {
+      return { ...channel, url: encryptApiKey(channel.url) };
+    }
+    return channel;
+  });
+}
+
+/**
+ * Reverse of `encryptAlertChannels`. Called on the delivery path only;
+ * a channel whose secret cannot be decrypted is reported as an error by
+ * the individual channel implementation rather than silently skipped.
+ */
+export function decryptAlertChannels(
+  channels: AlertChannelConfig[] | null | undefined,
+): AlertChannelConfig[] {
+  if (!Array.isArray(channels)) return [];
+  return channels.map((channel) => {
+    if (channel.type === 'slack' && isEncrypted(channel.webhookUrl)) {
+      return { ...channel, webhookUrl: decryptApiKey(channel.webhookUrl) };
+    }
+    if (channel.type === 'webhook' && isEncrypted(channel.url)) {
+      return { ...channel, url: decryptApiKey(channel.url) };
+    }
+    return channel;
+  });
+}
+
+/**
+ * Redact every secret before a channel leaves the API. Custom `headers`
+ * are treated as secrets too: bearer tokens in a webhook header are the
+ * single most common way an alert endpoint leaks.
+ */
+export function maskAlertChannels(
+  channels: AlertChannelConfig[] | null | undefined,
+): AlertChannelConfig[] {
+  if (!Array.isArray(channels)) return [];
+  return channels.map((channel) => {
+    if (channel.type === 'slack') {
+      return { ...channel, webhookUrl: REDACTED_SECRET };
+    }
+    if (channel.type === 'webhook') {
+      return {
+        ...channel,
+        url: REDACTED_SECRET,
+        ...(channel.headers
+          ? {
+              headers: Object.fromEntries(
+                Object.keys(channel.headers).map((key) => [key, REDACTED_SECRET]),
+              ),
+            }
+          : {}),
+      };
+    }
+    return channel;
+  });
+}
 
 /**
  * Inject LIMIT 1 into a SQL query if it doesn't have one. Used so

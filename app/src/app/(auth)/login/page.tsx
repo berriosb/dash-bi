@@ -10,9 +10,29 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 
+const DEFAULT_REDIRECT = '/dashboards';
+
+/**
+ * Only same-origin, path-relative targets are honored.
+ *
+ * `?redirect=` is fully attacker-controlled, and this value is handed to
+ * `window.location.href` and to better-auth's `callbackURL`. Accepting
+ * `https://evil.com`, `//evil.com` or `/\evil.com` turns the login page
+ * into an open redirect that also leaks the referrer of the auth flow.
+ */
+function safeRedirect(rawRedirect: string | null): string {
+  if (!rawRedirect) return DEFAULT_REDIRECT;
+  if (!rawRedirect.startsWith('/')) return DEFAULT_REDIRECT;
+  // `//host` and `/\host` are protocol-relative URLs, not local paths.
+  if (!rawRedirect.startsWith('//') && !rawRedirect.startsWith('/\\')) {
+    return rawRedirect;
+  }
+  return DEFAULT_REDIRECT;
+}
+
 function LoginForm() {
   const searchParams = useSearchParams();
-  const redirect = searchParams.get('redirect') || '/dashboards';
+  const redirect = safeRedirect(searchParams.get('redirect'));
   const { toast } = useToast();
 
   const [mode, setMode] = useState<'password' | 'magic-link'>('password');

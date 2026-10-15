@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server';
 import { errorResponse } from '@/lib/errors/response';
+import { and, eq } from 'drizzle-orm';
 import { withOrgContext } from '@/db/client';
-import { publicLinks } from '@/db/schema';
+import { dashboards, publicLinks } from '@/db/schema';
 import { requireAuth } from '@/lib/auth/request';
 import { generatePublicToken } from '@/lib/sharing/token';
 import { audit } from '@/lib/audit/log';
+import { AppErrorException } from '@/lib/errors/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,6 +34,23 @@ export async function POST(
     const expiresInDays = sanitizeExpiresInDays(body.expiresInDays);
     const expiresAt = new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000);
     const token = generatePublicToken();
+
+    // `public_links.dashboard_id` is an FK, not a tenant boundary: nothing
+    // stops a caller from naming another org's dashboard and receiving a
+    // working public URL for it. Ownership is proved before the insert.
+    // A dashboard in another org is reported as "not found" so the
+    // response never reveals that it exists.
+    const [dashboard] = await withOrgContext(ctx.orgId, ctx.userId, ctx.role, async (tx) =>
+      tx
+        .select({ id: dashboards.id })
+        .from(dashboards)
+        .where(and(eq(dashboards.id, dashboardId), eq(dashboards.orgId, ctx.orgId)))
+        .limit(1)
+    );
+
+    if (!dashboard) {
+      throw new AppErrorException('not_found');
+    }
 
     const [link] = await withOrgContext(ctx.orgId, ctx.userId, ctx.role, async (tx) =>
       tx.insert(publicLinks).values({

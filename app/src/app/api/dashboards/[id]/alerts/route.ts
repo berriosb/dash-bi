@@ -12,9 +12,11 @@ import {
   ensureLimit,
   assertWithinQuota,
   assertConditionInvariants,
+  encryptAlertChannels,
+  maskAlertChannels,
 } from '@/lib/alerts/schemas';
 import { validateQuery } from '@/lib/security/validate-query';
-import { ALERT_LIMITS, type AlertPlan } from '@/lib/alerts/types';
+import { ALERT_LIMITS, type AlertChannelConfig, type AlertPlan } from '@/lib/alerts/types';
 
 /**
  * POST /api/dashboards/[id]/alerts — create a new alert rule on this dashboard.
@@ -93,7 +95,7 @@ export async function POST(
           evaluationIntervalMinutes: validated.evaluationIntervalMinutes,
           evaluationWindowMinutes: validated.evaluationWindowMinutes ?? 5,
           consecutiveBreachesToFire: validated.consecutiveBreachesToFire,
-          channels: validated.channels,
+          channels: encryptAlertChannels(validated.channels),
           cooldownMinutes: validated.cooldownMinutes,
         })
         .returning();
@@ -130,10 +132,15 @@ export async function GET(
         .orderBy(desc(alertRules.createdAt));
     });
 
-    // Channels are stored encrypted in DB; client should never see raw URLs.
-    // Return them as-is (already encrypted) — the client renders a label
-    // and "test channel" buttons that re-auth the send.
-    return NextResponse.json({ rules });
+    // Channel secrets live encrypted at rest (H3). The client renders a
+    // label and a "test channel" action that re-auths the send, so the
+    // endpoint is replaced by a placeholder instead of being echoed back.
+    const sanitized = rules.map((rule) => ({
+      ...rule,
+      channels: maskAlertChannels(rule.channels as AlertChannelConfig[] | undefined),
+    }));
+
+    return NextResponse.json({ rules: sanitized });
   } catch (err: unknown) {
     return errorResponse(err, req);
   }

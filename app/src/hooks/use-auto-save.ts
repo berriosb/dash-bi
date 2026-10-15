@@ -15,15 +15,37 @@ export interface UseAutoSaveResult {
   flush: () => void;
 }
 
+/**
+ * Canonical serialization of the persisted subset of a dashboard.
+ *
+ * Shared by `trigger` and the mutation so the value compared against the
+ * last save is byte-identical to the value that was actually sent.
+ */
+function serializeDashboard(dashboard: Dashboard): string {
+  return JSON.stringify({
+    title: dashboard.title,
+    description: dashboard.description,
+    theme: dashboard.theme,
+    widgets: dashboard.widgets,
+    archetype: dashboard.archetype,
+    archetypeVariant: dashboard.archetypeVariant,
+  });
+}
+
+/** A save request: the payload plus the snapshot that describes it. */
+interface PendingSave {
+  dashboard: Dashboard;
+  serialized: string;
+}
+
 export function useAutoSave(dashboardId: string, debounceMs = 1000): UseAutoSaveResult {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [status, setStatus] = React.useState<SaveStatus>('idle');
   const lastSavedRef = React.useRef<string>('');
-  const pendingRef = React.useRef<Dashboard | null>(null);
 
   const mutation = useMutation({
-    mutationFn: async (dashboard: Dashboard) => {
+    mutationFn: async ({ dashboard }: PendingSave) => {
       // The API expects the canonical Dashboard shape. We project
       // `archetype` + `archetypeVariant` so the server can persist them.
       const payload = {
@@ -49,9 +71,12 @@ export function useAutoSave(dashboardId: string, debounceMs = 1000): UseAutoSave
     onMutate: () => {
       setStatus('saving');
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       setStatus('saved');
-      lastSavedRef.current = JSON.stringify(pendingRef.current);
+      // Record the snapshot that this request carried, not the latest
+      // edit: a newer payload may still be in flight, and marking it as
+      // persisted would make `trigger` skip it if that request then fails.
+      lastSavedRef.current = variables.serialized;
       queryClient.invalidateQueries({ queryKey: ['dashboard', dashboardId] });
       window.setTimeout(() => {
         setStatus((current) => (current === 'saved' ? 'idle' : current));
@@ -64,31 +89,30 @@ export function useAutoSave(dashboardId: string, debounceMs = 1000): UseAutoSave
         variant: 'destructive',
         title: isConflict ? 'Conflicto de edición' : 'No pudimos guardar',
         description: isConflict
-          ? 'Otra sesión modificó este dashboard. Recargá la página para ver la versión más reciente.'
+          ? 'Otra sesión modificó este dashboard. Recarga la página para ver la versión más reciente.'
           : err.message,
       });
     },
   });
 
-  const debounced = useDebouncedCallback((dashboard: Dashboard) => {
-    pendingRef.current = dashboard;
-    mutation.mutate(dashboard);
+  const debounced = useDebouncedCallback((pending: PendingSave) => {
+    mutation.mutate(pending);
   }, debounceMs);
+
+  // A dashboard id change means a different document: the previously
+  // persisted snapshot is meaningless, and keeping it makes an identical
+  // new dashboard look already-saved (no PATCH, edits lost). The
+  // debounce is dropped too, so a pending write cannot land on the old id.
+  React.useEffect(() => {
+    lastSavedRef.current = '';
+    debounced.cancel();
+  }, [dashboardId, debounced]);
 
   const trigger = React.useCallback(
     (dashboard: Dashboard) => {
-      // Include archetype + variant so the serializer comparison doesn't
-      // miss fields that change archetype selection.
-      const serialized = JSON.stringify({
-        title: dashboard.title,
-        description: dashboard.description,
-        theme: dashboard.theme,
-        widgets: dashboard.widgets,
-        archetype: dashboard.archetype,
-        archetypeVariant: dashboard.archetypeVariant,
-      });
+      const serialized = serializeDashboard(dashboard);
       if (serialized === lastSavedRef.current) return;
-      debounced(dashboard);
+      debounced({ dashboard, serialized });
     },
     [debounced],
   );

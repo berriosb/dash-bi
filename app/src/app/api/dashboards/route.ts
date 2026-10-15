@@ -7,6 +7,7 @@ import { requireAuth } from '@/lib/auth/request';
 import { logRequest } from '@/lib/logger';
 import { audit } from '@/lib/audit/log';
 import type { ThemeId } from '@/lib/widgets/types';
+import { WidgetInputSchema } from '@/lib/widgets/validator';
 import { z } from 'zod';
 
 export const dynamic = 'force-dynamic';
@@ -26,7 +27,7 @@ const CreateDashboardSchema = z.object({
   title: z.string().min(1).max(200),
   description: z.string().max(2000).optional(),
   theme: z.enum(['moderno-saas', 'corporate']).optional(),
-  widgets: z.array(z.unknown()).optional(),
+  widgets: z.array(WidgetInputSchema).max(12).optional(),
   archetype: z
     .enum([
       'kpi-grid',

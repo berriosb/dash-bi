@@ -29,7 +29,11 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
-        source: '/(.*)',
+        // `X-Frame-Options` es un solo origen sin lista de excepciones: o
+        // bloquea todo o no sirve. Se excluye `/embed/` porque los embeds
+        // legítimos necesitan framing; ese path se protege con la
+        // directiva CSP `frame-ancestors` por token, que sí admite lista.
+        source: '/:path((?!embed/).*)',
         headers: [
           { key: 'X-Frame-Options', value: 'DENY' },
           { key: 'X-Content-Type-Options', value: 'nosniff' },

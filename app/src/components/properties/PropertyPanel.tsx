@@ -25,6 +25,22 @@ interface PropertyPanelProps {
   dashboardId: string;
 }
 
+/**
+ * Runtime normalization of a widget config.
+ *
+ * `Widget` types `config` as an object, but the value comes from the DB
+ * and from AI generation, both of which can hand back `undefined` or a
+ * primitive for a row written before validation was enforced. Every read
+ * below goes through here so one malformed widget degrades to "no options
+ * configured" instead of throwing a `TypeError` that takes the whole
+ * editor down with it.
+ */
+function normalizeConfig(config: unknown): Record<string, unknown> {
+  return config && typeof config === 'object' && !Array.isArray(config)
+    ? (config as Record<string, unknown>)
+    : {};
+}
+
 export function PropertyPanel({ dashboardId: _dashboardId }: PropertyPanelProps) {
   const widgets = useDashboardStore((s) => s.widgets);
   const updateWidget = useDashboardStore((s) => s.updateWidget);
@@ -51,8 +67,10 @@ export function PropertyPanel({ dashboardId: _dashboardId }: PropertyPanelProps)
     );
   }
 
+  const config = normalizeConfig(widget.config);
+
   const handleTitleChange = (title: string) => {
-    updateWidget(widget.id, { config: { ...widget.config, title } } as Partial<Widget>);
+    updateWidget(widget.id, { config: { ...config, title } } as Partial<Widget>);
   };
 
   const handlePositionChange = (patch: Partial<typeof widget.position>) => {
@@ -60,7 +78,7 @@ export function PropertyPanel({ dashboardId: _dashboardId }: PropertyPanelProps)
   };
 
   const handleDelete = () => {
-    const title = widget.config.title ?? widget.id;
+    const title = config.title ?? widget.id;
     removeWidget(widget.id);
     setSelectedWidgetId(null);
     toast({
@@ -92,7 +110,7 @@ export function PropertyPanel({ dashboardId: _dashboardId }: PropertyPanelProps)
           <Label htmlFor="widget-title">Título</Label>
           <Input
             id="widget-title"
-            value={widget.config.title ?? ''}
+            value={String(config.title ?? '')}
             onChange={(e) => handleTitleChange(e.target.value)}
             placeholder="Título del widget"
           />
@@ -208,6 +226,8 @@ function TypeSpecificFields({
   widget: Widget;
   onUpdate: (patch: Partial<Widget>) => void;
 }) {
+  const config = normalizeConfig(widget.config);
+
   if (widget.type === 'kpi') {
     return (
       <section className="property-section">
@@ -218,10 +238,10 @@ function TypeSpecificFields({
             <select
               id="kpi-format"
               className="property-select"
-              value={widget.config.format ?? 'number'}
+              value={String(config.format ?? 'number')}
               onChange={(e) =>
                 onUpdate({
-                  config: { ...widget.config, format: e.target.value as 'currency' | 'number' | 'percent' },
+                  config: { ...config, format: e.target.value as 'currency' | 'number' | 'percent' },
                 } as Partial<Widget>)
               }
             >
@@ -236,14 +256,14 @@ function TypeSpecificFields({
               <input
                 id="kpi-showDelta"
                 type="checkbox"
-                checked={widget.config.showDelta ?? false}
+                checked={config.showDelta === true}
                 onChange={(e) =>
                   onUpdate({
-                    config: { ...widget.config, showDelta: e.target.checked },
+                    config: { ...config, showDelta: e.target.checked },
                   } as Partial<Widget>)
                 }
               />
-              <span>{widget.config.showDelta ? 'Activado' : 'Desactivado'}</span>
+              <span>{config.showDelta ? 'Activado' : 'Desactivado'}</span>
             </label>
           </div>
         </div>
@@ -252,12 +272,13 @@ function TypeSpecificFields({
   }
 
   if (widget.type === 'table') {
+    const columns = Array.isArray(config.columns) ? config.columns : [];
     return (
       <section className="property-section">
         <h4 className="property-section__title">Tabla</h4>
         <p className="property-section__hint">
-          Edición de columnas inline en Sprint 3. Configuración actual: {widget.config.columns.length} columna
-          {widget.config.columns.length === 1 ? '' : 's'}.
+          Edición de columnas inline en Sprint 3. Configuración actual: {columns.length} columna
+          {columns.length === 1 ? '' : 's'}.
         </p>
       </section>
     );
@@ -274,14 +295,14 @@ function TypeSpecificFields({
             <input
               id="chart-showLegend"
               type="checkbox"
-              checked={widget.config.showLegend ?? true}
+              checked={config.showLegend !== false}
               onChange={(e) =>
                 onUpdate({
-                  config: { ...widget.config, showLegend: e.target.checked },
+                  config: { ...config, showLegend: e.target.checked },
                 } as Partial<Widget>)
               }
             />
-            <span>{widget.config.showLegend ? 'Activado' : 'Desactivado'}</span>
+            <span>{config.showLegend ? 'Activado' : 'Desactivado'}</span>
           </label>
         </div>
         <div>
@@ -290,14 +311,14 @@ function TypeSpecificFields({
             <input
               id="chart-showGrid"
               type="checkbox"
-              checked={widget.config.showGrid ?? true}
+              checked={config.showGrid !== false}
               onChange={(e) =>
                 onUpdate({
-                  config: { ...widget.config, showGrid: e.target.checked },
+                  config: { ...config, showGrid: e.target.checked },
                 } as Partial<Widget>)
               }
             />
-            <span>{widget.config.showGrid ? 'Activado' : 'Desactivado'}</span>
+            <span>{config.showGrid ? 'Activado' : 'Desactivado'}</span>
           </label>
         </div>
       </div>

@@ -74,6 +74,7 @@ export type ErrorCode =
   | 'internal_server_error'
   | 'not_found'
   | 'method_not_allowed'
+  | 'conflict'
   | 'payload_too_large';
 
 /**
@@ -175,6 +176,7 @@ export const ERROR_CATALOG: Record<ErrorCode, {
   'internal_server_error':      { httpStatus: 500, retryable: true,  defaultMessage: 'Algo salió mal. Probá de nuevo o contactá soporte.' },
   'not_found':                  { httpStatus: 404, retryable: false, defaultMessage: 'Recurso no encontrado.' },
   'method_not_allowed':         { httpStatus: 405, retryable: false, defaultMessage: 'Método no permitido.' },
+  'conflict':                   { httpStatus: 409, retryable: true,  defaultMessage: 'Otro usuario actualizó este recurso. Recarga la página e inténtalo de nuevo.' },
   'payload_too_large':          { httpStatus: 413, retryable: false, defaultMessage: 'La solicitud es demasiado grande.' },
 };
 

@@ -117,13 +117,17 @@ function toast({ ...props }: Toast) {
 function useToast() {
   const [state, setState] = React.useState<State>(memoryState);
 
+  // `setState` is referentially stable, so the subscription is mounted
+  // once. Keying the effect on `state` (as the upstream shadcn snippet
+  // does) tore down and rebuilt the listener on every toast, which
+  // dropped any update dispatched during the gap.
   React.useEffect(() => {
     listeners.push(setState);
     return () => {
       const index = listeners.indexOf(setState);
       if (index > -1) listeners.splice(index, 1);
     };
-  }, [state]);
+  }, []);
 
   return {
     ...state,

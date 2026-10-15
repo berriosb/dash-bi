@@ -270,15 +270,78 @@ const DataSourceSchema = z.object({
   refresh: RefreshSchema.optional(),
 });
 
+/**
+ * Column descriptor as rendered by the table widget. `key` addresses a
+ * field in the query result, so it is bounded to a short, plain string.
+ */
+export const ColumnConfigSchema = z.object({
+  key: z.string().min(1).max(200),
+  label: z.string().min(1).max(200),
+  format: z.enum(['currency', 'number', 'percent', 'date', 'text']).optional(),
+  align: z.enum(['left', 'center', 'right']).optional(),
+  sortable: z.boolean().optional(),
+});
+
+/**
+ * Widget config is open-ended per widget type, but it must be an object.
+ *
+ * `z.unknown()` used to accept anything — including `undefined` or a
+ * string — and the property panel then dereferenced
+ * `widget.config.columns.length` on whatever it found, crashing the whole
+ * dashboard editor with a `TypeError` on a single malformed row. An object
+ * with passthrough keeps the flexibility and removes the crash class.
+ */
+export const WidgetConfigSchema = z
+  .object({
+    title: z.string().max(200).optional(),
+    columns: z.array(ColumnConfigSchema).optional(),
+  })
+  .passthrough();
+
+const WidgetShape = {
+  id: z.string().min(1).max(100),
+  position: PositionSchema,
+  config: WidgetConfigSchema,
+  data: z.unknown(),
+  source: DataSourceSchema,
+} as const;
+
 const WidgetSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('kpi'), id: z.string(), position: PositionSchema, config: z.unknown(), data: z.unknown(), source: DataSourceSchema }),
-  z.object({ type: z.literal('line-chart'), id: z.string(), position: PositionSchema, config: z.unknown(), data: z.unknown(), source: DataSourceSchema }),
-  z.object({ type: z.literal('bar-chart'), id: z.string(), position: PositionSchema, config: z.unknown(), data: z.unknown(), source: DataSourceSchema }),
-  z.object({ type: z.literal('pie-chart'), id: z.string(), position: PositionSchema, config: z.unknown(), data: z.unknown(), source: DataSourceSchema }),
-  z.object({ type: z.literal('area-chart'), id: z.string(), position: PositionSchema, config: z.unknown(), data: z.unknown(), source: DataSourceSchema }),
-  z.object({ type: z.literal('scatter'), id: z.string(), position: PositionSchema, config: z.unknown(), data: z.unknown(), source: DataSourceSchema }),
-  z.object({ type: z.literal('table'), id: z.string(), position: PositionSchema, config: z.unknown(), data: z.unknown(), source: DataSourceSchema }),
+  z.object({ type: z.literal('kpi'), ...WidgetShape }),
+  z.object({ type: z.literal('line-chart'), ...WidgetShape }),
+  z.object({ type: z.literal('bar-chart'), ...WidgetShape }),
+  z.object({ type: z.literal('pie-chart'), ...WidgetShape }),
+  z.object({ type: z.literal('area-chart'), ...WidgetShape }),
+  z.object({ type: z.literal('scatter'), ...WidgetShape }),
+  z.object({ type: z.literal('table'), ...WidgetShape }),
 ]);
+
+export { WidgetSchema };
+
+/**
+ * Structural contract enforced on the WRITE path (`POST/PATCH
+ * /api/dashboards`). It is deliberately looser than `WidgetSchema`: a
+ * widget can be persisted before its data has been hydrated, so
+ * `position`, `source` and `data` are optional here. What is not
+ * negotiable is that a stored widget names a real type, carries an id,
+ * and — when it has a config — that config is an object.
+ */
+export const WidgetInputSchema = z
+  .object({
+    type: z.enum([
+      'kpi',
+      'line-chart',
+      'bar-chart',
+      'pie-chart',
+      'area-chart',
+      'scatter',
+      'table',
+    ]),
+    id: z.string().min(1).max(100),
+    position: PositionSchema.partial().optional(),
+    config: WidgetConfigSchema.optional(),
+  })
+  .passthrough();
 
 export const DashboardZodSchema = z.object({
   title: z.string().min(1).max(200),

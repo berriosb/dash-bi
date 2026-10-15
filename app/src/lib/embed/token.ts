@@ -154,10 +154,54 @@ export async function verifyEmbedToken(
 }
 
 /**
+ * Un origin ya normalizado (`new URL(x).origin`) debe reducirse a este
+ * alfabeto antes de entrar al header.
+ *
+ * El filtro es una allowlist, no una denylist: cualquier cosa que no
+ * sea scheme + host + puerto opcional se descarta, incluidos los
+ * caracteres de control y los separadores de directiva (`;`) que
+ * romperían el CSP en directivas nuevas. Un `allowedOrigins` guardado
+ * por un usuario con `https://evil.com; script-src *` inyectaría
+ * directivas completas si se interpolara sin filtrar.
+ */
+const SAFE_ORIGIN = /^https?:\/\/[a-z0-9.-]+(?::\d{1,5})?$/i;
+
+/**
+ * Reduce una entrada de `allowedOrigins` a un origin CSP-safe, o `null`
+ * si no es confiable.
+ *
+ * `new URL` ya reduce `https://host/path` a su origin y lanza con
+ * entradas que no son URLs, pero acepta esquemas como `javascript:`
+ * (origin `null`) y credenciales embebidas, así que la allowlist
+ * corrige lo que el parser deja pasar.
+ */
+function sanitizeFrameAncestorOrigin(candidate: unknown): string | null {
+  if (typeof candidate !== 'string') return null;
+  const trimmed = candidate.trim();
+  if (trimmed === '*') return '*';
+  if (trimmed === '') return null;
+
+  let origin: string;
+  try {
+    origin = new URL(trimmed).origin;
+  } catch {
+    return null;
+  }
+
+  return SAFE_ORIGIN.test(origin) ? origin : null;
+}
+
+/**
  * Generate a Content-Security-Policy `frame-ancestors` directive based on allowed origins.
+ *
+ * La lista se sanea antes de interpolarse: cada entrada se reduce a su
+ * origin y cualquier valor con separadores de directiva se descarta. Una
+ * lista vacía (o totalmente inválida) degrada a `frame-ancestors 'none'`,
+ * que bloquea el framing en vez de emitir un header sin restricciones
+ * útiles.
  */
 export function getCspFrameAncestors(allowedOrigins: string[]): string {
-  if (!allowedOrigins || allowedOrigins.length === 0) {
+  if (!Array.isArray(allowedOrigins) || allowedOrigins.length === 0) {
     return "frame-ancestors 'self';";
   }
 
@@ -165,7 +209,19 @@ export function getCspFrameAncestors(allowedOrigins: string[]): string {
     return 'frame-ancestors *;';
   }
 
-  return `frame-ancestors ${allowedOrigins.join(' ')};`;
+  const sanitized = [
+    ...new Set(
+      allowedOrigins
+        .map(sanitizeFrameAncestorOrigin)
+        .filter((origin): origin is string => origin !== null),
+    ),
+  ];
+
+  if (sanitized.length === 0) {
+    return "frame-ancestors 'none';";
+  }
+
+  return `frame-ancestors ${sanitized.join(' ')};`;
 }
 
 /**
