@@ -86,14 +86,16 @@ export default defineConfig({
   //
   // `next build` regenerates its own output, so no `rm -rf .next` here:
   // wiping the directory also drops the webpack cache, and a cold build of
-  // this app measured 11m36s against well under a minute warm — a cost paid
-  // on every run, on every machine, to defend against a staleness that was
-  // never the culprit.
+  // this app measures 214s against 112s warm. That ~100s is paid on every
+  // run, on every machine, to defend against a staleness that was never the
+  // culprit — `next build` already rewrites the output it serves.
   webServer: {
     command: 'NODE_ENV=production pnpm build && NODE_ENV=production pnpm start',
     url: 'http://localhost:3000',
     reuseExistingServer: !process.env.CI,
-    // Covers the build plus server boot, not just the boot.
+    // Covers the build plus server boot, not just the boot. A cold build
+    // measured 214s, so 600s leaves room for a slower CI runner while still
+    // failing a genuinely hung build.
     timeout: 600_000,
     stdout: 'pipe',
     stderr: 'pipe',
