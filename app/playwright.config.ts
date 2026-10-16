@@ -53,50 +53,45 @@ export default defineConfig({
     },
   ],
   
-  // The suite runs against the PRODUCTION build, not `next dev`.
+  // The suite runs against `next dev`, as it always has.
   //
-  // This was the root cause of the suite's flakiness. Measured on this
-  // machine, navigating to a dashboard page:
+  // Running it against the production build (`next build && next start`)
+  // was tried and reverted. Measured here, it is dramatically faster and
+  // removed the local flakiness entirely — 40/40 on three consecutive
+  // chromium runs, ~10 min down to ~3 min:
   //
   //   next dev      3.3s cold · 0.35s warm · ~10s with two browsers in flight
   //   next start    0.038s cold · 0.006s warm · flat under load
   //
-  // and dev-mode first hits were far worse — `POST /api/auth/sign-up/email`
-  // took 19.4s cold against 992ms warm, `GET /api/auth/get-session` 36.4s
-  // against 582ms — because `next dev` compiles each route on its first
-  // request. The tests assert with 15-20s budgets, so they were measuring
-  // webpack's compile queue, not the app, and whichever spec happened to
-  // draw the cold-compile short straw failed. The failing set changed from
-  // run to run with no code change, which is the signature.
+  // and dev-mode first hits are worse still, because `next dev` compiles
+  // each route on first request: `POST /api/auth/sign-up/email` measured
+  // 19.4s cold against 992ms warm, `GET /api/auth/get-session` 36.4s
+  // against 582ms. That is what the 15-20s assertion budgets were
+  // measuring, and why the failing set moved between runs with no code
+  // change.
   //
-  // Testing the shipped artifact also means the suite covers what users get:
-  // minified, optimized React with no dev-only hydration behavior.
+  // It was reverted because in CI that variant lost 5 tests, all in
+  // firefox and mobile-safari, all inside the shared auth helper
+  // (`signup.ok()` false, sign-in never leaving /login). Chromium stayed
+  // fully green, and those two browsers cannot be reproduced on this
+  // machine — firefox and webkit need system libraries (libicu74,
+  // libxml2, libflite1) that require sudo to install. So the cause could
+  // not be diagnosed, only observed, and main has been green on `next dev`.
   //
-  // `NODE_ENV=production` is explicit and load-bearing. Playwright injects
-  // `NODE_ENV=development` into the webServer environment, and a
-  // `next build` that inherits it fails while prerendering the error
-  // boundaries:
+  // The worker cap and the 60s budget below are the part of the fix that
+  // does not depend on the server type, and they are kept: they took the
+  // local suite from 24/40 to 36/40 before the build variant was tried.
   //
-  //   Error occurred prerendering page "/_not-found"  (or "/_global-error")
-  //   TypeError: Cannot read properties of null (reading 'useContext')
-  //
-  // which does NOT reproduce with `NODE_ENV=production`. Verified by
-  // building the same tree both ways, and separately confirmed NOT to come
-  // from the root-level error boundaries.
-  //
-  // `next build` regenerates its own output, so no `rm -rf .next` here:
-  // wiping the directory also drops the webpack cache, and a cold build of
-  // this app measures 214s against 112s warm. That ~100s is paid on every
-  // run, on every machine, to defend against a staleness that was never the
-  // culprit — `next build` already rewrites the output it serves.
+  // Revisit with someone who can run all three browsers locally: if the
+  // failures are not from the build variant, this is a ~3x speedup and a
+  // strictly higher-fidelity target still on the table.
   webServer: {
-    command: 'NODE_ENV=production pnpm build && NODE_ENV=production pnpm start',
+    command: 'pnpm dev',
     url: 'http://localhost:3000',
     reuseExistingServer: !process.env.CI,
-    // Covers the build plus server boot, not just the boot. A cold build
-    // measured 214s, so 600s leaves room for a slower CI runner while still
-    // failing a genuinely hung build.
-    timeout: 600_000,
+    // Covers server boot. `pnpm dev` compiles routes on demand, so the
+    // first run after a change pays that cost inside this budget.
+    timeout: 300_000,
     stdout: 'pipe',
     stderr: 'pipe',
   },
