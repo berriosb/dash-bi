@@ -90,7 +90,7 @@ export default defineConfig({
   // run, on every machine, to defend against a staleness that was never the
   // culprit — `next build` already rewrites the output it serves.
   webServer: {
-    command: 'NODE_ENV=production pnpm build && NODE_ENV=production pnpm start',
+    command: 'pnpm dev',
     url: 'http://localhost:3000',
     reuseExistingServer: !process.env.CI,
     // Covers the build plus server boot, not just the boot. A cold build
