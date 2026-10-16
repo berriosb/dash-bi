@@ -39,16 +39,57 @@ export function buildCreateTableSQL(
 
 export function buildRLSPoliciesSQL(targetTable: string): {
   enable: string;
+  force: string;
   policy: string;
 } {
   const { table, sql: tableRef } = parseQualifiedIdent(targetTable);
   const policyName = quoteIdent(`org_isolation_${table}`);
   return {
     enable: `ALTER TABLE ${tableRef} ENABLE ROW LEVEL SECURITY`,
+    force: `ALTER TABLE ${tableRef} FORCE ROW LEVEL SECURITY`,
     policy: `DROP POLICY IF EXISTS ${policyName} ON ${tableRef};
 CREATE POLICY ${policyName} ON ${tableRef}
-  USING (org_id = app_current_org_id())`,
+  USING (org_id = app_current_org_id())
+  WITH CHECK (org_id = app_current_org_id())`,
   };
+}
+
+/**
+ * Postgres role that AI-written / user-written SQL executes as.
+ *
+ * Must match `POSTGRES_READONLY_USER` (default `dashbi_readonly`, the name
+ * used by `scripts/postgres/init-roles.sh` and migration 0017). The grant
+ * below is guarded on the role existing, so a deployment that renamed it
+ * degrades to "no read-only access" instead of a failed upload.
+ */
+export const READONLY_ROLE = 'dashbi_readonly';
+
+/**
+ * Grants the read-only role access to a freshly created upload table.
+ *
+ * Uploaded files live in a per-org schema, which is outside the
+ * `GRANT … IN SCHEMA public` statements in `init-roles.sh`. Without these
+ * two grants the role cannot even resolve the schema, so every
+ * spreadsheet query would fail with `permission denied for schema` the
+ * moment it moved off the app role.
+ *
+ * Written as a DO block with an `pg_roles` guard: the role may not exist on
+ * an install that never enabled the read-only connection, and a failed
+ * GRANT would abort the whole upload commit.
+ */
+export function buildReadOnlyGrantsSQL(targetTable: string): string {
+  const { schema, table } = parseQualifiedIdent(targetTable);
+  // `%I` re-quotes the identifier, so the values are passed unquoted.
+  // GRANT is a utility statement: plpgsql only accepts it through EXECUTE,
+  // hence the `format` indirection inside the DO block.
+  return `DO $dashbi$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${READONLY_ROLE}') THEN
+    EXECUTE format('GRANT USAGE ON SCHEMA %I TO ${READONLY_ROLE}', '${schema}');
+    EXECUTE format('GRANT SELECT ON TABLE %I.%I TO ${READONLY_ROLE}', '${schema}', '${table}');
+  END IF;
+END
+$dashbi$`;
 }
 
 export function buildIndexSQL(

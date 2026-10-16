@@ -166,8 +166,8 @@ describe('withOrgContext - tenant isolation (T1) - logic layer', () => {
         kind: 'sql',
         sql: 'SELECT id, name FROM products',
       };
-      validateQuery(query, 'postgres', 'viewer');
-      expect(query.sql).toMatch(/LIMIT 10000/);
+      // Pure validator: the LIMIT arrives on the return value.
+      expect(validateQuery(query, 'postgres', 'viewer')).toMatch(/LIMIT 10000/);
     });
 
     it('backward compatible: omitting role skips PII filtering', () => {

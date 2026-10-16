@@ -73,6 +73,14 @@ describe('Scheduled Reports API Routes', () => {
           returning: vi.fn().mockResolvedValue([createdReport]),
         }),
       });
+      // Ownership probe: dashboard belongs to the caller's org.
+      (db.select as any).mockReturnValue({
+        from: () => ({
+          where: () => ({
+            limit: async () => [{ id: '00000000-0000-4000-a000-000000000002' }],
+          }),
+        }),
+      });
 
       const body = {
         dashboardId: '00000000-0000-4000-a000-000000000002',
@@ -93,6 +101,34 @@ describe('Scheduled Reports API Routes', () => {
 
       const json = await res.json();
       expect(json.report.id).toBe('report-new');
+    });
+
+    it('refuses to schedule a report for a dashboard outside the caller org', async () => {
+      // Ownership probe returns nothing: the dashboard lives in another org.
+      (db.select as any).mockReturnValue({
+        from: () => ({
+          where: () => ({
+            limit: async () => [],
+          }),
+        }),
+      });
+
+      const body = {
+        dashboardId: '00000000-0000-4000-a000-0000000000ff',
+        cron: '0 9 * * 1',
+        recipients: [{ email: 'attacker@evil.com' }],
+      };
+
+      const req = new Request('http://localhost:3000/api/scheduled-reports', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      const res = await POST(req);
+
+      expect(res.status).toBe(404);
+      expect(db.insert).not.toHaveBeenCalled();
     });
 
     it('rejects invalid cron expression', async () => {

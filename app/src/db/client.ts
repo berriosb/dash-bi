@@ -188,18 +188,18 @@ export async function withSystemContext<T>(fn: (tx: Tx) => Promise<T>): Promise<
  */
 export async function withOrgContextReadOnly<T>(
   orgId: string,
-  userId: string,
+  userId: string | null,
   fn: (tx: ReadOnlyTx) => Promise<T>,
 ): Promise<T>;
 export async function withOrgContextReadOnly<T>(
   orgId: string,
-  userId: string,
+  userId: string | null,
   role: OrgRole,
   fn: (tx: ReadOnlyTx) => Promise<T>,
 ): Promise<T>;
 export async function withOrgContextReadOnly<T>(
   orgId: string,
-  userId: string,
+  userId: string | null,
   roleOrFn:
     | OrgRole
     | ((tx: ReadOnlyTx) => Promise<T>),
@@ -210,7 +210,11 @@ export async function withOrgContextReadOnly<T>(
 
   return await readonlyDb.transaction(async (tx) => {
     await tx.execute(sql`SELECT set_config('app.current_org_id', ${orgId}, true)`);
-    await tx.execute(sql`SELECT set_config('app.current_user_id', ${userId}, true)`);
+    if (userId === null) {
+      await tx.execute(sql`SELECT set_config('app.current_user_id', NULL, true)`);
+    } else {
+      await tx.execute(sql`SELECT set_config('app.current_user_id', ${userId}, true)`);
+    }
     await tx.execute(sql`SELECT set_config('app.current_user_role', ${role}, true)`);
 
     const start = Date.now();

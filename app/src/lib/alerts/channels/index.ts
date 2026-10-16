@@ -9,6 +9,7 @@ import type {
   AlertCondition,
 } from '../types';
 import { conditionThreshold } from '../condition';
+import { decryptAlertChannels } from '../schemas';
 import { sendSlackAlert } from './slack';
 import { sendEmailAlert } from './email';
 import { sendWebhookAlert, type WebhookPayload } from './webhook';
@@ -29,11 +30,19 @@ export async function deliverToChannel(
   const threshold = conditionThreshold(params.condition);
   const firedAtIso = params.firedAt.toISOString();
 
-  switch (params.channel.type) {
+  // Channel secrets are stored encrypted (see `encryptAlertChannels`).
+  // Decrypt here — at the single funnel every channel passes through —
+  // so the HTTP clients never have to know about the at-rest format.
+  const [channel] = decryptAlertChannels([params.channel]);
+  if (!channel) {
+    throw new Error('Alert channel could not be decrypted');
+  }
+
+  switch (channel.type) {
     case 'slack':
       return sendSlackAlert({
-        webhookUrl: params.channel.webhookUrl,
-        channelLabel: params.channel.channelLabel,
+        webhookUrl: channel.webhookUrl,
+        channelLabel: channel.channelLabel,
         ruleName: params.ruleName,
         dashboardTitle: params.dashboardTitle,
         breachedValue: params.breachedValue,
@@ -42,8 +51,8 @@ export async function deliverToChannel(
       });
     case 'email':
       return sendEmailAlert({
-        recipients: params.channel.recipients,
-        subject: params.channel.subject,
+        recipients: channel.recipients,
+        subject: channel.subject,
         ruleName: params.ruleName,
         dashboardTitle: params.dashboardTitle,
         breachedValue: params.breachedValue,
@@ -60,8 +69,8 @@ export async function deliverToChannel(
         firedAt: firedAtIso,
       };
       return sendWebhookAlert({
-        url: params.channel.url,
-        headers: params.channel.headers,
+        url: channel.url,
+        headers: channel.headers,
         payload,
       });
     }

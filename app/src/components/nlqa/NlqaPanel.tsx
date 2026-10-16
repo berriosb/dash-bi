@@ -100,11 +100,13 @@ export function NlqaPanel({
         const errBody = await res.json().catch(() => ({}));
         const message = errBody?.error ?? `HTTP ${res.status}`;
         if (res.status === 429) {
-          setError('Demasiadas preguntas. Esperá unos segundos.');
+          setError('Demasiadas preguntas. Espera unos segundos.');
         } else {
           setError(message);
         }
-        setMessages((prev) => prev.filter((m) => m.id !== userMessage.id));
+        // The question stays in the transcript on failure: it is the only
+        // record of what was asked, the input box is already cleared, and
+        // the server kept no assistant turn to answer to.
         return;
       }
 
@@ -124,7 +126,6 @@ export function NlqaPanel({
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Error de red';
       setError(message);
-      setMessages((prev) => prev.filter((m) => m.id !== userMessage.id));
     } finally {
       setIsLoading(false);
     }

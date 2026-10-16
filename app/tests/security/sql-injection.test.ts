@@ -126,16 +126,17 @@ describe('validateQuery - SQL injection prevention (T2)', () => {
     });
 
     it('auto-injects LIMIT if missing', () => {
+      // `validateQuery` is pure: the normalized SQL is the return value.
       const query: { kind: 'sql'; sql: string } = { kind: 'sql', sql: 'SELECT * FROM users' };
-      validateQuery(query, 'postgres');
-      expect(query.sql).toMatch(/LIMIT 10000/);
+      expect(validateQuery(query, 'postgres')).toMatch(/LIMIT 10000/);
+      expect(query.sql).not.toMatch(/LIMIT/); // caller object untouched
     });
 
     it('preserves existing LIMIT', () => {
       const query: { kind: 'sql'; sql: string } = { kind: 'sql', sql: 'SELECT * FROM users LIMIT 50' };
-      validateQuery(query, 'postgres');
-      expect(query.sql).toMatch(/LIMIT 50/);
-      expect(query.sql).not.toMatch(/LIMIT 50[^0-9]/); // No "LIMIT 50000" appended
+      const normalized = validateQuery(query, 'postgres') ?? '';
+      expect(normalized).toMatch(/LIMIT 50/);
+      expect(normalized).not.toMatch(/LIMIT 50[^0-9]/); // No "LIMIT 50000" appended
     });
   });
 

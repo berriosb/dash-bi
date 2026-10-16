@@ -6,7 +6,9 @@ import { scheduledReports } from '@/db/schema';
 import { requireAuth } from '@/lib/auth/request';
 import { parseCronAndNextRun, isValidCron } from '@/lib/reports/cron';
 import { audit } from '@/lib/audit/log';
-import { eq, desc } from 'drizzle-orm';
+import { and, eq, desc } from 'drizzle-orm';
+import { dashboards } from '@/db/schema';
+import { AppErrorException } from '@/lib/errors/types';
 
 const createReportSchema = z.object({
   dashboardId: z.string().uuid(),
@@ -57,6 +59,22 @@ export async function POST(req: Request) {
 
     const payload = parseResult.data;
     const nextRunAt = parseCronAndNextRun(payload.cron);
+
+    // `dashboardId` arrives in the request body. Without this check any
+    // authenticated user could schedule a recurring export of another
+    // tenant's dashboard and have it mailed to an address they control.
+    // Reported as "not found" so existence is never disclosed.
+    const [dashboard] = await withOrgContext(orgId, userId, async (tx) => {
+      return tx
+        .select({ id: dashboards.id })
+        .from(dashboards)
+        .where(and(eq(dashboards.id, payload.dashboardId), eq(dashboards.orgId, orgId)))
+        .limit(1);
+    });
+
+    if (!dashboard) {
+      throw new AppErrorException('not_found');
+    }
 
     const [report] = await withOrgContext(orgId, userId, async (tx) => {
       return tx

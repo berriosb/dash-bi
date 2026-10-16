@@ -120,6 +120,20 @@
       "when": 1790865832993,
       "tag": "0016_unique_target_table",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1791990000000,
+      "tag": "0017_production_rls_and_readonly_hardening",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1791993600000,
+      "tag": "0018_readonly_grants_for_org_schemas",
+      "breakpoints": true
     }
   ]
 }

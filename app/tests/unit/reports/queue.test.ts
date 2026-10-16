@@ -9,7 +9,11 @@ const mockQueueInstance = {
 };
 
 vi.mock('bullmq', () => ({
-  Queue: vi.fn(() => mockQueueInstance),
+  // Constructible implementation: Vitest 4 rejects arrow functions for a
+  // class the code under test instantiates with `new`.
+  Queue: vi.fn(function () {
+    return mockQueueInstance;
+  }),
 }));
 
 vi.mock('@/lib/logger', () => ({

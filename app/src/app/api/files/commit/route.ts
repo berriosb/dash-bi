@@ -13,6 +13,7 @@ import {
   buildCreateTableSQL,
   buildIndexSQL,
   buildRLSPoliciesSQL,
+  buildReadOnlyGrantsSQL,
   loadRows,
 } from '@/lib/connectors/parsers/load';
 import { type InferredColumn } from '@/lib/connectors/parsers/infer-types';
@@ -120,10 +121,16 @@ export async function POST(req: Request) {
       await tx.execute(sql.raw(buildCreateTableSQL(targetTable, inferredColumns)));
       const rls = buildRLSPoliciesSQL(targetTable);
       await tx.execute(sql.raw(rls.enable));
+      await tx.execute(sql.raw(rls.force));
       await tx.execute(sql.raw(rls.policy));
       for (const idxSql of buildIndexSQL(targetTable, inferredColumns)) {
         await tx.execute(sql.raw(idxSql));
       }
+      // The per-org schema is outside the blanket `GRANT … IN SCHEMA public`
+      // from init-roles.sh, so without this the read-only role cannot resolve
+      // the schema and every query against this table fails with
+      // `permission denied for schema`.
+      await tx.execute(sql.raw(buildReadOnlyGrantsSQL(targetTable)));
     });
 
     // 2. INSERT the rows under the caller's org, so the per-table RLS policy

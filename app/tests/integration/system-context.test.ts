@@ -41,6 +41,17 @@ const SYSTEM_FUNCTIONS = [
   //     is the minimum this needs to answer.
   'dashbi_user_belongs_to_org',
   'dashbi_slug_is_taken',
+  // From migration 0017. Same reasoning: the report runner is a platform
+  // worker that belongs to no tenant, so it polls across orgs and can
+  // only do so through a SECURITY DEFINER function.
+  //
+  //   dashbi_due_scheduled_reports — returns the rows that are due, and
+  //     with them the org_id each rule belongs to. The worker uses that
+  //     to re-enter each tenant under RLS before rendering, exactly like
+  //     dashbi_due_alert_rules. Every column it returns is data the
+  //     operator's own scheduler must know; it hands out no dashboard
+  //     content, and the dashboard PDF itself is fetched per-org.
+  'dashbi_due_scheduled_reports',
 ];
 
 describe('SECURITY DEFINER system functions', () => {

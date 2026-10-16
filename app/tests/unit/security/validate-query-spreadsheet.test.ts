@@ -90,8 +90,8 @@ describe('validateQuery — spreadsheet branch', () => {
       fileId: 'f',
       sql: 'SELECT * FROM sheet1',
     };
-    validateQuery(q, 'csv');
-    expect(q.sql).toBe('SELECT * FROM sheet1 LIMIT 10000');
+    // `validateQuery` is pure: the normalized SQL comes back as a value.
+    expect(validateQuery(q, 'csv')).toBe('SELECT * FROM sheet1 LIMIT 10000');
   });
 
   it('preserves an explicit LIMIT clause', () => {
@@ -100,8 +100,7 @@ describe('validateQuery — spreadsheet branch', () => {
       fileId: 'f',
       sql: 'SELECT * FROM sheet1 LIMIT 50',
     };
-    validateQuery(q, 'csv');
-    expect(q.sql).toBe('SELECT * FROM sheet1 LIMIT 50');
+    expect(validateQuery(q, 'csv')).toBe('SELECT * FROM sheet1 LIMIT 50');
   });
 
   it('strips trailing semicolons before injecting LIMIT', () => {
@@ -110,8 +109,7 @@ describe('validateQuery — spreadsheet branch', () => {
       fileId: 'f',
       sql: 'SELECT * FROM sheet1;',
     };
-    validateQuery(q, 'csv');
-    expect(q.sql).toBe('SELECT * FROM sheet1 LIMIT 10000');
+    expect(validateQuery(q, 'csv')).toBe('SELECT * FROM sheet1 LIMIT 10000');
   });
 
   it('blocks the viewer role from accessing sensitive columns', () => {

@@ -3,12 +3,14 @@ import { UnauthorizedError, ForbiddenError } from '@/lib/auth/context';
 
 const {
   mockDbInsert,
+  mockDbSelect,
   mockWithOrgContext,
   mockRequireAuth,
   mockGeneratePublicToken,
   mockAudit,
 } = vi.hoisted(() => ({
   mockDbInsert: vi.fn(),
+  mockDbSelect: vi.fn(),
   mockWithOrgContext: vi.fn(
     async (..._args: unknown[]) => undefined
   ),
@@ -18,7 +20,7 @@ const {
 }));
 
 vi.mock('@/db/client', () => ({
-  db: { insert: mockDbInsert },
+  db: { insert: mockDbInsert, select: mockDbSelect },
   withOrgContext: mockWithOrgContext,
 }));
 
@@ -65,6 +67,7 @@ describe('POST /api/dashboards/[id]/share', () => {
     mockRequireAuth.mockReset();
     mockWithOrgContext.mockReset();
     mockDbInsert.mockReset();
+    mockDbSelect.mockReset();
     mockAudit.mockReset();
     mockGeneratePublicToken.mockReset();
     mockRequireAuth.mockResolvedValue({
@@ -74,9 +77,16 @@ describe('POST /api/dashboards/[id]/share', () => {
       role: 'admin',
     });
     mockGeneratePublicToken.mockReturnValue('test-token-aaaaaaaaaaaaaaaaaaaaaaaa');
+    mockDbSelect.mockReturnValue({
+      from: () => ({
+        where: () => ({
+          limit: async () => [{ id: 'dash-123' }],
+        }),
+      }),
+    });
     (mockWithOrgContext as unknown as { mockImplementation: (impl: (...args: unknown[]) => Promise<unknown>) => void }).mockImplementation((...args: unknown[]) => {
       const fn = args[3] as (t: unknown) => Promise<unknown>;
-      return fn({ insert: mockDbInsert });
+      return fn({ insert: mockDbInsert, select: mockDbSelect });
     });
     const returning = vi.fn().mockResolvedValue([
       {
@@ -119,13 +129,31 @@ describe('POST /api/dashboards/[id]/share', () => {
     const req = makeReq({});
     await POST(req, { params: Promise.resolve({ id: 'dash-123' }) });
 
-    expect(mockWithOrgContext).toHaveBeenCalledTimes(1);
+    // One call proves dashboard ownership, one inserts the link.
+    expect(mockWithOrgContext).toHaveBeenCalledTimes(2);
     expect(mockWithOrgContext).toHaveBeenCalledWith(
       'org-test',
       'user-test',
       'admin',
       expect.any(Function)
     );
+  });
+
+  it('refuses to mint a public link for a dashboard outside the caller org', async () => {
+    mockDbSelect.mockReturnValue({
+      from: () => ({
+        where: () => ({
+          limit: async () => [],
+        }),
+      }),
+    });
+
+    const req = makeReq({});
+    const res = await POST(req, { params: Promise.resolve({ id: 'dash-foreign' }) });
+
+    expect(res.status).toBe(404);
+    expect(mockDbInsert).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
   });
 
   it('writes an audit log entry with export.link_generated', async () => {

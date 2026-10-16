@@ -13,6 +13,7 @@ import { parseBareIdent, quoteIdent } from '@/lib/connectors/parsers/sql-ident';
  */
 export async function enableRLS(): Promise<void> {
   const tables = [
+    'orgs',
     'data_sources',
     'dashboards',
     'dashboard_versions',
@@ -20,13 +21,13 @@ export async function enableRLS(): Promise<void> {
     'llm_usage',
     'audit_log',
     'org_members',
-    // Sprint 3: NLQA tables are tenant-scoped (org_id) and additionally
-    // user-scoped for conversations (user_id).
+    'uploaded_files',
     'nlqa_conversations',
     'nlqa_messages',
-    // Sprint 3: alerting tables, tenant-scoped (org_id).
     'alert_rules',
     'alert_events',
+    'scheduled_reports',
+    'scheduled_report_runs',
   ];
   // NOTE: 'users', 'accounts', 'verifications' are GLOBAL (not tenant-scoped).
   // Better-auth manages them; RLS not enabled because access is gated by better-auth session + JWT.
@@ -51,68 +52,99 @@ export async function enableRLS(): Promise<void> {
  */
 export async function createRLSPolicies(): Promise<void> {
   const policies = [
-    // orgs: solo ve orgs donde es miembro
-    `CREATE POLICY orgs_isolation ON orgs
-      USING (id IN (
-        SELECT org_id FROM org_members
-        WHERE user_id = current_setting('app.current_user_id')::uuid
-      ))`,
+    // orgs: lectura/actualización por pertenencia via SECURITY DEFINER (0015)
+    `CREATE POLICY orgs_read ON orgs
+      FOR SELECT
+      USING (dashbi_user_belongs_to_org(id))`,
 
-    // org_members: ve solo memberships propias o de la org activa
+    `CREATE POLICY orgs_update ON orgs
+      FOR UPDATE
+      USING (dashbi_user_belongs_to_org(id))
+      WITH CHECK (dashbi_user_belongs_to_org(id))`,
+
+    `CREATE POLICY orgs_insert ON orgs
+      FOR INSERT
+      WITH CHECK (NULLIF(current_setting('app.current_user_id', true), '')::uuid IS NOT NULL)`,
+
+    // org_members: ve memberships propias o de la org activa (0017)
     `CREATE POLICY org_members_isolation ON org_members
       USING (
-        user_id = current_setting('app.current_user_id', true)::uuid
-        OR org_id = current_setting('app.current_org_id', true)::uuid
+        user_id = COALESCE(
+          NULLIF(current_setting('app.current_user_id', true), '')::uuid,
+          '00000000-0000-0000-0000-000000000000'::uuid
+        )
+        OR org_id = app_current_org_id()
+      )
+      WITH CHECK (
+        user_id = COALESCE(
+          NULLIF(current_setting('app.current_user_id', true), '')::uuid,
+          '00000000-0000-0000-0000-000000000000'::uuid
+        )
+        OR org_id = app_current_org_id()
       )`,
 
     // data_sources: filtra por org_id
     `CREATE POLICY data_sources_isolation ON data_sources
-      USING (org_id = current_setting('app.current_org_id')::uuid)`,
+      USING (org_id = app_current_org_id())`,
 
     // dashboards: filtra por org_id
     `CREATE POLICY dashboards_isolation ON dashboards
-      USING (org_id = current_setting('app.current_org_id')::uuid)`,
+      USING (org_id = app_current_org_id())`,
 
     // dashboard_versions: filtra por org_id
     `CREATE POLICY dashboard_versions_isolation ON dashboard_versions
-      USING (org_id = current_setting('app.current_org_id')::uuid)`,
+      USING (org_id = app_current_org_id())`,
 
     // public_links: filtra por org_id
     `CREATE POLICY public_links_isolation ON public_links
-      USING (org_id = current_setting('app.current_org_id')::uuid)`,
+      USING (org_id = app_current_org_id())`,
 
     // llm_usage: filtra por org_id
     `CREATE POLICY llm_usage_isolation ON llm_usage
-      USING (org_id = current_setting('app.current_org_id')::uuid)`,
+      USING (org_id = app_current_org_id())`,
 
     // audit_log: filtra por org_id
     `CREATE POLICY audit_log_isolation ON audit_log
-      USING (org_id = current_setting('app.current_org_id')::uuid)`,
+      USING (org_id = app_current_org_id())`,
+
+    // uploaded_files: filtra por org_id
+    `CREATE POLICY uploaded_files_isolation ON uploaded_files
+      USING (org_id = app_current_org_id())
+      WITH CHECK (org_id = app_current_org_id())`,
 
     // Sprint 3: NLQA conversations — solo el dueño ve sus conversaciones.
     `CREATE POLICY nlqa_conversations_isolation ON nlqa_conversations
       USING (
-        org_id = current_setting('app.current_org_id')::uuid
-        AND user_id = current_setting('app.current_user_id')::uuid
+        org_id = app_current_org_id()
+        AND user_id = COALESCE(
+          NULLIF(current_setting('app.current_user_id', true), '')::uuid,
+          '00000000-0000-0000-0000-000000000000'::uuid
+        )
       )`,
 
-    // Sprint 3: NLQA messages — org_id filtering (la conversación ya está
-    // protegida por user_id, así que las messages de esa conv son seguras).
+    // Sprint 3: NLQA messages — org_id filtering
     `CREATE POLICY nlqa_messages_isolation ON nlqa_messages
-      USING (org_id = current_setting('app.current_org_id')::uuid)`,
+      USING (org_id = app_current_org_id())`,
 
-    // Sprint 3: alert_rules — filtra por org_id.
-    // Uses the null-safe app_current_org_id() helper from
-    // 0004_rls_null_safe.sql, not the bare current_setting()::uuid used by
-    // the older policies above: without the missing-ok flag, current_setting
-    // raises instead of returning NULL when the GUC was never set, so an
-    // anonymous caller would error rather than match zero rows.
+    // Sprint 3: alert_rules — filtra por org_id
     `CREATE POLICY alert_rules_isolation ON alert_rules
-      USING (org_id = app_current_org_id())`,
+      USING (org_id = app_current_org_id())
+      WITH CHECK (org_id = app_current_org_id())`,
 
-    // Sprint 3: alert_events — filtra por org_id (mismo criterio null-safe)
+    // Sprint 3: alert_events — filtra por org_id
     `CREATE POLICY alert_events_isolation ON alert_events
-      USING (org_id = app_current_org_id())`,
+      USING (org_id = app_current_org_id())
+      WITH CHECK (org_id = app_current_org_id())`,
+
+    // scheduled_reports — filtra por org_id
+    `CREATE POLICY scheduled_reports_isolation ON scheduled_reports
+      USING (org_id = app_current_org_id())
+      WITH CHECK (org_id = app_current_org_id())`,
+
+    // scheduled_report_runs — filtra por org_id
+    `CREATE POLICY scheduled_report_runs_isolation ON scheduled_report_runs
+      USING (org_id = app_current_org_id())
+      WITH CHECK (org_id = app_current_org_id())`,
   ];
 
   await withSystemContext(async () => {

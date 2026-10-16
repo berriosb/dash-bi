@@ -25,15 +25,36 @@ export default defineConfig({
       thresholds: {
         // Measured with `pnpm test:coverage` and set slightly BELOW the
         // real numbers so the gate is green today and fails on a
-        // regression. They used to sit at 70/65/70/70 and had never
-        // been enforced, because CI ran `vitest run` without
-        // `--coverage`; the functions threshold was 2.2 points above
-        // actual (67.8%), so wiring it up as-is would have failed the
-        // merge gate on the first run.
-        statements: 70, // actual 71.63
-        branches: 75,  // actual 79.33
-        functions: 65, // actual 67.80
-        lines: 70,     // actual 71.63
+        // regression.
+        //
+        // RE-BASELINED for vitest 4 (2026-10-16). The previous values
+        // (70/75/65/70) were measured with vitest 3's v8 provider and are
+        // NOT comparable to what vitest 4 reports — the jump was a change
+        // in the measuring instrument, not a loss of tests. Evidence, same
+        // 91 files in the report, modules untouched by the change:
+        //
+        //   file                          vitest 3   vitest 4
+        //   widgets/archetypes.ts              477        23
+        //   templates/catalog.ts               370         5
+        //   widgets/atomic-patterns.ts         189        10
+        //
+        // Those are constant modules; their source did not change. Across
+        // the 66 files untouched by this branch, statement totals went
+        // 3726 → 1094 (0.29x) while branch totals went UP (1129 → 1604),
+        // which is what a different instrumentation model looks like.
+        //
+        // So the real measurement moved, and the gate has to follow it.
+        // The old numbers would have required writing ~230 extra branch
+        // assertions to satisfy a denominator that no longer describes
+        // this codebase. New values are still set just below actual, so a
+        // regression of the same magnitude keeps failing the gate.
+        //
+        // Any future vitest/coverage-provider upgrade invalidates these
+        // numbers again: re-measure both trees before changing them.
+        statements: 67, // actual 67.72
+        branches: 60,  // actual 60.84
+        functions: 62, // actual 62.72
+        lines: 68,     // actual 69.15
       },
     },
     testTimeout: 30000,  // 30s para tests con Testcontainers

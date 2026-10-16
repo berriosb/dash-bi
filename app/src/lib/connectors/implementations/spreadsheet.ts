@@ -1,12 +1,16 @@
 import { sql, eq } from 'drizzle-orm';
-import { db, withOrgContext, type Tx } from '@/db/client';
+import { withOrgContext, withOrgContextReadOnly, type Tx } from '@/db/client';
 import { uploadedFiles } from '@/db/schema';
 import { validateQuery } from '@/lib/security/validate-query';
+import { decryptApiKey } from '@/lib/security/encryption';
 import { parseQualifiedIdent } from '@/lib/connectors/parsers/sql-ident';
+import type { OrgRole } from '@/lib/auth/permissions';
+import { throwIfAborted } from '../types';
 import type {
   Connector,
   ConnectorConfig,
   ConnectorSchema,
+  ExecuteQueryOptions,
   Query,
   QueryResult,
 } from '../types';
@@ -26,32 +30,49 @@ export type SpreadsheetConfig = {
  *
  * Query protocol:
  *   1. Caller invokes `executeQuery({ kind: 'spreadsheet', fileId, sql })`.
- *   2. We resolve the file row by id (RLS ensures org match).
+ *   2. We resolve the file row by id (RLS ensures org match) with the app
+ *      role — it owns the tenant metadata.
  *   3. We re-validate the SQL through the postgres connector's
  *      `validateQuery` so SELECT-only / role-based-PII / LIMIT
  *      injection rules apply.
- *   4. We run the SQL inside `withOrgContext` so the per-file
- *      RLS policy accepts the SELECT.
+ *   4. We run the SQL as `dashbi_readonly` via `withOrgContextReadOnly`.
+ *
+ * Step 4 is a security boundary, not a performance choice. The app role has
+ * SELECT on every table in `public`, including the global auth tables
+ * (`users`, `sessions`, …) that a tenant-scoped RLS policy cannot protect.
+ * Running user- and AI-written SQL on that role meant a single crafted
+ * query could read another tenant's sessions. The read-only role is
+ * NOSUPERUSER NOBYPASSRLS and is revoked from those tables by migration
+ * 0017, so an injected query cannot cross the tenant boundary even if
+ * `validateQuery` is bypassed.
  */
 export class SpreadsheetConnector implements Connector {
   type = 'spreadsheet' as const;
   private config: SpreadsheetConfig;
+  private orgId: string;
+  private role?: OrgRole;
 
   constructor(connectorConfig: ConnectorConfig) {
-    // The dataSources row that points at an uploaded_files row carries
-    // the fileId in the encrypted config blob. We don't strictly need
-    // to decrypt here because we can also pass fileId via the data
-    // source row, but we keep the structure for future config growth.
+    this.orgId = connectorConfig.orgId;
     this.config = { fileId: '' };
     try {
-      const decoded = JSON.parse(
-        Buffer.from(connectorConfig.configEncrypted, 'base64').toString('utf8'),
-      ) as Partial<SpreadsheetConfig>;
+      const decrypted = decryptApiKey(connectorConfig.configEncrypted);
+      const decoded = JSON.parse(decrypted) as Partial<SpreadsheetConfig>;
       if (decoded.fileId) this.config.fileId = decoded.fileId;
     } catch {
-      // Decryption failure is non-fatal; the query handler will
-      // require a fileId in the query itself.
+      try {
+        const decoded = JSON.parse(
+          Buffer.from(connectorConfig.configEncrypted, 'base64').toString('utf8'),
+        ) as Partial<SpreadsheetConfig>;
+        if (decoded.fileId) this.config.fileId = decoded.fileId;
+      } catch {
+        // Decryption failure is non-fatal if query provides fileId directly.
+      }
     }
+  }
+
+  setRole(role: OrgRole): void {
+    this.role = role;
   }
 
   /**
@@ -68,25 +89,25 @@ export class SpreadsheetConnector implements Connector {
   }
 
   async testConnection(): Promise<{ ok: boolean; latencyMs: number; error?: string }> {
-    // No live connection to test (we query Postgres for every
-    // request). The "connection" is really "file is queryable".
     const start = Date.now();
     try {
       if (!this.config.fileId) {
         return { ok: false, latencyMs: 0, error: 'Missing fileId in config' };
       }
-      const file = await withOrgContext('', null, async (tx) =>
-        this.resolveFile(tx, this.config.fileId),
-      );
+      const file = await withOrgContext(this.orgId, null, async (tx) => {
+        const found = await this.resolveFile(tx, this.config.fileId);
+        if (!found) return null;
+        // The probe is a read of tenant data, so it runs on the read-only
+        // role for the same reason executeQuery does.
+        const target = parseQualifiedIdent(found.targetTable);
+        await withOrgContextReadOnly(this.orgId, null, async (roTx) => {
+          await roTx.execute(sql.raw(`SELECT 1 FROM ${target.sql} LIMIT 1`));
+        });
+        return found;
+      });
       if (!file) {
         return { ok: false, latencyMs: Date.now() - start, error: 'File not found' };
       }
-      // Smoke-test: SELECT 1 FROM <targetTable> LIMIT 1
-      // The identifier is validated + quoted here, not at write time: this
-      // value comes back out of a `text` column, and this runs outside the
-      // `withOrgContext` transaction that the other queries use.
-      const target = parseQualifiedIdent(file.targetTable);
-      await db.execute(sql.raw(`SELECT 1 FROM ${target.sql} LIMIT 1`));
       return { ok: true, latencyMs: Date.now() - start };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -98,7 +119,7 @@ export class SpreadsheetConnector implements Connector {
     if (!this.config.fileId) {
       return { tables: [] };
     }
-    const file = await withOrgContext('', null, async (tx) =>
+    const file = await withOrgContext(this.orgId, null, async (tx) =>
       this.resolveFile(tx, this.config.fileId),
     );
     if (!file) return { tables: [] };
@@ -120,36 +141,37 @@ export class SpreadsheetConnector implements Connector {
 
   async executeQuery<T = Record<string, unknown>>(
     query: Query,
+    opts?: ExecuteQueryOptions,
   ): Promise<QueryResult<T>> {
+    // The statement runs through Drizzle/postgres.js, which has no cancel
+    // API; only a pre-issued abort is honored here. The connection is
+    // returned to the pool on rollback when the transaction is dropped.
+    throwIfAborted(opts?.signal);
     if (query.kind !== 'spreadsheet') {
       throw new Error('Spreadsheet connector only supports spreadsheet queries');
     }
-    const fileId = query.fileId;
+    const fileId = query.fileId || this.config.fileId;
     if (!fileId) {
       throw new Error('spreadsheet query requires fileId');
     }
-    // Resolve the file (RLS-scoped). We pass orgId="" because the
-    // lookup is by primary key; RLS uses the session's GUCs.
-    const file = await withOrgContext('', null, async (tx) =>
+    const file = await withOrgContext(this.orgId, null, async (tx) =>
       this.resolveFile(tx, fileId),
     );
     if (!file) {
       throw new Error(`File not found: ${fileId}`);
     }
-    // Validate the SQL through the same pipeline as the postgres
-    // connector. We treat the file's table as a SQL-injectable
-    // surface (the AI generates the query text) so we re-use the
-    // existing SELECT-only + LIMIT + role-based-PII rules.
-    validateQuery(
+    // `validateQuery` is pure. The caller's `query` is left untouched and the
+    // statement that actually runs is the one it returns — previously this
+    // relied on the validator writing the LIMIT back into `query.sql`.
+    const validatedSql = validateQuery(
       { kind: 'sql', sql: query.sql, params: query.params ?? [] },
       'postgres',
-    );
+      this.role,
+    ) ?? query.sql;
 
     const start = Date.now();
-    // Run inside withOrgContext so the file's RLS policy accepts
-    // the SELECT. The `org_id` column is filtered by app_current_org_id().
-    const result = await withOrgContext(file.orgId, null, async (tx) => {
-      const res = await tx.execute(sql.raw(query.sql));
+    const result = await withOrgContextReadOnly(file.orgId, null, async (tx) => {
+      const res = await tx.execute(sql.raw(validatedSql));
       // Drizzle's postgres-js driver resolves execute() with the rows array
       // itself. The previous code read `res.rows` and fell back to `[]`, so a
       // correct result was discarded and every spreadsheet-backed dashboard

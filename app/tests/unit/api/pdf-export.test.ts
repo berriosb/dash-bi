@@ -21,11 +21,15 @@ const {
 // @/lib/export/pdf-enqueue is overridden per-test with
 // mockGetPdfJobStatus.mockImplementationOnce(realGetPdfJobStatus).
 vi.mock('bullmq', () => ({
-  Queue: vi.fn(() => ({ getJob: mockQueueGetJob })),
+  Queue: vi.fn(function () {
+    return { getJob: mockQueueGetJob };
+  }),
 }));
 
 vi.mock('ioredis', () => ({
-  Redis: vi.fn(() => ({})),
+  Redis: vi.fn(function () {
+    return {};
+  }),
 }));
 
 vi.mock('@/lib/export/print-token', () => ({

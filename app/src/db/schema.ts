@@ -7,6 +7,7 @@ import {
   integer,
   jsonb,
   unique,
+  uniqueIndex,
   index,
   pgEnum,
 } from 'drizzle-orm/pg-core';
@@ -140,6 +141,9 @@ export const users = pgTable(
   },
   (t) => ({
     emailIdx: unique('users_email_idx').on(t.email),
+    currentOnboardingStepIdx: index('users_current_onboarding_step_idx').on(
+      t.currentOnboardingStep,
+    ),
   }),
 );
 
@@ -456,13 +460,15 @@ export const uploadedFiles = pgTable(
 
     columns: jsonb('columns').$type<UploadedFileColumn[]>().notNull(),
 
-    createdBy: uuid('created_by').notNull().references(() => users.id),
+    createdBy: uuid('created_by').notNull().references(() => users.id, { onDelete: 'restrict' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (t) => ({
     orgIdx: index('uploaded_files_org_idx').on(t.orgId),
+    targetTableIdx: index('uploaded_files_target_table_idx').on(t.orgId, t.targetTable),
+    orgTargetUniq: uniqueIndex('uploaded_files_org_target_uniq').on(t.orgId, t.targetTable),
   }),
 );
 

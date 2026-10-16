@@ -94,4 +94,53 @@ describe('useAutoSave', () => {
     await new Promise((r) => setTimeout(r, 200));
     expect(['saving', 'saved', 'idle']).toContain(result.current.status);
   });
+
+  it('re-saves after a failure instead of treating the payload as saved', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      json: async () => ({ error: 'boom' }),
+    });
+
+    const { result } = renderHook(() => useAutoSave('dash-1', 50), { wrapper: makeWrapper() });
+
+    act(() => {
+      result.current.trigger({ ...mockDashboard, title: 'A' });
+    });
+    await new Promise((r) => setTimeout(r, 150));
+    expect(result.current.status).toBe('error');
+
+    // The failing payload must not be recorded as persisted, otherwise
+    // the next trigger with the same content short-circuits and the edit
+    // is silently lost.
+    act(() => {
+      result.current.trigger({ ...mockDashboard, title: 'A' });
+    });
+    await new Promise((r) => setTimeout(r, 150));
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('resets the saved snapshot when the dashboard id changes', async () => {
+    const { result, rerender } = renderHook(
+      ({ id }) => useAutoSave(id, 50),
+      { wrapper: makeWrapper(), initialProps: { id: 'dash-1' } },
+    );
+
+    act(() => {
+      result.current.trigger({ ...mockDashboard, title: 'A' });
+    });
+    await new Promise((r) => setTimeout(r, 150));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    rerender({ id: 'dash-2' });
+
+    act(() => {
+      result.current.trigger({ ...mockDashboard, title: 'A' });
+    });
+    await new Promise((r) => setTimeout(r, 150));
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const [url] = fetchMock.mock.calls[1] ?? [];
+    expect(url).toBe('/api/dashboards/dash-2');
+  });
 });

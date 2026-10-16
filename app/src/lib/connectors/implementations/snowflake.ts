@@ -1,7 +1,9 @@
 import { decryptApiKey } from '@/lib/security/encryption';
 import { validateQuery } from '@/lib/security/validate-query';
 import { validatePostgresHost, SSRFError } from '@/lib/security/validate-connection';
-import type { Connector, ConnectorConfig, ConnectorSchema, Query, QueryResult } from '../types';
+import { throwIfAborted } from '../types';
+import type { Connector, ConnectorConfig, ConnectorSchema, ExecuteQueryOptions,
+  Query, QueryResult } from '../types';
 
 export type SnowflakeConfig = {
   account: string;
@@ -141,8 +143,12 @@ export class SnowflakeConnector implements Connector {
     return { tables: [] };
   }
 
-  async executeQuery<T = Record<string, unknown>>(query: Query): Promise<QueryResult<T>> {
-    validateQuery(query, 'snowflake');
+  async executeQuery<T = Record<string, unknown>>(
+    query: Query,
+    opts?: ExecuteQueryOptions,
+  ): Promise<QueryResult<T>> {
+    throwIfAborted(opts?.signal);
+    const normalizedSql = validateQuery(query, 'snowflake');
 
     if (query.kind !== 'sql') {
       // validateQuery() above would already have rejected this; the
@@ -158,8 +164,11 @@ export class SnowflakeConnector implements Connector {
         'Content-Type': 'application/json',
         Accept: 'application/json',
       },
+      signal: opts?.signal,
       body: JSON.stringify({
-        statement: query.sql,
+        // The normalized statement (LIMIT injected or clamped) is what
+        // `validateQuery` returned, not whatever the caller passed in.
+        statement: normalizedSql ?? query.sql,
         ...this.scoping,
         timeout: 60,
       }),

@@ -48,6 +48,11 @@ const DANGEROUS_DB_FUNCTIONS = [
   // Network egress from the DB
   'dblink', 'dblink_connect', 'dblink_send_query',
   'pg_connect_backend', 'pg_forward_wal', 'lo_create', 'lo_unlink',
+  // Internal SECURITY DEFINER helpers (cross-tenant system functions)
+  'dashbi_due_alert_rules', 'dashbi_count_enabled_alert_rules',
+  'dashbi_load_alert_rule', 'dashbi_resolve_public_link',
+  'dashbi_user_belongs_to_org', 'dashbi_slug_is_taken',
+  'dashbi_due_scheduled_reports',
 ] as const;
 
 /**
@@ -70,6 +75,43 @@ function buildForbiddenPattern(extraKeywords: readonly string[] = []): RegExp {
   return new RegExp(`\\b(${alternatives})\\b`, 'i');
 }
 
+function stripParenthesizedSubqueries(sql: string): string {
+  let result = '';
+  let depth = 0;
+  for (let i = 0; i < sql.length; i++) {
+    const ch = sql[i];
+    if (ch === '(') {
+      depth++;
+    } else if (ch === ')') {
+      if (depth > 0) depth--;
+    } else if (depth === 0) {
+      result += ch;
+    }
+  }
+  return result;
+}
+
+function normalizeSqlLimit(sql: string, maxRows = 10000): string {
+  const cleanSql = sql.replace(/;\s*$/, '');
+  const topLevel = stripParenthesizedSubqueries(cleanSql);
+  const limitMatch = topLevel.match(/\bLIMIT\s+(\d+)\b/i);
+
+  if (!limitMatch) {
+    return `${cleanSql} LIMIT ${maxRows}`;
+  }
+
+  const parsedLimit = Number(limitMatch[1]);
+  if (Number.isFinite(parsedLimit) && parsedLimit > maxRows) {
+    // Clamp the trailing/outer LIMIT down to maxRows
+    return cleanSql.replace(
+      /\bLIMIT\s+\d+(\s+OFFSET\s+\d+)?\s*$/i,
+      `LIMIT ${maxRows}$1`,
+    );
+  }
+
+  return cleanSql;
+}
+
 /**
  * T2 del threat model: validar SQL/queries generadas por IA ANTES de ejecutar.
  *
@@ -78,12 +120,23 @@ function buildForbiddenPattern(extraKeywords: readonly string[] = []): RegExp {
  * 2. DB user es read-only (no puede DML/DDL aunque se cuele algo)
  * 3. Postgres host validation (no localhost/metadata)
  * 4. Role-based filtering (Sprint 1): viewer no accede a columnas PII
+ *
+ * PURE BY CONTRACT. This function never writes to `query`; the normalized
+ * SQL (with the LIMIT injected or clamped) is returned. It used to
+ * reassign `query.sql` in place, which made the validator unsafe to run
+ * twice on a shared object and left any caller that computed a cache key
+ * from `query.sql` before validating describing a statement that was never
+ * executed. Callers that execute the SQL must use the return value.
+ *
+ * Returns the normalized SQL for SQL-like connectors, `undefined` for the
+ * REST connectors (stripe/sheets/ga4/hubspot/shopify), which have no SQL
+ * to normalize.
  */
 export function validateQuery(
   query: Query,
   dataSourceType: ConnectorType,
   role?: OrgRole,
-): void {
+): string | undefined {
   if (dataSourceType === 'postgres' || dataSourceType === 'mysql') {
     if (query.kind !== 'sql') {
       throw new ValidationError(`${dataSourceType} expects SQL query`);
@@ -115,12 +168,10 @@ export function validateQuery(
       assertRolePermissions(sql, role);
     }
 
-    // Auto-inject LIMIT 10000 si no tiene
-    if (!/LIMIT\s+\d+/i.test(sql)) {
-      // Quitar ; final si existe, agregar LIMIT
-      const cleanSql = sql.replace(/;\s*$/, '');
-      query.sql = `${cleanSql} LIMIT 10000`;
-    }
+    // Auto-inject / clamp LIMIT 10000. Returned rather than written back:
+    // this function must not mutate its argument (see the purity note
+    // above `normalizeSqlLimit`).
+    return normalizeSqlLimit(sql);
   }
 
   if (dataSourceType === 'stripe') {
@@ -130,12 +181,14 @@ export function validateQuery(
     if (role) {
       assertStripeRolePermissions(query.operation.type, role);
     }
+    return undefined;
   }
 
   if (dataSourceType === 'sheets') {
     if (query.kind !== 'sheets') {
       throw new ValidationError('Sheets expects sheet query');
     }
+    return undefined;
   }
 
   if (dataSourceType === 'shopify') {
@@ -145,7 +198,12 @@ export function validateQuery(
       if (!/^(SELECT|WITH|EXPLAIN)/.test(upper)) {
         throw new ValidationError('Only SELECT queries allowed');
       }
+      if (role) {
+        assertRolePermissions(sql, role);
+      }
+      return query.sql;
     }
+    return undefined;
   }
 
   if (dataSourceType === 'hubspot') {
@@ -170,9 +228,7 @@ export function validateQuery(
       throw new ValidationError('DML/DDL statements not allowed');
     }
     if (role) assertRolePermissions(sql, role);
-    if (!/LIMIT\s+\d+/i.test(sql)) {
-      query.sql = `${sql.replace(/;\s*$/, '')} LIMIT 10000`;
-    }
+    return normalizeSqlLimit(sql);
   }
 
   if (dataSourceType === 'ga4') {
@@ -183,6 +239,7 @@ export function validateQuery(
     if (query.kind !== 'ga4') {
       throw new ValidationError('GA4 expects a ga4 query (metrics/dimensions/dateRange)');
     }
+    return undefined;
   }
 
   if (dataSourceType === 'snowflake') {
@@ -206,9 +263,7 @@ export function validateQuery(
       throw new ValidationError('DML/DDL statements not allowed');
     }
     if (role) assertRolePermissions(sql, role);
-    if (!/LIMIT\s+\d+/i.test(sql)) {
-      query.sql = `${sql.replace(/;\s*$/, '')} LIMIT 10000`;
-    }
+    return normalizeSqlLimit(sql);
   }
 
   if (dataSourceType === 'spreadsheet' || dataSourceType === 'csv' || dataSourceType === 'excel') {
@@ -231,10 +286,10 @@ export function validateQuery(
       throw new ValidationError('DML/DDL statements not allowed');
     }
     if (role) assertRolePermissions(sql, role);
-    if (!/LIMIT\s+\d+/i.test(sql)) {
-      query.sql = `${sql.replace(/;\s*$/, '')} LIMIT 10000`;
-    }
+    return normalizeSqlLimit(sql);
   }
+
+  return undefined;
 }
 
 /**

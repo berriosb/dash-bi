@@ -13,6 +13,7 @@ import { validateQuery, ValidationError } from '@/lib/security/validate-query';
 import { audit } from '@/lib/audit/log';
 import { checkRateLimit } from '@/lib/rate-limit';
 import { logger } from '@/lib/logger';
+import type { ConnectorType } from '@/lib/connectors/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -53,7 +54,7 @@ export async function POST(req: Request) {
     const { conversationId, dataSourceId, question } = parsed.data;
 
     const connector = await resolveConnector(ctx.orgId, ctx.userId, dataSourceId, ctx.role);
-    const dataSourceType = connector.type as 'postgres' | 'stripe' | 'sheets';
+    const dataSourceType = connector.type as ConnectorType;
     const rawSchema = await connector.getSchema();
 
     let activeConversationId = conversationId;
@@ -187,11 +188,31 @@ export async function POST(req: Request) {
       });
     }
 
+    const isSpreadsheetSource =
+      dataSourceType === 'spreadsheet' ||
+      dataSourceType === 'csv' ||
+      dataSourceType === 'excel';
+    const queryToRun = isSpreadsheetSource
+      ? {
+          kind: 'spreadsheet' as const,
+          fileId: '',
+          sql: sqlResult.sql,
+          params: sqlResult.params as never,
+        }
+      : {
+          kind: 'sql' as const,
+          sql: sqlResult.sql,
+          params: sqlResult.params as never,
+        };
+
     try {
-      validateQuery({ kind: 'sql', sql: sqlResult.sql }, dataSourceType, ctx.role);
+      // `validateQuery` is pure: it returns the SQL with the LIMIT injected
+      // or clamped, so the normalized statement is what gets recorded and
+      // executed. Nothing writes back into `queryToRun`.
+      sqlResult.sql = validateQuery(queryToRun, dataSourceType, ctx.role) ?? sqlResult.sql;
     } catch (err) {
       logger.warn({ sql: sqlResult.sql, error: err }, 'NLQA SQL failed validation');
-      const message = 'La IA generó una query inválida. Reformulá tu pregunta.';
+      const message = 'La IA generó una query inválida. Reformula tu pregunta.';
       await withOrgContext(ctx.orgId, ctx.userId, ctx.role, async (tx) =>
         tx.insert(nlqaMessages).values({
           orgId: ctx.orgId,
@@ -209,7 +230,7 @@ export async function POST(req: Request) {
       result = await executeWithTimeout(
         connector,
         dataSourceId,
-        { kind: 'sql', sql: sqlResult.sql, params: sqlResult.params as never },
+        queryToRun,
         { timeoutMs: 30000, retries: 0, role: ctx.role },
       );
     } catch (execErr) {

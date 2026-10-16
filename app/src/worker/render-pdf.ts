@@ -42,7 +42,17 @@ export async function renderPdf(job: PdfJobPayload): Promise<PdfRenderResult> {
       await page.evaluate((logoUrl: string) => {
         const header = document.createElement('div');
         header.dataset.dashboardBranding = 'logo';
-        header.innerHTML = `<img src="${logoUrl}" style="height: 40px; margin: 16px;" />`;
+        header.style.height = '40px';
+        header.style.margin = '16px';
+        // `logoUrl` is tenant-supplied branding. Interpolating it into an
+        // HTML string turns a quote in the value into markup injection
+        // inside the page Puppeteer is about to screenshot and print, so
+        // the attribute is set through the DOM instead.
+        const logo = document.createElement('img');
+        logo.src = logoUrl;
+        logo.alt = 'Logo';
+        logo.style.height = '40px';
+        header.appendChild(logo);
         document.body.prepend(header);
       }, job.branding.logoUrl);
     }

@@ -7,9 +7,12 @@ describe('exportDashboardPdf (Client-side Polling Engine)', () => {
   const originalCreateObjectURL = URL.createObjectURL;
   const originalRevokeObjectURL = URL.revokeObjectURL;
 
-  let mockCreateObjectURL: ReturnType<typeof vi.fn>;
-  let mockRevokeObjectURL: ReturnType<typeof vi.fn>;
-  let mockAnchorClick: ReturnType<typeof vi.fn>;
+  // Vitest 4's bare `Mock<Procedure | Constructable>` is no longer assignable
+  // to a concrete DOM signature, so each mock is parameterized with the shape
+  // it stands in for.
+  let mockCreateObjectURL: ReturnType<typeof vi.fn<(blob: Blob | MediaSource) => string>>;
+  let mockRevokeObjectURL: ReturnType<typeof vi.fn<(url: string) => void>>;
+  let mockAnchorClick: ReturnType<typeof vi.fn<() => void>>;
 
   beforeEach(() => {
     vi.clearAllMocks();
