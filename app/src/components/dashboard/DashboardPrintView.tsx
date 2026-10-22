@@ -1,4 +1,5 @@
 import { WidgetRenderer } from '@/components/widgets/WidgetRenderer';
+import { BrandMark } from '@/components/brand/BrandMark';
 import type { Widget } from '@/lib/widgets/types';
 
 type PrintableDashboard = {
@@ -44,7 +45,12 @@ export function DashboardPrintView({ dashboard }: { dashboard: PrintableDashboar
         )}
       </div>
       <footer className="border-t border-neutral-300 px-8 py-4 text-center text-xs text-neutral-500">
-        dash-bi · {process.env.NEXT_PUBLIC_APP_URL ?? 'https://dash-bi.com'}
+        <span className="inline-flex items-center justify-center gap-2">
+          <span className="inline-flex text-neutral-700">
+            <BrandMark size={16} variant="current" />
+          </span>
+          dash-bi · {process.env.NEXT_PUBLIC_APP_URL ?? 'https://dash-bi.com'}
+        </span>
       </footer>
     </main>
   );

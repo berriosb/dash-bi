@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="4 6 40 36" width="32" height="32">
+  <title>dash-bi</title>
+  <!--
+    Favicon de dash-bi — "Escalones", variante 02.
+
+    Archivo estático: Next.js lo sirve desde app/src/app/. No puede leer los
+    tokens del tema, así que lleva los colores escritos y una regla
+    prefers-color-scheme para el modo oscuro.
+
+    La geometría está atada al componente BrandMark por
+    tests/unit/brand/favicon.test.ts: cambiarla es un cambio de marca.
+  -->
+  <style>
+    .mark-stroke { stroke: #5048e5; }
+    .mark-node { fill: #de177a; }
+    @media (prefers-color-scheme: dark) {
+      .mark-stroke { stroke: #828ef8; }
+      .mark-node { fill: #f174b3; }
+    }
+  </style>
+  <path class="mark-stroke" d="M12 34V14H25V25H30" fill="none" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" />
+  <circle class="mark-node" cx="35" cy="25" r="6" />
+</svg>

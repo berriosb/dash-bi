@@ -1,0 +1,1061 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Opciones de marca — dash-bi</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    /* Tokens reales de app/src/app/globals.css — modo claro */
+    --indigo:  #5048e5;   /* hsl(243 75% 59%)  — Signal Indigo */
+    --violet:  #8251f6;   /* hsl(258 90% 64%)  — Analytical Violet */
+    --magenta: #de177a;   /* hsl(330 81% 48%)  — Review Magenta */
+    --ink:     #0f1729;   /* hsl(222 47% 11%) */
+    --muted:   #6b7280;   /* hsl(220 9% 46%)  */
+    --line:    #e5e7eb;   /* hsl(220 13% 91%) */
+    --surface: #f3f4f6;   /* hsl(220 14% 96%) */
+    --paper:   #ffffff;
+    --page:    #fafafa;
+
+    /* Variante corporate (data-theme="corporate") */
+    --corp-blue:  hsl(224 76% 40%);  /* corporate-primary */
+    --corp-cyan:  hsl(192 91% 30%);  /* corporate-accent */
+
+    /* Tokens reales del modo oscuro (globals.css) */
+    --d-bg:      hsl(222 47% 7%);
+    --d-surface: hsl(222 40% 12%);
+    --d-border:  hsl(215 25% 22%);
+    --d-text:    hsl(210 20% 98%);
+    --d-muted:   hsl(215 16% 75%);
+    --d-indigo:  hsl(234 89% 74%);
+    --d-violet:  hsl(258 90% 76%);
+    --d-magenta: hsl(330 81% 70%);
+
+    --radius: 12px;
+    --sans: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { -webkit-text-size-adjust: 100%; }
+
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 0 28px; }
+
+  /* ── Encabezado ─────────────────────────────────────────── */
+  header.top {
+    border-bottom: 1px solid var(--line);
+    background: var(--paper);
+    padding: 18px 0;
+    position: sticky;
+    top: 0;
+    z-index: 20;
+  }
+  .top__inner { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .top__id { display: flex; align-items: baseline; gap: 10px; margin-right: auto; }
+  .top__id h1 { margin: 0; font-size: 14px; font-weight: 600; letter-spacing: -0.02em; }
+  .top__id span { font-size: 12px; color: var(--muted); }
+
+  .switch { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--paper); }
+  .switch button {
+    appearance: none; border: 0; background: transparent; cursor: pointer;
+    font: inherit; font-size: 13px; font-weight: 500; color: var(--muted);
+    padding: 7px 13px; transition: background .18s ease, color .18s ease;
+  }
+  .switch button + button { border-left: 1px solid var(--line); }
+  .switch button:hover { background: var(--surface); color: var(--ink); }
+  .switch button[aria-pressed="true"] { background: var(--ink); color: #fff; }
+  .switch button:focus-visible { outline: 2px solid var(--indigo); outline-offset: -2px; }
+
+  .sizes { display: inline-flex; gap: 4px; }
+  .sizes button {
+    appearance: none; cursor: pointer; font: inherit; font-size: 12px; font-weight: 600;
+    min-width: 34px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--paper); color: var(--muted); transition: all .18s ease;
+  }
+  .sizes button:hover { border-color: color-mix(in srgb, var(--muted) 45%, var(--line)); color: var(--ink); }
+  .sizes button[aria-pressed="true"] { background: var(--indigo); border-color: var(--indigo); color: #fff; }
+  .sizes button:focus-visible { outline: 2px solid var(--indigo); outline-offset: 2px; }
+
+  .control { display: flex; align-items: center; gap: 9px; }
+  .control > span { font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: .02em; }
+
+  /* ── Estructura ─────────────────────────────────────────── */
+  section { padding: 64px 0; }
+  section + section { border-top: 1px solid var(--line); }
+
+  .sec-head { max-width: 660px; margin-bottom: 40px; }
+  .sec-head h2 {
+    margin: 0 0 12px; font-size: 24px; font-weight: 600; letter-spacing: -0.025em; line-height: 1.2;
+    text-wrap: balance;
+  }
+  .sec-head p { margin: 0; color: var(--muted); font-size: 15px; }
+
+  .lede {
+    display: grid; grid-template-columns: 1.45fr .95fr; gap: 56px; align-items: start;
+  }
+
+  /* ── Estado actual ──────────────────────────────────────── */
+  .now { background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); padding: 26px; }
+  .now h3 { margin: 0 0 6px; font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
+  .now > p { margin: 0 0 22px; font-size: 13px; color: var(--muted); }
+
+  .scale { display: flex; align-items: flex-end; gap: 26px; flex-wrap: wrap; }
+  .scale figure { margin: 0; display: grid; gap: 9px; justify-items: center; }
+  .scale figcaption { font-size: 11px; color: var(--muted); font-weight: 500; letter-spacing: .01em; }
+
+  /* Replica exacta del componente actual */
+  .brand-row { display: inline-flex; align-items: center; gap: 10px; font-size: 17px; font-weight: 700; letter-spacing: -0.01em; color: var(--ink); }
+  .brand-row__mark {
+    display: grid; width: 28px; height: 28px; place-items: center; border-radius: 7px;
+    background: var(--indigo); color: #fff;
+    font-family: 'IBM Plex Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; font-weight: 700; letter-spacing: -0.06em;
+  }
+  .favicon-chip {
+    width: 16px; height: 16px; border-radius: 4px; display: grid; place-items: center;
+    background: var(--indigo); color: #fff; font-family: 'IBM Plex Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 8px; font-weight: 700;
+  }
+  .favicon-tab {
+    display: inline-flex; align-items: center; gap: 8px; padding: 7px 13px; border-radius: 8px 8px 0 0;
+    background: var(--paper); border: 1px solid var(--line); border-bottom: 0; font-size: 12px; color: var(--ink);
+    --panel: #ffffff;
+  }
+
+  .verdict {
+    margin-top: 22px; padding-top: 18px; border-top: 1px dashed var(--line);
+    font-size: 13px; color: var(--muted);
+  }
+  .verdict strong { color: var(--ink); font-weight: 600; }
+
+  /* ── Rejilla de conceptos ───────────────────────────────── */
+  .concepts { display: grid; grid-template-columns: repeat(12, 1fr); gap: 24px; }
+  .concept { grid-column: span 6; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+  .concept--wide { grid-column: span 12; }
+  .concept--left { grid-column: span 7; }
+  .concept--right { grid-column: span 5; }
+
+  .concept__body { padding: 24px 26px 26px; }
+
+  .concept__head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 4px; }
+  .concept__num { font-size: 11px; font-weight: 700; color: var(--indigo); letter-spacing: .08em; }
+  .concept__name { margin: 0; font-size: 19px; font-weight: 600; letter-spacing: -0.02em; }
+  .concept__claim { margin: 0 0 22px; font-size: 13.5px; color: var(--muted); }
+
+  .concept__stage {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+    display: grid; place-items: center; padding: 34px; margin-bottom: 20px;
+    --panel: var(--surface);
+  }
+  .concept--wide .concept__stage { grid-template-columns: auto 1fr; gap: 40px; align-items: center; }
+
+  .mark { display: block; }
+  .mark--hero { width: 108px; height: 108px; }
+  .mark--mid { width: 56px; height: 56px; }
+  .mark--sm { width: 28px; height: 28px; }
+
+  .lockup { display: inline-flex; align-items: center; gap: 10px; }
+  .lockup__text { font-size: 17px; font-weight: 700; letter-spacing: -0.01em; color: var(--ink); }
+
+  .sizes-inline { display: flex; align-items: flex-end; gap: 18px; flex-wrap: wrap; }
+  .sizes-inline figure { margin: 0; display: grid; gap: 7px; justify-items: center; }
+  .sizes-inline figcaption { font-size: 10.5px; color: var(--muted); font-weight: 500; }
+
+  .notes { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 26px; margin: 0; }
+  .notes div { min-width: 0; }
+  .notes dt { font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); margin-bottom: 5px; }
+  .notes dd { margin: 0; font-size: 13.5px; line-height: 1.5; }
+
+  .meta { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); }
+  .tag {
+    font-size: 11.5px; font-weight: 500; padding: 4px 9px; border-radius: 6px;
+    background: var(--surface); color: var(--muted); border: 1px solid var(--line);
+  }
+  .tag--on { background: color-mix(in srgb, var(--indigo) 10%, white); color: var(--indigo); border-color: color-mix(in srgb, var(--indigo) 22%, white); }
+  .tag--warn { background: hsl(32 95% 44% / 0.10); color: hsl(222 47% 11%); border-color: hsl(32 95% 44% / 0.28); }
+
+  /* ── Paneles claro / oscuro ─────────────────────────────── */
+  .duo { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .panel {
+    border: 1px solid var(--line); border-radius: 12px; padding: 26px;
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 40px; min-height: 170px;
+  }
+  .panel--light { background: #ffffff; --panel: #ffffff; }
+  .panel--dark { background: var(--d-bg); border-color: var(--d-border); --panel: var(--d-bg); }
+  .panel__label { font-size: 10.5px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; flex-basis: 100%; text-align: center; }
+  .panel--light .panel__label { color: var(--muted); }
+  .panel--dark .panel__label { color: var(--d-muted); }
+
+  /* Superficie oscura en las maquetas y en la prueba de favicon */
+  [data-surface-host][data-surface="dark"] { --ca: var(--d-indigo); --cb: var(--d-violet); --cc: var(--d-magenta); }
+  [data-surface-host][data-surface="dark"] .mock-sidebar { background: var(--d-surface); border-color: var(--d-border); }
+  [data-surface-host][data-surface="dark"] .mock-nav span { color: var(--d-muted); }
+  [data-surface-host][data-surface="dark"] .mock-nav span:first-child { color: var(--d-indigo); }
+  [data-surface-host][data-surface="dark"] .mock-footer { color: var(--d-muted); border-color: var(--d-border); }
+  [data-surface-host][data-surface="dark"] .mock-auth { background: var(--d-bg); border-color: var(--d-border); }
+  [data-surface-host][data-surface="dark"] .mock-auth p { color: var(--d-muted); }
+  [data-surface-host][data-surface="dark"] .favicon-tab { background: var(--d-bg); border-color: var(--d-border); color: var(--d-text); }
+  [data-surface-host][data-surface="dark"] .brand-row { color: var(--d-text); }
+  [data-surface-host][data-surface="dark"] .fav-cell { background: var(--d-bg); }
+  [data-surface-host][data-surface="dark"] .fav-cell h4 { color: var(--d-text); }
+  [data-surface-host][data-surface="dark"] .fav-cell .tagline { color: var(--d-muted); }
+
+  .on-dark .lockup__text { color: #f8fafc; }
+  .on-dark { --ca: var(--d-indigo); --cb: var(--d-violet); --cc: var(--d-magenta); }
+
+  /* ── Prueba de favicon ──────────────────────────────────── */
+  .fav-row { display: grid; grid-template-columns: repeat(6, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .fav-cell { background: var(--paper); padding: 24px 14px; display: grid; gap: 12px; justify-items: center; --panel: #ffffff; }
+  .fav-cell h4 { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: -0.01em; }
+  .fav-cell .tagline { font-size: 10.5px; color: var(--muted); text-align: center; line-height: 1.4; }
+  .fav-cell--dark { background: var(--d-bg); --panel: var(--d-bg); }
+  .fav-cell--dark h4 { color: var(--d-text); }
+  .fav-cell--dark .tagline { color: var(--d-muted); }
+
+  .fav-icon { width: 16px; height: 16px; }
+  .fav-icon .mark { width: 16px; height: 16px; }
+
+  /* ── Tabla comparativa ──────────────────────────────────── */
+  .table-wrap { overflow-x: auto; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); }
+  table { width: 100%; min-width: 760px; border-collapse: collapse; background: var(--paper); }
+  th, td { text-align: left; padding: 14px 16px; font-size: 13.5px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  thead th { font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); background: var(--surface); }
+  tbody tr:last-child td { border-bottom: 0; }
+  tbody tr { transition: background .15s ease; }
+  tbody tr:hover { background: #fcfcfe; }
+  td.name { font-weight: 600; white-space: nowrap; }
+  .score { display: inline-flex; align-items: center; gap: 6px; }
+  .pips { display: inline-flex; gap: 3px; }
+  .pips i { width: 7px; height: 7px; border-radius: 50%; background: var(--line); display: block; }
+  .pips i.on { background: var(--indigo); }
+  .cell-note { color: var(--muted); font-size: 12.5px; display: block; margin-top: 3px; }
+
+  /* ── Maquetas de la app real ────────────────────────────── */
+  .frames { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+  .frame { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .frame__label { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--surface); }
+  .frame__inner { padding: 16px; display: grid; gap: 14px; }
+
+  .mock-sidebar { background: var(--surface); border-right: 1px solid var(--line); border-radius: 8px; padding: 16px 14px; display: grid; gap: 14px; --panel: var(--surface); }
+  .mock-nav { display: grid; gap: 6px; }
+  .mock-nav span { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .mock-nav span:first-child { color: var(--indigo); font-weight: 600; }
+  .mock-nav i { width: 11px; height: 11px; border-radius: 3px; border: 1.5px solid currentColor; display: block; opacity: .6; }
+  .mock-footer { font-size: 9.5px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 10px; }
+
+  .mock-auth { background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 16px; display: grid; gap: 8px; justify-items: center; text-align: center; --panel: #ffffff; }
+  .mock-auth p { margin: 0; font-size: 10px; color: var(--muted); }
+
+  .mock-tabbar { display: flex; gap: 6px; align-items: center; }
+  .mock-tabbar .favicon-tab { font-size: 11px; padding: 5px 10px; }
+
+  /* ── Variante corporate ─────────────────────────────────── */
+  .corp-strip { display: grid; grid-template-columns: repeat(6, 1fr); gap: 14px; }
+  .corp-cell { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 16px 10px; display: grid; gap: 10px; justify-items: center; --panel: #ffffff; }
+  .corp-cell span { font-size: 10.5px; color: var(--muted); font-weight: 600; }
+  .corp-cell .mark { --ca: var(--corp-blue); --cb: var(--corp-blue); --cc: var(--corp-cyan); }
+
+  /* ── Cierre ─────────────────────────────────────────────── */
+  .next { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+  .next div { border-left: 1px solid var(--line); padding-left: 16px; }
+  .next strong { display: block; font-size: 14px; font-weight: 600; margin-bottom: 5px; }
+  .next p { margin: 0; font-size: 13.5px; color: var(--muted); }
+
+  .callout {
+    display: grid; grid-template-columns: 20px 1fr; gap: 4px 12px; align-items: start;
+    background: color-mix(in srgb, var(--indigo) 5%, var(--paper));
+    border: 1px solid color-mix(in srgb, var(--indigo) 22%, var(--line));
+    border-radius: 12px; padding: 20px 24px; font-size: 14px; color: var(--ink);
+  }
+  .callout > svg { grid-row: span 2; margin-top: 2px; color: var(--indigo); }
+  .callout p { margin: 0 0 10px; }
+  .callout p:last-child { margin: 0; color: var(--muted); font-size: 13px; }
+
+  .footnote { margin-top: 46px; font-size: 12.5px; color: var(--muted); max-width: 720px; }
+
+  @media (max-width: 980px) {
+    .lede { grid-template-columns: 1fr; gap: 32px; }
+    .concept, .concept--left, .concept--right, .concept--wide { grid-column: span 12; }
+    .frames, .next { grid-template-columns: 1fr; }
+    .fav-row { grid-template-columns: repeat(3, 1fr); }
+    .corp-strip { grid-template-columns: repeat(3, 1fr); }
+    .notes { grid-template-columns: 1fr; }
+    .duo { grid-template-columns: 1fr; }
+    .concept--wide .concept__stage { grid-template-columns: 1fr; }
+    section { padding: 48px 0; }
+    /* La barra ocupa dos filas en móvil: pegarla taparía media pantalla */
+    header.top { position: static; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ══════════════ Sprite: los cinco marks ══════════════ -->
+<svg class="sprite" aria-hidden="true" focusable="false">
+  <defs>
+    <!-- Nota: el degradado no se usa aquí a propósito. Un <linearGradient>
+         externo no se resuelve dentro del shadow tree de <use> (se pinta
+         negro). El color se compone superponiendo trazos sobre la misma
+         geometría, lo que además mantiene los colores nítidos a 16 px. -->
+  </defs>
+
+  <!-- 01 · ESCALONES — perfil escalonado que ordena -->
+  <symbol id="m01" viewBox="0 0 48 48">
+    <path d="M12 34V14H25V25H36" fill="none" stroke="var(--ca)" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" />
+    <path d="M25 25H36" fill="none" stroke="var(--cc)" stroke-width="9" stroke-linecap="round" />
+  </symbol>
+
+  <!-- 02 · ENCUADRE — corchetes de encuadre + punto focal -->
+  <symbol id="m02" viewBox="0 0 48 48">
+    <g fill="none" stroke="var(--ca)" stroke-width="5" stroke-linecap="round">
+      <path d="M7 19V12a5 5 0 0 1 5-5h7" />
+      <path d="M29 7h7a5 5 0 0 1 5 5v7" />
+      <path d="M41 29v7a5 5 0 0 1-5 5h-7" />
+      <path d="M19 41h-7a5 5 0 0 1-5-5v-7" />
+    </g>
+    <circle cx="24" cy="24" r="5.5" fill="var(--cc)" />
+  </symbol>
+
+  <!-- 03 · FOCO — haz de luz sobre la mesa + punto de atención -->
+  <symbol id="m03" viewBox="0 0 48 48">
+    <path d="M19 6h10l8 29H11z" fill="var(--cb)" />
+    <path d="M6 38h36" fill="none" stroke="var(--ca)" stroke-width="5" stroke-linecap="round" />
+    <circle cx="24" cy="38" r="4.5" fill="var(--cc)" />
+  </symbol>
+
+  <!-- 04 · SEMI — monograma "d" de dash -->
+  <symbol id="m04" viewBox="0 0 48 48">
+    <circle cx="24" cy="29" r="11" fill="none" stroke="var(--ca)" stroke-width="7" />
+    <rect x="30" y="4" width="8" height="40" rx="4" fill="var(--cb)" />
+  </symbol>
+
+  <!-- 05 · AGUJA — brújula de la decisión -->
+  <symbol id="m05" viewBox="0 0 48 48">
+    <circle cx="24" cy="24" r="16" fill="none" stroke="var(--ca)" stroke-width="6" />
+    <path d="M24 8l5.5 13.5L24 26l-5.5-4.5z" fill="var(--cc)" />
+    <path d="M24 40l-5.5-13.5L24 22l5.5 4.5z" fill="var(--cb)" />
+  </symbol>
+</svg>
+
+<!-- ══════════════ Barra superior ══════════════ -->
+<header class="top">
+  <div class="wrap top__inner">
+    <div class="top__id">
+      <h1>Opciones de marca · dash-bi</h1>
+      <span>5 conceptos abstractos</span>
+    </div>
+
+    <div class="control">
+      <span>Superficie</span>
+      <div class="switch" role="group" aria-label="Superficie de preview">
+        <button type="button" id="btn-light" aria-pressed="true">Claro</button>
+        <button type="button" id="btn-dark" aria-pressed="false">Oscuro</button>
+      </div>
+    </div>
+
+    <div class="control">
+      <span>Tamaño</span>
+      <div class="sizes" role="group" aria-label="Tamaño del mark">
+        <button type="button" data-size="16" aria-pressed="false">16</button>
+        <button type="button" data-size="20" aria-pressed="false">20</button>
+        <button type="button" data-size="28" aria-pressed="true">28</button>
+        <button type="button" data-size="48" aria-pressed="false">48</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- ══════════════ 1 · Punto de partida ══════════════ -->
+<section>
+  <div class="wrap">
+    <div class="lede">
+      <div>
+        <h2 style="margin:0 0 16px;font-size:32px;font-weight:600;letter-spacing:-0.028em;line-height:1.16;text-wrap:balance">
+          Un símbolo que no se confunda con la categoría.
+        </h2>
+        <p style="margin:0 0 16px;color:var(--muted);font-size:15.5px;max-width:62ch">
+          La North Star de <code style="font-family:var(--sans);background:var(--surface);padding:1px 5px;border-radius:4px">DESIGN.md</code> es
+          <em>“la mesa de decisión”</em>: concentra evidencia, ordena la atención y deja espacio para actuar.
+          Un logo que codifique esa idea vale más que uno que dibuje un gráfico cualquiera.
+        </p>
+        <p style="margin:0;color:var(--muted);font-size:15.5px;max-width:62ch">
+          Los cinco conceptos de abajo nacen de esa idea y usan los tokens reales del proyecto
+          (Signal Indigo, Analytical Violet, Review Magenta). Ninguno toca el código de la app:
+          son propuestas para elegir.
+        </p>
+
+        <dl class="notes" style="margin-top:32px">
+          <div>
+            <dt>Criterio 1 · Escala</dt>
+            <dd>Debe leerse a 16 px, porque ese es el favicon real. No hay <code style="font-family:var(--sans)">icon.tsx</code> hoy.</dd>
+          </div>
+          <div>
+            <dt>Criterio 2 · Silueta</dt>
+            <dd>Una forma reconocible sin leer el texto. Si necesita explicación, es ilustración, no marca.</dd>
+          </div>
+          <div>
+            <dt>Criterio 3 · Sistema</dt>
+            <dd>Debe derivar en favicon, sidebar, cabecera de auth, footer público y header del PDF.</dd>
+          </div>
+          <div>
+            <dt>Criterio 4 · Marca real</dt>
+            <dd>El nombre va en minúsculas con guion, y la voz es sobria. El símbolo no debe gritar.</dd>
+          </div>
+        </dl>
+      </div>
+
+      <div class="now">
+        <h3>El mark que hay hoy</h3>
+        <p>Un cuadrado de 28 px con <code style="font-family:'IBM Plex Mono','JetBrains Mono',ui-monospace,monospace;font-size:12px">db</code> dentro. Sin favicon, sin archivo, sin variante.</p>
+
+        <div class="scale">
+          <figure>
+            <span class="brand-row__mark" style="width:28px;height:28px">db</span>
+            <figcaption>Sidebar · 28 px</figcaption>
+          </figure>
+          <figure>
+            <span class="favicon-chip">db</span>
+            <figcaption>Favicon · 16 px</figcaption>
+          </figure>
+          <figure>
+            <span class="brand-row"><span class="brand-row__mark">db</span><span>dash-bi</span></span>
+            <figcaption>Lockup</figcaption>
+          </figure>
+        </div>
+
+        <div class="verdict">
+          <strong>El problema concreto:</strong> las iniciales en un cuadro son el marcador de posición
+          por defecto de un producto sin identidad visual. Se leen como “plantilla de dashboard”.
+          Además, al no existir <code style="font-family:'IBM Plex Mono','JetBrains Mono',ui-monospace,monospace;font-size:12px">icon.tsx</code>,
+          el favicon lo resuelve Next.js con su ícono por defecto — en una app
+          <em>self-hosted</em> que se abre en una pestaña del navegador.
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════ 2 · Los conceptos ══════════════ -->
+<section>
+  <div class="wrap">
+    <div class="sec-head">
+      <h2>Cinco conceptos, un mismo sistema de color</h2>
+      <p>Todos usan la paleta implementada en <code style="font-family:var(--sans)">globals.css</code>. Cambia la geometría, no el lenguaje cromático.
+         El control <em>Superficie</em> de la barra superior alterna las maquetas entre claro y oscuro: el modo oscuro no es la paleta invertida, usa otros tres tokens
+         (indigo-400, violet-400, pink-400), y un símbolo que solo funciona en claro no sirve.</p>
+    </div>
+
+    <div class="concepts" style="--ca:var(--indigo);--cb:var(--violet);--cc:var(--magenta);--panel:#ffffff;">
+
+      <!-- 01 -->
+      <article class="concept concept--left">
+        <div class="concept__body">
+          <div class="concept__head">
+            <span class="concept__num">01</span>
+            <h3 class="concept__name">Escalones</h3>
+          </div>
+          <p class="concept__claim">El dato escalonado. Un perfil que ordena por jerarquía: lo importante primero, la evidencia después.</p>
+
+          <div class="concept__stage">
+            <svg class="mark mark--hero" aria-hidden="true"><use href="#m01" /></svg>
+          </div>
+
+          <div class="sizes-inline" style="margin-bottom:22px">
+            <figure><svg class="mark mark--sm" aria-hidden="true"><use href="#m01" /></svg><figcaption>28</figcaption></figure>
+            <figure><svg class="mark" style="width:20px;height:20px" aria-hidden="true"><use href="#m01" /></svg><figcaption>20</figcaption></figure>
+            <figure><svg class="mark" style="width:16px;height:16px" aria-hidden="true"><use href="#m01" /></svg><figcaption>16</figcaption></figure>
+          </div>
+
+          <dl class="notes">
+            <div>
+              <dt>La idea</dt>
+              <dd>Un solo trazo continuo que sube, gira y vuelve a bajar. Funciona a la vez como escalera y como perfil de serie temporal.</dd>
+            </div>
+            <div>
+              <dt>Construcción</dt>
+              <dd>Trazo único de 9 px con remates redondeados sobre rejilla de 48. Indigo para el recorrido y magenta solo en el último tramo: el punto donde la serie se detiene.</dd>
+            </div>
+            <div>
+              <dt>Fortaleza</dt>
+              <dd>Es el único que codifica “orden” sin necesidad de texto, y su silueta diagonal no se confunde con ningún otro concepto de la categoría.</dd>
+            </div>
+            <div>
+              <dt>Riesgo</dt>
+              <dd>A 16 px el magenta final se funde con el indigo y queda un solo trazo. Por eso la variante de un solo color debería ser la del favicon.</dd>
+            </div>
+          </dl>
+
+          <div class="meta">
+            <span class="tag tag--on">Silueta propia</span>
+            <span class="tag tag--on">Escala a 16 px</span>
+            <span class="tag">Dos colores</span>
+            <span class="tag">Ligero en archivos</span>
+          </div>
+        </div>
+      </article>
+
+      <!-- 02 -->
+      <article class="concept concept--right">
+        <div class="concept__body">
+          <div class="concept__head">
+            <span class="concept__num">02</span>
+            <h3 class="concept__name">Encuadre</h3>
+          </div>
+          <p class="concept__claim">El marco que precisa. Corchetes que acotan la evidencia y un punto que señala el hallazgo.</p>
+
+          <div class="concept__stage">
+            <svg class="mark mark--hero" aria-hidden="true"><use href="#m02" /></svg>
+          </div>
+
+          <div class="sizes-inline" style="margin-bottom:22px">
+            <figure><svg class="mark mark--sm" aria-hidden="true"><use href="#m02" /></svg><figcaption>28</figcaption></figure>
+            <figure><svg class="mark" style="width:20px;height:20px" aria-hidden="true"><use href="#m02" /></svg><figcaption>20</figcaption></figure>
+            <figure><svg class="mark" style="width:16px;height:16px" aria-hidden="true"><use href="#m02" /></svg><figcaption>16</figcaption></figure>
+          </div>
+
+          <dl class="notes">
+            <div>
+              <dt>La idea</dt>
+              <dd>Corchetes de encuadre —heredados de la precisión gráfica— y un punto magenta: el dato que sobrevive al recorte.</dd>
+            </div>
+            <div>
+              <dt>Construcción</dt>
+              <dd>Cuatro trazos de 5 px con radio interior de 5, centro en 24. Todo el encuadre en un solo indigo: el punto magenta es el único elemento macizo.</dd>
+            </div>
+            <div>
+              <dt>Fortaleza</dt>
+              <dd>Es el más sobrio y el que mejor sobrevive a un tamaño pequeño. Se lee igual en claro que en oscuro.</dd>
+            </div>
+            <div>
+              <dt>Riesgo</dt>
+              <dd>Los corchetes son un recurso de herramientas de diseño. Sin el punto central puede leerse como “marcar área”.</dd>
+            </div>
+          </dl>
+
+          <div class="meta">
+            <span class="tag tag--on">Escala a 16 px</span>
+            <span class="tag tag--on">Sobrio</span>
+            <span class="tag">Sin degradado</span>
+            <span class="tag tag--warn">Recurso conocido</span>
+          </div>
+        </div>
+      </article>
+
+      <!-- 03 -->
+      <article class="concept concept--right">
+        <div class="concept__body">
+          <div class="concept__head">
+            <span class="concept__num">03</span>
+            <h3 class="concept__name">Foco</h3>
+          </div>
+          <p class="concept__claim">La luz sobre la mesa. Un haz que cae sobre la superficie y marca el punto donde hay que mirar.</p>
+
+          <div class="concept__stage">
+            <svg class="mark mark--hero" aria-hidden="true"><use href="#m03" /></svg>
+          </div>
+
+          <div class="sizes-inline" style="margin-bottom:22px">
+            <figure><svg class="mark mark--sm" aria-hidden="true"><use href="#m03" /></svg><figcaption>28</figcaption></figure>
+            <figure><svg class="mark" style="width:20px;height:20px" aria-hidden="true"><use href="#m03" /></svg><figcaption>20</figcaption></figure>
+            <figure><svg class="mark" style="width:16px;height:16px" aria-hidden="true"><use href="#m03" /></svg><figcaption>16</figcaption></figure>
+          </div>
+
+          <dl class="notes">
+            <div>
+              <dt>La idea</dt>
+              <dd>La metáfora literal de la North Star: un foco ilumina la mesa y señala un único punto de atención.</dd>
+            </div>
+            <div>
+              <dt>Construcción</dt>
+              <dd>Haz trapezoidal macizo en violeta, superficie de 5 px en indigo y punto magenta de 9 px de diámetro sobre la línea.</dd>
+            </div>
+            <div>
+              <dt>Fortaleza</dt>
+              <dd>Es el único concepto que se sostiene sin ambigüedad como narración y no necesita el nombre para explicarse.</dd>
+            </div>
+            <div>
+              <dt>Riesgo</dt>
+              <dd>El punto magenta sobre la línea es un elemento pequeño: a 16 px puede perderse y dejar solo “triángulo con base”.</dd>
+            </div>
+          </dl>
+
+          <div class="meta">
+            <span class="tag tag--on">Escala a 16 px</span>
+            <span class="tag tag--on">Narrativa clara</span>
+            <span class="tag">Macizo</span>
+            <span class="tag tag--warn">Detalle frágil</span>
+          </div>
+        </div>
+      </article>
+
+      <!-- 04 -->
+      <article class="concept concept--left">
+        <div class="concept__body">
+          <div class="concept__head">
+            <span class="concept__num">04</span>
+            <h3 class="concept__name">Semi</h3>
+          </div>
+          <p class="concept__claim">La “d” de dash. Monograma geométrico: un tallo recto y un arco de media circunferencia.</p>
+
+          <div class="concept__stage">
+            <svg class="mark mark--hero" aria-hidden="true"><use href="#m04" /></svg>
+          </div>
+
+          <div class="sizes-inline" style="margin-bottom:22px">
+            <figure><svg class="mark mark--sm" aria-hidden="true"><use href="#m04" /></svg><figcaption>28</figcaption></figure>
+            <figure><svg class="mark" style="width:20px;height:20px" aria-hidden="true"><use href="#m04" /></svg><figcaption>20</figcaption></figure>
+            <figure><svg class="mark" style="width:16px;height:16px" aria-hidden="true"><use href="#m04" /></svg><figcaption>16</figcaption></figure>
+          </div>
+
+          <dl class="notes">
+            <div>
+              <dt>La idea</dt>
+              <dd>La letra “d” de <em>dash</em> reducida a dos formas: un anillo que hace de cuenco y un tallo a la derecha. El hueco del anillo es el contra del carácter.</dd>
+            </div>
+            <div>
+              <dt>Construcción</dt>
+              <dd>Anillo de radio 11 px con trazo de 7 px en indigo y tallo de 8 × 40 px en violeta. El contra sale del propio anillo, así que el símbolo no depende del color de fondo.</dd>
+            </div>
+            <div>
+              <dt>Fortaleza</dt>
+              <dd>Es el más fácil de recordar y de pronunciar. Funciona aunque la marca cambie de nombre en el futuro.</dd>
+            </div>
+            <div>
+              <dt>Riesgo</dt>
+              <dd>Un monograma es la respuesta esperada. Es la opción que menos dice del producto y la que antes se parece a otra marca.</dd>
+            </div>
+          </dl>
+
+          <div class="meta">
+            <span class="tag tag--on">Silueta propia</span>
+            <span class="tag tag--on">Escala a 16 px</span>
+            <span class="tag tag--on">No requiere fondo</span>
+            <span class="tag">Letra</span>
+          </div>
+        </div>
+      </article>
+
+      <!-- 05 -->
+      <article class="concept concept--wide">
+        <div class="concept__body">
+          <div class="concept__head">
+            <span class="concept__num">05</span>
+            <h3 class="concept__name">Aguja</h3>
+          </div>
+          <p class="concept__claim">La brújula de la decisión. Un anillo con una aguja que marca el norte: la orientación que el producto promete entregar.</p>
+
+          <div class="concept__stage">
+            <svg class="mark mark--hero" aria-hidden="true"><use href="#m05" /></svg>
+            <div>
+              <div class="sizes-inline" style="margin-bottom:20px">
+                <figure><svg class="mark mark--sm" aria-hidden="true"><use href="#m05" /></svg><figcaption>28</figcaption></figure>
+                <figure><svg class="mark" style="width:20px;height:20px" aria-hidden="true"><use href="#m05" /></svg><figcaption>20</figcaption></figure>
+                <figure><svg class="mark" style="width:16px;height:16px" aria-hidden="true"><use href="#m05" /></svg><figcaption>16</figcaption></figure>
+              </div>
+              <dl class="notes">
+                <div>
+                  <dt>La idea</dt>
+                  <dd>Un instrumento de orientación, no un gráfico. La aguja en magenta apunta al norte y el hemisferio sur en violeta equilibra el peso.</dd>
+                </div>
+                <div>
+                  <dt>Construcción</dt>
+                  <dd>Anillo de 32 px de diámetro con trazo de 6, aguja de 11 px de ancho y 32 de alto apoyada en el centro.</dd>
+                </div>
+                <div>
+                  <dt>Fortaleza</dt>
+                  <dd>Es el único que funciona como ícono de app por su cuenta, incluso sin el nombre al lado.</dd>
+                </div>
+                <div>
+                  <dt>Riesgo</dt>
+                  <dd>El anillo completo puede leerse como un gráfico de anillo o como un indicador de carga. La aguja lo despeja, pero no del todo.</dd>
+                </div>
+              </dl>
+            </div>
+          </div>
+
+          <div class="meta">
+            <span class="tag tag--on">Silueta propia</span>
+            <span class="tag tag--on">Escala a 16 px</span>
+            <span class="tag tag--on">No requiere fondo</span>
+            <span class="tag tag--warn">Riesgo de lectura</span>
+          </div>
+        </div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════ 3 · Superficie clara / oscura ══════════════ -->
+<section>
+  <div class="wrap">
+    <div class="sec-head">
+      <h2>La misma marca sobre las dos superficies reales</h2>
+      <p>La app define dos temas (<code style="font-family:var(--sans)">moderno-saas</code> y <code style="font-family:var(--sans)">corporate</code>) y el modo oscuro ya está tokenizado en <code style="font-family:var(--sans)">globals.css</code>. Cada concepto se prueba con sus dos paletas reales, siempre una al lado de la otra.</p>
+    </div>
+
+    <div class="duo" style="--ca:var(--indigo);--cb:var(--violet);--cc:var(--magenta);">
+      <div class="panel panel--light" style="--panel:#ffffff">
+        <span class="panel__label">Modo claro</span>
+        <svg class="mark mark--mid" aria-hidden="true"><use href="#m01" /></svg>
+        <svg class="mark mark--mid" aria-hidden="true"><use href="#m02" /></svg>
+        <svg class="mark mark--mid" aria-hidden="true"><use href="#m03" /></svg>
+        <svg class="mark mark--mid" aria-hidden="true"><use href="#m04" /></svg>
+        <svg class="mark mark--mid" aria-hidden="true"><use href="#m05" /></svg>
+      </div>
+      <div class="panel panel--dark on-dark" style="--panel:#0a0f1c">
+        <span class="panel__label">Modo oscuro</span>
+        <svg class="mark mark--mid" aria-hidden="true"><use href="#m01" /></svg>
+        <svg class="mark mark--mid" aria-hidden="true"><use href="#m02" /></svg>
+        <svg class="mark mark--mid" aria-hidden="true"><use href="#m03" /></svg>
+        <svg class="mark mark--mid" aria-hidden="true"><use href="#m04" /></svg>
+        <svg class="mark mark--mid" aria-hidden="true"><use href="#m05" /></svg>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════ 4 · La prueba de favicon ══════════════ -->
+<section>
+  <div class="wrap">
+    <div class="sec-head">
+      <h2>La prueba que decide: 16 px</h2>
+      <p>Así se ven en una pestaña del navegador, al tamaño real. El control de la barra superior cambia el tamaño del mark en toda la página — pruebe 16 y 20 para juzgar la legibilidad sin zoom.</p>
+    </div>
+
+    <div class="fav-row" data-surface-host data-surface="light" style="--ca:var(--indigo);--cb:var(--violet);--cc:var(--magenta);--panel:#ffffff">
+      <div class="fav-cell">
+        <span class="favicon-chip">db</span>
+        <h4>Actual</h4>
+        <span class="tagline">Las iniciales no sobreviven a 16 px: se leen como una mancha.</span>
+      </div>
+      <div class="fav-cell">
+        <svg class="mark" style="width:16px;height:16px" aria-hidden="true"><use href="#m01" /></svg>
+        <h4>01 Escalones</h4>
+        <span class="tagline">Se lee el escalón. El magenta final se funde con el indigo, pero la forma aguanta.</span>
+      </div>
+      <div class="fav-cell">
+        <svg class="mark" style="width:16px;height:16px" aria-hidden="true"><use href="#m02" /></svg>
+        <h4>02 Encuadre</h4>
+        <span class="tagline">El punto magenta es lo único que sobrevive. La forma se sostiene.</span>
+      </div>
+      <div class="fav-cell">
+        <svg class="mark" style="width:16px;height:16px" aria-hidden="true"><use href="#m03" /></svg>
+        <h4>03 Foco</h4>
+        <span class="tagline">Triángulo + base. El punto se pierde: queda “haz de luz” sin destino.</span>
+      </div>
+      <div class="fav-cell">
+        <svg class="mark" style="width:16px;height:16px" aria-hidden="true"><use href="#m04" /></svg>
+        <h4>04 Semi</h4>
+        <span class="tagline">La “d” se reconoce, aunque el hueco se cierre un poco.</span>
+      </div>
+      <div class="fav-cell">
+        <svg class="mark" style="width:16px;height:16px" aria-hidden="true"><use href="#m05" /></svg>
+        <h4>05 Aguja</h4>
+        <span class="tagline">Anillo + aguja: se lee bien, pero es el más cercano a un ícono genérico.</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════ 5 · En la app real ══════════════ -->
+<section>
+  <div class="wrap">
+    <div class="sec-head">
+      <h2>En las superficies donde vive hoy</h2>
+      <p>Replicadas con los estilos reales de <code style="font-family:var(--sans)">globals.css</code>: el bloque de marca del sidebar, la cabecera del login y la pestaña del navegador. Junto al mark actual, para comparar.</p>
+    </div>
+
+    <div class="frames" data-surface-host data-surface="light" style="--ca:var(--indigo);--cb:var(--violet);--cc:var(--magenta);--panel:#f3f4f6;">
+
+      <div class="frame">
+        <div class="frame__label">Actual</div>
+        <div class="frame__inner">
+          <div class="mock-sidebar">
+            <span class="brand-row"><span class="brand-row__mark">db</span><span>dash-bi</span></span>
+            <div class="mock-nav"><span><i></i>Dashboards</span><span><i></i>Fuentes de datos</span><span><i></i>Reportes</span></div>
+            <div class="mock-footer">dash-bi · self-hosted BI</div>
+          </div>
+          <div class="mock-tabbar"><span class="favicon-tab"><span class="favicon-chip">db</span>dash-bi</span></div>
+          <div class="mock-auth">
+            <span class="brand-row"><span class="brand-row__mark">db</span><span>dash-bi</span></span>
+            <p>Datos claros para decisiones concretas.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="frame">
+        <div class="frame__label">01 Escalones</div>
+        <div class="frame__inner">
+          <div class="mock-sidebar">
+            <span class="brand-row"><svg class="mark mark--sm" aria-hidden="true"><use href="#m01" /></svg><span>dash-bi</span></span>
+            <div class="mock-nav"><span><i></i>Dashboards</span><span><i></i>Fuentes de datos</span><span><i></i>Reportes</span></div>
+            <div class="mock-footer">dash-bi · self-hosted BI</div>
+          </div>
+          <div class="mock-tabbar"><span class="favicon-tab"><svg class="mark" style="width:16px;height:16px" aria-hidden="true"><use href="#m01" /></svg>dash-bi</span></div>
+          <div class="mock-auth">
+            <span class="brand-row"><svg class="mark mark--sm" aria-hidden="true"><use href="#m01" /></svg><span>dash-bi</span></span>
+            <p>Datos claros para decisiones concretas.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="frame">
+        <div class="frame__label">02 Encuadre</div>
+        <div class="frame__inner">
+          <div class="mock-sidebar">
+            <span class="brand-row"><svg class="mark mark--sm" aria-hidden="true"><use href="#m02" /></svg><span>dash-bi</span></span>
+            <div class="mock-nav"><span><i></i>Dashboards</span><span><i></i>Fuentes de datos</span><span><i></i>Reportes</span></div>
+            <div class="mock-footer">dash-bi · self-hosted BI</div>
+          </div>
+          <div class="mock-tabbar"><span class="favicon-tab"><svg class="mark" style="width:16px;height:16px" aria-hidden="true"><use href="#m02" /></svg>dash-bi</span></div>
+          <div class="mock-auth">
+            <span class="brand-row"><svg class="mark mark--sm" aria-hidden="true"><use href="#m02" /></svg><span>dash-bi</span></span>
+            <p>Datos claros para decisiones concretas.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="frame">
+        <div class="frame__label">03 Foco</div>
+        <div class="frame__inner">
+          <div class="mock-sidebar">
+            <span class="brand-row"><svg class="mark mark--sm" aria-hidden="true"><use href="#m03" /></svg><span>dash-bi</span></span>
+            <div class="mock-nav"><span><i></i>Dashboards</span><span><i></i>Fuentes de datos</span><span><i></i>Reportes</span></div>
+            <div class="mock-footer">dash-bi · self-hosted BI</div>
+          </div>
+          <div class="mock-tabbar"><span class="favicon-tab"><svg class="mark" style="width:16px;height:16px" aria-hidden="true"><use href="#m03" /></svg>dash-bi</span></div>
+          <div class="mock-auth">
+            <span class="brand-row"><svg class="mark mark--sm" aria-hidden="true"><use href="#m03" /></svg><span>dash-bi</span></span>
+            <p>Datos claros para decisiones concretas.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="frame">
+        <div class="frame__label">04 Semi</div>
+        <div class="frame__inner">
+          <div class="mock-sidebar">
+            <span class="brand-row"><svg class="mark mark--sm" aria-hidden="true"><use href="#m04" /></svg><span>dash-bi</span></span>
+            <div class="mock-nav"><span><i></i>Dashboards</span><span><i></i>Fuentes de datos</span><span><i></i>Reportes</span></div>
+            <div class="mock-footer">dash-bi · self-hosted BI</div>
+          </div>
+          <div class="mock-tabbar"><span class="favicon-tab"><svg class="mark" style="width:16px;height:16px" aria-hidden="true"><use href="#m04" /></svg>dash-bi</span></div>
+          <div class="mock-auth">
+            <span class="brand-row"><svg class="mark mark--sm" aria-hidden="true"><use href="#m04" /></svg><span>dash-bi</span></span>
+            <p>Datos claros para decisiones concretas.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="frame">
+        <div class="frame__label">05 Aguja</div>
+        <div class="frame__inner">
+          <div class="mock-sidebar">
+            <span class="brand-row"><svg class="mark mark--sm" aria-hidden="true"><use href="#m05" /></svg><span>dash-bi</span></span>
+            <div class="mock-nav"><span><i></i>Dashboards</span><span><i></i>Fuentes de datos</span><span><i></i>Reportes</span></div>
+            <div class="mock-footer">dash-bi · self-hosted BI</div>
+          </div>
+          <div class="mock-tabbar"><span class="favicon-tab"><svg class="mark" style="width:16px;height:16px" aria-hidden="true"><use href="#m05" /></svg>dash-bi</span></div>
+          <div class="mock-auth">
+            <span class="brand-row"><svg class="mark mark--sm" aria-hidden="true"><use href="#m05" /></svg><span>dash-bi</span></span>
+            <p>Datos claros para decisiones concretas.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════ 6 · Variante corporate ══════════════ -->
+<section>
+  <div class="wrap">
+    <div class="sec-head">
+      <h2>El tema <code style="font-family:var(--sans)">corporate</code> no es opcional</h2>
+      <p>El tema <code style="font-family:var(--sans)">corporate</code> cambia el primario a Corporate Blue y el acento a Corporate Cyan. Un símbolo de marca que solo funcione con Signal Indigo queda roto a mitad de producto. Esta es la derivación de cada concepto a esa paleta.</p>
+    </div>
+
+    <div class="corp-strip">
+      <div class="corp-cell"><svg class="mark mark--mid" aria-hidden="true"><use href="#m01" /></svg><span>01 Escalones</span></div>
+      <div class="corp-cell"><svg class="mark mark--mid" aria-hidden="true"><use href="#m02" /></svg><span>02 Encuadre</span></div>
+      <div class="corp-cell"><svg class="mark mark--mid" aria-hidden="true"><use href="#m03" /></svg><span>03 Foco</span></div>
+      <div class="corp-cell"><svg class="mark mark--mid" aria-hidden="true"><use href="#m04" /></svg><span>04 Semi</span></div>
+      <div class="corp-cell"><svg class="mark mark--mid" aria-hidden="true"><use href="#m05" /></svg><span>05 Aguja</span></div>
+      <div class="corp-cell" style="background:var(--surface);justify-content:center">
+        <svg class="mark mark--mid" style="--ca:var(--corp-blue);--cb:var(--corp-blue);--cc:var(--corp-cyan)" aria-hidden="true"><use href="#m05" /></svg>
+        <span>Ejemplo de derivación</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════ 7 · Fricción ══════════════ -->
+<section>
+  <div class="wrap">
+    <div class="sec-head">
+      <h2>Dónde se rompe cada uno</h2>
+      <p>Evaluación honesta contra los cuatro criterios. Las barras son de 1 a 3. Ninguna opción es ganadora en todo: la elección es un compromiso, y conviene saber cuál.</p>
+    </div>
+
+    <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Concepto</th>
+          <th>Legible a 16 px</th>
+          <th>Silueta propia</th>
+          <th>Vínculo con “mesa de decisión”</th>
+          <th>Sobrevive al tema corporate</th>
+          <th>Principal fricción</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="name">Actual · db</td>
+          <td><span class="pips"><i class="on"></i><i></i><i></i></span><span class="cell-note">Las iniciales se cierran</span></td>
+          <td><span class="pips"><i></i><i></i><i></i></span><span class="cell-note">Es el placeholder por defecto</span></td>
+          <td><span class="pips"><i></i><i></i><i></i></span><span class="cell-note">No codifica nada</span></td>
+          <td><span class="pips"><i class="on"></i><i class="on"></i><i></i></span></td>
+          <td>Es el motivo del cambio.</td>
+        </tr>
+        <tr>
+          <td class="name">01 Escalones</td>
+          <td><span class="pips"><i class="on"></i><i class="on"></i><i></i></span><span class="cell-note">La forma aguanta, el color no</span></td>
+          <td><span class="pips"><i class="on"></i><i class="on"></i><i class="on"></i></span><span class="cell-note">Diagonal reconocible</span></td>
+          <td><span class="pips"><i class="on"></i><i class="on"></i><i></i></span><span class="cell-note">Ordena, no enfoca</span></td>
+          <td><span class="pips"><i class="on"></i><i class="on"></i><i class="on"></i></span><span class="cell-note">Azul con cian en el extremo</span></td>
+          <td>El magenta se pierde a 16 px. Se resuelve con la versión monocroma en favicon.</td>
+        </tr>
+        <tr>
+          <td class="name">02 Encuadre</td>
+          <td><span class="pips"><i class="on"></i><i class="on"></i><i class="on"></i></span><span class="cell-note">El más estable en pequeño</span></td>
+          <td><span class="pips"><i class="on"></i><i></i><i></i></span><span class="cell-note">Corchetes: recurso conocido</span></td>
+          <td><span class="pips"><i class="on"></i><i></i><i></i></span><span class="cell-note">Precisión, no decisión</span></td>
+          <td><span class="pips"><i class="on"></i><i class="on"></i><i class="on"></i></span></td>
+          <td>Es “de herramienta de diseño”. Prudente, pero poco distintivo.</td>
+        </tr>
+        <tr>
+          <td class="name">03 Foco</td>
+          <td><span class="pips"><i class="on"></i><i></i><i></i></span><span class="cell-note">El punto se pierde</span></td>
+          <td><span class="pips"><i class="on"></i><i class="on"></i><i></i></span></td>
+          <td><span class="pips"><i class="on"></i><i class="on"></i><i class="on"></i></span><span class="cell-note">La metáfora exacta</span></td>
+          <td><span class="pips"><i class="on"></i><i class="on"></i><i></i></span></td>
+          <td>Tres elementos a 16 px. El más frágil en favicon.</td>
+        </tr>
+        <tr>
+          <td class="name">04 Semi</td>
+          <td><span class="pips"><i class="on"></i><i class="on"></i><i></i></span><span class="cell-note">El hueco se cierra</span></td>
+          <td><span class="pips"><i class="on"></i><i class="on"></i><i></i></span><span class="cell-note">Monograma: esperado</span></td>
+          <td><span class="pips"><i></i><i></i><i></i></span><span class="cell-note">Habla del nombre, no del producto</span></td>
+          <td><span class="pips"><i class="on"></i><i class="on"></i><i class="on"></i></span><span class="cell-note">Sin contra que se cierre</span></td>
+          <td>Es la opción segura. También es la que menos dice.</td>
+        </tr>
+        <tr>
+          <td class="name">05 Aguja</td>
+          <td><span class="pips"><i class="on"></i><i class="on"></i><i class="on"></i></span></td>
+          <td><span class="pips"><i class="on"></i><i></i><i></i></span><span class="cell-note">El anillo es genérico</span></td>
+          <td><span class="pips"><i class="on"></i><i class="on"></i><i></i></span></td>
+          <td><span class="pips"><i class="on"></i><i class="on"></i><i></i></span></td>
+          <td>Se confunde con un ícono de GPS o de progreso circular.</td>
+        </tr>
+      </tbody>
+    </table>
+    </div>
+
+    <div class="callout" style="margin-top:28px">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 11v5M12 8h.01" />
+      </svg>
+      <p><strong>Si el criterio fuese “que se vea como un producto de BI”</strong>, el 01 Escalones o el 03 Foco ganarían. Si fuese “que se recuerde de un vistazo en una pestaña”, el 02 Encuadre o el 04 Semi.</p>
+      <p><strong>La recomendación</strong> va en contra del catálogo de BI: el 01 Escalones, por tres razones — su silueta diagonal es la única que no existe en la categoría, no depende del color de fondo (sirve sobre cualquier superficie, incluso en PDF), y ya codifica la idea de jerarquía que es el corazón del design system. Habría que resolver la fusión del magenta con una variante monocroma para el favicon, que es un problema técnico de una línea, no de diseño.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════ 8 · Cierre ══════════════ -->
+<section>
+  <div class="wrap">
+    <div class="sec-head">
+      <h2>Si se elige uno</h2>
+      <p>Esto es lo que falta para llevarlo a producción. Ningún paso de esto está hecho todavía: es el alcance de la siguiente iteración.</p>
+    </div>
+
+    <div class="next">
+      <div>
+        <strong>1 · Decisión</strong>
+        <p>Elegir el concepto y su paleta. A partir de ahí, este archivo deja de ser referencia.</p>
+      </div>
+      <div>
+        <strong>2 · Archivos de marca</strong>
+        <p><code style="font-family:var(--sans)">icon.tsx</code> para el favicon (hoy inexistente), el mark como componente React reutilizable y las variantes mono, corporate y dark.</p>
+      </div>
+      <div>
+        <strong>3 · Integración</strong>
+        <p>Sidebar, layout de auth, landing, vista pública compartida, footer de impresión y el header del PDF exportado.</p>
+      </div>
+    </div>
+
+    <p class="footnote">
+      Esta página no modifica la aplicación: es una pieza de trabajo en <code style="font-family:var(--sans)">docs/brand/</code>.
+      Los colores proceden de los tokens implementados en <code style="font-family:var(--sans)">app/src/app/globals.css</code>
+      — Signal Indigo <code style="font-family:var(--sans)">hsl(243 75% 59%)</code>, más oscuro que el
+      <code style="font-family:var(--sans)">hsl(239 84% 67%)</code> del frontmatter de <code style="font-family:var(--sans)">DESIGN.md</code>,
+      porque el implementador lo oscureció para cumplir contraste AA. El mark debería usar el valor implementado.
+      <br /><br />
+      Tipografía IBM Plex Sans, la misma que carga la app. Composición con inline SVG: los símbolos se definen una sola vez y se reutilizan,
+      así que el SVG final que se integre en el código puede ser exactamente el de esta página.
+    </p>
+  </div>
+</section>
+
+<script>
+  // Alternancia de superficie (claro / oscuro) en las maquetas de la app
+  // y en la prueba de favicon. La sección de las dos paletas siempre
+  // muestra ambas a la vez: ahí la comparación es el objetivo.
+  const hosts = Array.from(document.querySelectorAll('[data-surface-host]'));
+  const btnLight = document.getElementById('btn-light');
+  const btnDark = document.getElementById('btn-dark');
+
+  function setSurface(mode) {
+    hosts.forEach((el) => { el.dataset.surface = mode; });
+    btnLight.setAttribute('aria-pressed', String(mode === 'light'));
+    btnDark.setAttribute('aria-pressed', String(mode === 'dark'));
+  }
+  btnLight.addEventListener('click', () => setSurface('light'));
+  btnDark.addEventListener('click', () => setSurface('dark'));
+  setSurface('light');
+
+  // Control de tamaño: cambia el mark de la fila de favicon
+  const sizeButtons = Array.from(document.querySelectorAll('.sizes button'));
+  sizeButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const size = btn.dataset.size + 'px';
+      sizeButtons.forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
+      document.querySelectorAll('.fav-row .mark').forEach((m) => {
+        m.style.width = size;
+        m.style.height = size;
+      });
+      document.querySelectorAll('.fav-row .favicon-chip').forEach((c) => {
+        c.style.width = size;
+        c.style.height = size;
+        c.style.fontSize = Math.round(parseInt(size) * 0.5) + 'px';
+      });
+    });
+  });
+</script>
+
+</body>
+</html>
