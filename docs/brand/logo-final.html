@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ronda final — Escalones vs Aguja · dash-bi</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    /* Tokens implementados en app/src/app/globals.css */
+    --indigo:  #5048e5;   /* hsl(243 75% 59%)  — Signal Indigo */
+    --violet:  #8251f6;   /* hsl(258 90% 64%)  — Analytical Violet */
+    --magenta: #de177a;   /* hsl(330 81% 48%)  — Review Magenta */
+    --ink:     #0f1729;
+    --muted:   #6b7280;
+    --line:    #e5e7eb;
+    --surface: #f3f4f6;
+    --paper:   #ffffff;
+    --page:    #fafafa;
+
+    --corp-blue: hsl(224 76% 40%);
+    --corp-cyan: hsl(192 91% 30%);
+
+    --d-bg:      hsl(222 47% 7%);
+    --d-surface: hsl(222 40% 12%);
+    --d-border:  hsl(215 25% 22%);
+    --d-text:    hsl(210 20% 98%);
+    --d-muted:   hsl(215 16% 75%);
+    --d-indigo:  hsl(234 89% 74%);
+    --d-violet:  hsl(258 90% 76%);
+    --d-magenta: hsl(330 81% 70%);
+
+    --radius: 12px;
+    --sans: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--page); color: var(--ink);
+    font-family: var(--sans); font-size: 14px; line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 0 28px; }
+
+  header.top { border-bottom: 1px solid var(--line); background: var(--paper); padding: 18px 0; position: sticky; top: 0; z-index: 20; }
+  .top__inner { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .top__id { display: flex; align-items: baseline; gap: 10px; margin-right: auto; }
+  .top__id h1 { margin: 0; font-size: 14px; font-weight: 600; letter-spacing: -0.02em; }
+  .top__id span { font-size: 12px; color: var(--muted); }
+  .control { display: flex; align-items: center; gap: 9px; }
+  .control > span { font-size: 12px; font-weight: 600; color: var(--muted); }
+
+  .switch { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--paper); }
+  .switch button { appearance: none; border: 0; background: transparent; cursor: pointer; font: inherit; font-size: 13px; font-weight: 500; color: var(--muted); padding: 7px 13px; transition: background .18s ease, color .18s ease; }
+  .switch button + button { border-left: 1px solid var(--line); }
+  .switch button:hover { background: var(--surface); color: var(--ink); }
+  .switch button[aria-pressed="true"] { background: var(--ink); color: #fff; }
+  .switch button:focus-visible { outline: 2px solid var(--indigo); outline-offset: -2px; }
+
+  .sizes { display: inline-flex; gap: 4px; }
+  .sizes button { appearance: none; cursor: pointer; font: inherit; font-size: 12px; font-weight: 600; min-width: 34px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--paper); color: var(--muted); transition: all .18s ease; }
+  .sizes button:hover { border-color: color-mix(in srgb, var(--muted) 45%, var(--line)); color: var(--ink); }
+  .sizes button[aria-pressed="true"] { background: var(--indigo); border-color: var(--indigo); color: #fff; }
+  .sizes button:focus-visible { outline: 2px solid var(--indigo); outline-offset: 2px; }
+
+  section { padding: 60px 0; }
+  section + section { border-top: 1px solid var(--line); }
+  .sec-head { max-width: 680px; margin-bottom: 36px; }
+  .sec-head h2 { margin: 0 0 12px; font-size: 24px; font-weight: 600; letter-spacing: -0.025em; line-height: 1.2; text-wrap: balance; }
+  .sec-head p { margin: 0; color: var(--muted); font-size: 14.5px; }
+
+  .lede { display: grid; grid-template-columns: 1.4fr 1fr; gap: 52px; align-items: start; }
+  .lede h1 { margin: 0 0 16px; font-size: 32px; font-weight: 600; letter-spacing: -0.028em; line-height: 1.16; text-wrap: balance; }
+  .lede p { margin: 0 0 14px; color: var(--muted); font-size: 15px; max-width: 62ch; }
+
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .pair__card { background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); padding: 26px; display: grid; gap: 14px; justify-items: center; }
+  .pair__card h3 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -0.02em; }
+  .pair__card p { margin: 0; font-size: 13px; color: var(--muted); text-align: center; }
+
+  /* ── Variantes ─────────────────────────────────────────── */
+  .variants { display: grid; grid-template-columns: repeat(12, 1fr); gap: 20px; }
+  .v { grid-column: span 3; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; display: flex; flex-direction: column; }
+  .v--lead { grid-column: span 6; }
+  .v__head { padding: 18px 20px 0; }
+  .v__head h3 { margin: 0 0 4px; font-size: 15px; font-weight: 600; letter-spacing: -0.015em; display: flex; align-items: baseline; gap: 8px; }
+  .v__head h3 em { font-style: normal; font-size: 11px; font-weight: 700; letter-spacing: .08em; color: var(--indigo); }
+  .v__head p { margin: 0; font-size: 12.5px; color: var(--muted); }
+  .v__stage { flex: 1; display: grid; place-items: center; padding: 26px; margin: 16px 20px 0; background: var(--surface); border-radius: 8px; }
+  .v--lead .v__stage { padding: 40px; }
+  .v__sizes { display: flex; align-items: flex-end; gap: 16px; padding: 16px 20px 20px; }
+  .v__sizes figure { margin: 0; display: grid; gap: 6px; justify-items: center; }
+  .v__sizes figcaption { font-size: 10.5px; color: var(--muted); font-weight: 500; }
+  .v__note { padding: 0 20px 20px; font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+  .v__note strong { color: var(--ink); font-weight: 600; }
+  .mark { display: block; }
+  .mark--hero { width: 120px; height: 120px; }
+  .v--lead .mark--hero { width: 148px; height: 148px; }
+
+  .sizer { flex: 0 0 auto; }
+
+  /* ── Superficie oscura ─────────────────────────────────── */
+  [data-surface-host][data-surface="dark"] { --ca: var(--d-indigo); --cb: var(--d-violet); --cc: var(--d-magenta); }
+  [data-surface-host][data-surface="dark"] .v { background: var(--d-bg); border-color: var(--d-border); }
+  [data-surface-host][data-surface="dark"] .v__stage { background: var(--d-surface); }
+  [data-surface-host][data-surface="dark"] .v__head h3, [data-surface-host][data-surface="dark"] .v__note strong { color: var(--d-text); }
+  [data-surface-host][data-surface="dark"] .v__head p, [data-surface-host][data-surface="dark"] .v__note { color: var(--d-muted); }
+  [data-surface-host][data-surface="dark"] .v__sizes figcaption { color: var(--d-muted); }
+  [data-surface-host][data-surface="dark"] .pair__card { background: var(--d-bg); border-color: var(--d-border); }
+  [data-surface-host][data-surface="dark"] .pair__card h3 { color: var(--d-text); }
+  [data-surface-host][data-surface="dark"] .pair__card p { color: var(--d-muted); }
+  [data-surface-host][data-surface="dark"] .duo-cell { background: var(--d-bg); border-color: var(--d-border); }
+  [data-surface-host][data-surface="dark"] .duo-cell h4 { color: var(--d-text); }
+  [data-surface-host][data-surface="dark"] .duo-cell p { color: var(--d-muted); }
+  [data-surface-host][data-surface="dark"] .duo-light { background: var(--paper); border-color: var(--line); }
+  [data-surface-host][data-surface="dark"] .duo-light h4 { color: var(--ink); }
+  [data-surface-host][data-surface="dark"] .duo-light p { color: var(--muted); }
+
+  /* ── Duelo ─────────────────────────────────────────────── */
+  .duo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .duo-cell { background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); padding: 24px; display: grid; gap: 16px; justify-items: center; }
+  .duo-cell h4 { margin: 0; font-size: 14px; font-weight: 600; }
+  .duo-cell p { margin: 0; font-size: 12.5px; color: var(--muted); text-align: center; max-width: 40ch; }
+  .duo-light { background: var(--paper); border-color: var(--line); }
+
+  .fav-strip { display: flex; gap: 14px; align-items: center; }
+  .fav-strip .tab { display: inline-flex; align-items: center; gap: 8px; padding: 7px 13px; border-radius: 8px 8px 0 0; background: var(--paper); border: 1px solid var(--line); border-bottom: 0; font-size: 12px; color: var(--ink); }
+
+  /* ── Tabla ─────────────────────────────────────────────── */
+  .table-wrap { overflow-x: auto; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); }
+  table { width: 100%; min-width: 720px; border-collapse: collapse; background: var(--paper); }
+  th, td { text-align: left; padding: 14px 16px; font-size: 13.5px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  thead th { font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); background: var(--surface); }
+  tbody tr:last-child td { border-bottom: 0; }
+  td.name { font-weight: 600; white-space: nowrap; }
+  .verdict { font-weight: 600; }
+  .verdict--win { color: var(--indigo); }
+  .verdict--lose { color: var(--muted); }
+  .cell-note { color: var(--muted); font-size: 12.5px; display: block; margin-top: 3px; }
+
+  /* ── Cierre ────────────────────────────────────────────── */
+  .next { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+  .next div { border-left: 1px solid var(--line); padding-left: 16px; }
+  .next strong { display: block; font-size: 14px; font-weight: 600; margin-bottom: 5px; }
+  .next p { margin: 0; font-size: 13.5px; color: var(--muted); }
+
+  .callout { display: grid; grid-template-columns: 20px 1fr; gap: 4px 12px; align-items: start; background: color-mix(in srgb, var(--indigo) 5%, var(--paper)); border: 1px solid color-mix(in srgb, var(--indigo) 22%, var(--line)); border-radius: 12px; padding: 20px 24px; font-size: 14px; color: var(--ink); }
+  .callout > svg { grid-row: span 2; margin-top: 2px; color: var(--indigo); }
+  .callout p { margin: 0 0 10px; }
+  .callout p:last-child { margin: 0; color: var(--muted); font-size: 13px; }
+
+  code { font-family: 'IBM Plex Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: .92em; background: var(--surface); padding: 1px 5px; border-radius: 4px; }
+  .footnote { margin-top: 40px; font-size: 12.5px; color: var(--muted); max-width: 760px; }
+
+  @media (max-width: 980px) {
+    .lede, .pair, .duo-grid, .next { grid-template-columns: 1fr; gap: 28px; }
+    .v, .v--lead { grid-column: span 12; }
+    section { padding: 44px 0; }
+    header.top { position: static; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ══════════════ Sprite ══════════════ -->
+<svg class="sprite" aria-hidden="true" focusable="false">
+  <!-- ESCALONES · base y refinamientos -->
+  <symbol id="e1" viewBox="0 0 48 48">
+    <path d="M12 34V14H25V25H36" fill="none" stroke="var(--ca)" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" />
+    <path d="M25 25H36" fill="none" stroke="var(--cc)" stroke-width="9" stroke-linecap="round" />
+  </symbol>
+  <symbol id="e2" viewBox="0 0 48 48">
+    <path d="M12 34V14H25V25H30" fill="none" stroke="var(--ca)" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" />
+    <circle cx="35" cy="25" r="6" fill="var(--cc)" />
+  </symbol>
+  <symbol id="e3" viewBox="0 0 48 48">
+    <path d="M12 34V14H25V25H36" fill="none" stroke="var(--ca)" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" />
+    <circle cx="25" cy="25" r="6.5" fill="var(--cc)" />
+  </symbol>
+  <symbol id="e4" viewBox="0 0 48 48">
+    <path d="M12 34V14H25V25H36" fill="none" stroke="var(--ca)" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" />
+  </symbol>
+
+  <!-- AGUJA · base y refinamientos -->
+  <symbol id="a1" viewBox="0 0 48 48">
+    <circle cx="24" cy="24" r="16" fill="none" stroke="var(--ca)" stroke-width="6" />
+    <path d="M24 8l5.5 13.5L24 26l-5.5-4.5z" fill="var(--cc)" />
+    <path d="M24 40l-5.5-13.5L24 22l5.5 4.5z" fill="var(--cb)" />
+  </symbol>
+  <symbol id="a2" viewBox="0 0 48 48">
+    <path d="M32 10.14A16 16 0 1 1 16 10.14" fill="none" stroke="var(--ca)" stroke-width="6" stroke-linecap="round" />
+    <path d="M24 10l5.5 11.5L24 26l-5.5-4.5z" fill="var(--cc)" />
+    <path d="M24 38l-5.5-11.5L24 22l5.5 4.5z" fill="var(--cb)" />
+  </symbol>
+  <symbol id="a3" viewBox="0 0 48 48">
+    <circle cx="24" cy="24" r="16" fill="none" stroke="var(--ca)" stroke-width="6" />
+    <path d="M35.31 12.69L29.66 26.12 22.59 25.41 21.88 18.34z" fill="var(--cc)" />
+    <path d="M12.69 35.31L18.34 21.88 25.41 22.59 26.12 29.66z" fill="var(--cb)" />
+  </symbol>
+  <symbol id="a4" viewBox="0 0 48 48">
+    <circle cx="24" cy="24" r="16" fill="none" stroke="var(--ca)" stroke-width="6" />
+    <path d="M24 8l5.5 13.5L24 26l-5.5-4.5z" fill="var(--ca)" />
+    <path d="M24 40l-5.5-13.5L24 22l5.5 4.5z" fill="var(--ca)" />
+  </symbol>
+</svg>
+
+<!-- ══════════════ Barra ══════════════ -->
+<header class="top">
+  <div class="wrap top__inner">
+    <div class="top__id">
+      <h1>Ronda final · Escalones vs Aguja</h1>
+      <span>dash-bi</span>
+    </div>
+    <div class="control">
+      <span>Superficie</span>
+      <div class="switch" role="group" aria-label="Superficie">
+        <button type="button" id="btn-light" aria-pressed="true">Claro</button>
+        <button type="button" id="btn-dark" aria-pressed="false">Oscuro</button>
+      </div>
+    </div>
+    <div class="control">
+      <span>Tamaño</span>
+      <div class="sizes" role="group" aria-label="Tamaño del mark">
+        <button type="button" data-size="16" aria-pressed="false">16</button>
+        <button type="button" data-size="20" aria-pressed="false">20</button>
+        <button type="button" data-size="28" aria-pressed="true">28</button>
+        <button type="button" data-size="48" aria-pressed="false">48</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- ══════════════ 1 · Contexto ══════════════ -->
+<section>
+  <div class="wrap">
+    <div class="lede">
+      <div>
+        <h1>Dos candidatos. Ahora la forma exacta.</h1>
+        <p>De los cinco conceptos iniciales, <strong>Escalones</strong> y <strong>Aguja</strong> son los únicos que no dependen de una explicación para leerse. Los otros tres tienen una debilidad de forma: Encuadre parece una herramienta de diseño, Foco pierde el punto a 16 px y Semi es un monograma esperado.</p>
+        <p>Los dos que quedan se defienden por razones opuestas. <strong>Escalones</strong> es único: su silueta diagonal no existe en el catálogo de BI. <strong>Aguja</strong> es autosuficiente: funciona como ícono de app sin el nombre al lado, pero la aguja y el anillo son un vocabulario de iconos ya muy usado.</p>
+        <p>Abajo, cada uno refiné en tres variantes para atacar su punto débil. El control <em>Tamaño</em> de la barra superior redimensiona todos los marks pequeños de la página: probá 16 y 20, que es donde se decide.</p>
+      </div>
+
+      <div class="pair">
+        <div class="pair__card">
+          <svg class="mark" style="width:84px;height:84px;--ca:var(--indigo);--cb:var(--violet);--cc:var(--magenta)" aria-hidden="true"><use href="#e1" /></svg>
+          <h3>01 Escalones</h3>
+          <p>Un perfil que ordena. Codifica jerarquía: lo importante primero, la evidencia después.</p>
+        </div>
+        <div class="pair__card">
+          <svg class="mark" style="width:84px;height:84px;--ca:var(--indigo);--cb:var(--violet);--cc:var(--magenta)" aria-hidden="true"><use href="#a1" /></svg>
+          <h3>05 Aguja</h3>
+          <p>Un instrumento de orientación. Promete la dirección que el producto entrega.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════ 2 · Escalones ══════════════ -->
+<section data-surface-host data-surface="light" style="--ca:var(--indigo);--cb:var(--violet);--cc:var(--magenta)">
+  <div class="wrap">
+    <div class="sec-head">
+      <h2>Escalones — cuatro formas</h2>
+      <p>El problema de la versión original es de color, no de forma: el tramo magenta se funde con el indigo a 16 px y el mark se vuelve un trazo gris-azulado. Las variantes 02 y 03 cambian <em>dónde</em> va la masa de color para que sobreviva en el favicon.</p>
+    </div>
+
+    <div class="variants">
+      <article class="v v--lead">
+        <div class="v__head">
+          <h3><em>01</em> Base</h3>
+          <p>Indigo en el recorrido, magenta en el último tramo.</p>
+        </div>
+        <div class="v__stage">
+          <svg class="mark mark--hero" aria-hidden="true"><use href="#e1" /></svg>
+        </div>
+        <div class="v__sizes">
+          <figure><svg class="mark sizer" style="width:28px;height:28px" aria-hidden="true"><use href="#e1" /></svg><figcaption>28</figcaption></figure>
+          <figure><svg class="mark sizer" style="width:20px;height:20px" aria-hidden="true"><use href="#e1" /></svg><figcaption>20</figcaption></figure>
+          <figure><svg class="mark sizer" style="width:16px;height:16px" aria-hidden="true"><use href="#e1" /></svg><figcaption>16</figcaption></figure>
+        </div>
+        <p class="v__note"><strong>A 16 px el magenta desaparece</strong> y queda un trazo indigo en forma de “r”. Es la variante más elegante a tamaño grande y la más débil en favicon.</p>
+      </article>
+
+      <article class="v">
+        <div class="v__head">
+          <h3><em>02</em> Nodo final</h3>
+          <p>El magenta pasa a ser un punto macizo.</p>
+        </div>
+        <div class="v__stage">
+          <svg class="mark mark--hero" style="width:92px;height:92px" aria-hidden="true"><use href="#e2" /></svg>
+        </div>
+        <div class="v__sizes">
+          <figure><svg class="mark sizer" style="width:28px;height:28px" aria-hidden="true"><use href="#e2" /></svg><figcaption>28</figcaption></figure>
+          <figure><svg class="mark sizer" style="width:20px;height:20px" aria-hidden="true"><use href="#e2" /></svg><figcaption>20</figcaption></figure>
+          <figure><svg class="mark sizer" style="width:16px;height:16px" aria-hidden="true"><use href="#e2" /></svg><figcaption>16</figcaption></figure>
+        </div>
+        <p class="v__note">El punto conserva área a cualquier tamaño: es la variante <strong>más legible a 16 px</strong> de las cuatro. La silueta pasa a ser una línea que termina en un dato.</p>
+      </article>
+
+      <article class="v">
+        <div class="v__head">
+          <h3><em>03</em> Nodo en el codo</h3>
+          <p>El magenta marca el quiebre del perfil.</p>
+        </div>
+        <div class="v__stage">
+          <svg class="mark mark--hero" style="width:92px;height:92px" aria-hidden="true"><use href="#e3" /></svg>
+        </div>
+        <div class="v__sizes">
+          <figure><svg class="mark sizer" style="width:28px;height:28px" aria-hidden="true"><use href="#e3" /></svg><figcaption>28</figcaption></figure>
+          <figure><svg class="mark sizer" style="width:20px;height:20px" aria-hidden="true"><use href="#e3" /></svg><figcaption>20</figcaption></figure>
+          <figure><svg class="mark sizer" style="width:16px;height:16px" aria-hidden="true"><use href="#e3" /></svg><figcaption>16</figcaption></figure>
+        </div>
+        <p class="v__note">El punto queda en el <strong>quiebre</strong>: el lugar donde el perfil deja de subir. Es la lectura más fiel a “la decisión ordena”, pero a 16 px el punto sobre la esquina embarulla la silueta.</p>
+      </article>
+
+      <article class="v">
+        <div class="v__head">
+          <h3><em>04</em> Monocromo</h3>
+          <p>La misma forma en un solo color.</p>
+        </div>
+        <div class="v__stage">
+          <svg class="mark mark--hero" style="width:92px;height:92px" aria-hidden="true"><use href="#e4" /></svg>
+        </div>
+        <div class="v__sizes">
+          <figure><svg class="mark sizer" style="width:28px;height:28px" aria-hidden="true"><use href="#e4" /></svg><figcaption>28</figcaption></figure>
+          <figure><svg class="mark sizer" style="width:20px;height:20px" aria-hidden="true"><use href="#e4" /></svg><figcaption>20</figcaption></figure>
+          <figure><svg class="mark sizer" style="width:16px;height:16px" aria-hidden="true"><use href="#e4" /></svg><figcaption>16</figcaption></figure>
+        </div>
+        <p class="v__note">La variante de un solo color no es una concesión: es la que debería ir en el <strong>favicon</strong>, y también la que imprime en PDF sin depender de tinta magenta.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════ 3 · Aguja ══════════════ -->
+<section data-surface-host data-surface="light" style="--ca:var(--indigo);--cb:var(--violet);--cc:var(--magenta)">
+  <div class="wrap">
+    <div class="sec-head">
+      <h2>Aguja — cuatro formas</h2>
+      <p>El problema de la versión original es semántico: un círculo con una aguja es el vocabulario de la brújula, del GPS y del indicador de progreso circular. Las variantes 02 y 03 Alejan el mark de esos dos vecinos.</p>
+    </div>
+
+    <div class="variants">
+      <article class="v v--lead">
+        <div class="v__head">
+          <h3><em>01</em> Base</h3>
+          <p>Anillo cerrado y aguja vertical de dos tonos.</p>
+        </div>
+        <div class="v__stage">
+          <svg class="mark mark--hero" aria-hidden="true"><use href="#a1" /></svg>
+        </div>
+        <div class="v__sizes">
+          <figure><svg class="mark sizer" style="width:28px;height:28px" aria-hidden="true"><use href="#a1" /></svg><figcaption>28</figcaption></figure>
+          <figure><svg class="mark sizer" style="width:20px;height:20px" aria-hidden="true"><use href="#a1" /></svg><figcaption>20</figcaption></figure>
+          <figure><svg class="mark sizer" style="width:16px;height:16px" aria-hidden="true"><use href="#a1" /></svg><figcaption>16</figcaption></figure>
+        </div>
+        <p class="v__note"><strong>La más sólida a 16 px</strong> y la única que funciona sola como ícono de app. A cambio, es la que más se parece a otras marcas del categoría.</p>
+      </article>
+
+      <article class="v">
+        <div class="v__head">
+          <h3><em>02</em> Anillo abierto</h3>
+          <p>El arco se abre en el norte.</p>
+        </div>
+        <div class="v__stage">
+          <svg class="mark mark--hero" style="width:92px;height:92px" aria-hidden="true"><use href="#a2" /></svg>
+        </div>
+        <div class="v__sizes">
+          <figure><svg class="mark sizer" style="width:28px;height:28px" aria-hidden="true"><use href="#a2" /></svg><figcaption>28</figcaption></figure>
+          <figure><svg class="mark sizer" style="width:20px;height:20px" aria-hidden="true"><use href="#a2" /></svg><figcaption>20</figcaption></figure>
+          <figure><svg class="mark sizer" style="width:16px;height:16px" aria-hidden="true"><use href="#a2" /></svg><figcaption>16</figcaption></figure>
+        </div>
+        <p class="v__note">Deja de leerse como indicador de carga y pasa a <strong>dial</strong>. La aguja sale por la abertura, así que la dirección se vuelve explícita.</p>
+      </article>
+
+      <article class="v">
+        <div class="v__head">
+          <h3><em>03</em> Aguja al nordeste</h3>
+          <p>La aguja marca hacia arriba a la derecha.</p>
+        </div>
+        <div class="v__stage">
+          <svg class="mark mark--hero" style="width:92px;height:92px" aria-hidden="true"><use href="#a3" /></svg>
+        </div>
+        <div class="v__sizes">
+          <figure><svg class="mark sizer" style="width:28px;height:28px" aria-hidden="true"><use href="#a3" /></svg><figcaption>28</figcaption></figure>
+          <figure><svg class="mark sizer" style="width:20px;height:20px" aria-hidden="true"><use href="#a3" /></svg><figcaption>20</figcaption></figure>
+          <figure><svg class="mark sizer" style="width:16px;height:16px" aria-hidden="true"><use href="#a3" /></svg><figcaption>16</figcaption></figure>
+        </div>
+        <p class="v__note">Deja de ser “norte” y pasa a ser <strong>dirección de lectura</strong>. Rompe la simetría, pero la aguja girada se confunde con un sector de gráfico: es la más débil a 16 px.</p>
+      </article>
+
+      <article class="v">
+        <div class="v__head">
+          <h3><em>04</em> Monocromo</h3>
+          <p>Todo el mark en un solo color.</p>
+        </div>
+        <div class="v__stage">
+          <svg class="mark mark--hero" style="width:92px;height:92px" aria-hidden="true"><use href="#a4" /></svg>
+        </div>
+        <div class="v__sizes">
+          <figure><svg class="mark sizer" style="width:28px;height:28px" aria-hidden="true"><use href="#a4" /></svg><figcaption>28</figcaption></figure>
+          <figure><svg class="mark sizer" style="width:20px;height:20px" aria-hidden="true"><use href="#a4" /></svg><figcaption>20</figcaption></figure>
+          <figure><svg class="mark sizer" style="width:16px;height:16px" aria-hidden="true"><use href="#a4" /></svg><figcaption>16</figcaption></figure>
+        </div>
+        <p class="v__note">La aguja se vuelve una <strong>sombra dentro del anillo</strong>. Es la versión para favicon, y también la que funciona en serigrafía o como sello de un solo color.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════ 4 · Duelo ══════════════ -->
+<section data-surface-host data-surface="light" style="--ca:var(--indigo);--cb:var(--violet);--cc:var(--magenta)">
+  <div class="wrap">
+    <div class="sec-head">
+      <h2>El duelo, a la escala que decide</h2>
+      <p>Los cuatro criterios de la ronda anterior, aplicados solo a estos dos. La columna de la derecha es el veredicto, no laarketing.</p>
+    </div>
+
+    <div class="duo-grid" style="margin-bottom:28px">
+      <div class="duo-cell">
+        <h4>Escalones · versión 02 (nodo final)</h4>
+        <div class="fav-strip">
+          <span class="tab"><svg class="mark sizer" style="width:16px;height:16px" aria-hidden="true"><use href="#e2" /></svg>dash-bi</span>
+        </div>
+        <svg class="mark" style="width:96px;height:96px" aria-hidden="true"><use href="#e2" /></svg>
+        <p>Silueta diagonal. No existe en la categoría. En 16 px se lee como un perfil escalonado que termina en un punto.</p>
+      </div>
+      <div class="duo-cell">
+        <h4>Aguja · versión 02 (anillo abierto)</h4>
+        <div class="fav-strip">
+          <span class="tab"><svg class="mark sizer" style="width:16px;height:16px" aria-hidden="true"><use href="#a2" /></svg>dash-bi</span>
+        </div>
+        <svg class="mark" style="width:96px;height:96px" aria-hidden="true"><use href="#a2" /></svg>
+        <p>Silueta circular. Es la más reconocible de un vistazo, y la que más se parece a otras marcas.</p>
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Criterio</th>
+            <th>Escalones</th>
+            <th>Aguja</th>
+            <th>Por qué importa</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="name">Legible a 16 px</td>
+            <td><span class="verdict verdict--win">Gana</span><span class="cell-note">Con el nodo final, el magenta conserva área</span></td>
+            <td><span class="verdict verdict--lose">Pierde</span><span class="cell-note">A 16 px el punto magenta se apaga y queda el anillo</span></td>
+            <td>El favicon es la primera vez que alguien ve la marca.</td>
+          </tr>
+          <tr>
+            <td class="name">Silueta propia</td>
+            <td><span class="verdict verdict--win">Gana</span><span class="cell-note">Diagonal; ningún icono de BI la usa</span></td>
+            <td><span class="verdict verdict--lose">Pierde</span><span class="cell-note">Círculo con aguja: brújula, GPS, spinner</span></td>
+            <td>Es lo que separa una marca de una plantilla.</td>
+          </tr>
+          <tr>
+            <td class="name">Sobrevive al tema corporate</td>
+            <td><span class="verdict">Empate</span><span class="cell-note">Azul con cian; la forma no depende del color</span></td>
+            <td><span class="verdict">Empate</span><span class="cell-note">Azul con cian; la forma no depende del color</span></td>
+            <td>El tema `corporate` ya existe y se usa.</td>
+          </tr>
+          <tr>
+            <td class="name">Impresión en PDF</td>
+            <td><span class="verdict verdict--win">Gana</span><span class="cell-note">Un trazo en una sola tinta</span></td>
+            <td><span class="verdict verdict--lose">Pierde</span><span class="cell-note">El anillo de 6 px satura la tinta fina</span></td>
+            <td>El PDF exportado es una salida de producto.</td>
+          </tr>
+          <tr>
+            <td class="name">Se sostiene sin el nombre</td>
+            <td><span class="verdict verdict--lose">Pierde</span><span class="cell-note">Sin “dash-bi” al lado es un trazo abstracto</span></td>
+            <td><span class="verdict verdict--win">Gana</span><span class="cell-note">Se lee como ícono de app por sí solo</span></td>
+            <td>El ícono de la app, los accesos del SO, los embed.</td>
+          </tr>
+          <tr>
+            <td class="name">Escala a 48 px y más</td>
+            <td><span class="verdict">Empate</span><span class="cell-note">Trazo limpio, sin detalle que se pierda</span></td>
+            <td><span class="verdict">Empate</span><span class="cell-note">Trazo limpio, sin detalle que se pierda</span></td>
+            <td>Marketing, documentación, presentaciones.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout" style="margin-top:28px">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 11v5M12 8h.01" />
+      </svg>
+      <p><strong>Veredicto: Escalones, en la variante 02.</strong> Gana en los tres criterios que pesan — legibilidad a 16 px, silueta propia e impresión — y pierde solo en uno, que es el menos crítico: sin el nombre al lado, un trazo abstracto no se sostiene como ícono de app. Pero el ícono de app lo vas a ver siempre junto a “dash-bi”, y el favicon y la marca en PDF sí son el mark solo.</p>
+      <p><strong>Aguja gana el criterio que menos importa a largo plazo.</strong> Ser legible sin el nombre importa el primer día; no parecerse a nadie importa todos los días. El anillo abierto resuelve la lectura de spinner y la hace menos genérica de lo que era, pero un dial con aguja sigue siendo un objeto que cualquiera puede usar — y una brújula es justo lo que un usuario espera de una app de mapas, no de un dashboard.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════ 5 · Cierre ══════════════ -->
+<section>
+  <div class="wrap">
+    <div class="sec-head">
+      <h2>Si se elige Escalones</h2>
+      <p>Esto es exactamente lo que habría que producir. Ningún paso está hecho todavía: es el alcance de la siguiente iteración.</p>
+    </div>
+
+    <div class="next">
+      <div>
+        <strong>1 · Decisión</strong>
+        <p>Escalones en la variante 02, nodo final. La variante 03 (nodo en el codo) queda como segunda opción si preferís la lectura más semántica. El resto del proceso queda archivado en <code>docs/brand/logo-options.html</code>.</p>
+      </div>
+      <div>
+        <strong>2 · Sistema de marca</strong>
+        <p>Cuatro variantes obligatorias: color, monocroma, modo oscuro y corporate. La monocroma es la del favicon. Se implementan como un único componente React con el color por token CSS.</p>
+      </div>
+      <div>
+        <strong>3 · Integración</strong>
+        <p><code>icon.tsx</code> para el favicon (hoy inexistente), el mark en el Sidebar, el layout de auth, la landing, la vista pública compartida, el footer de impresión y el header del PDF.</p>
+      </div>
+    </div>
+
+    <p class="footnote">
+      Esta página no modifica la aplicación: es una pieza de trabajo en <code>docs/brand/</code>, junto a
+      <code>docs/brand/logo-options.html</code> con la ronda inicial de cinco conceptos.
+      Los colores proceden de los tokens implementados en <code>app/src/app/globals.css</code>:
+      Signal Indigo <code>hsl(243 75% 59%)</code>, Analytical Violet <code>hsl(258 90% 64%)</code> y
+      Review Magenta <code>hsl(330 81% 48%)</code> en modo claro; indigo-400, violet-400 y pink-400 en modo oscuro.
+      El SVG de cada variante es exactamente el que se integraría en el código —los símbolos se definen una vez y se reutilizan—,
+      así que elegir una variante es elegir el asset final, no un boceto.
+    </p>
+  </div>
+</section>
+
+<script>
+  const hosts = Array.from(document.querySelectorAll('[data-surface-host]'));
+  const btnLight = document.getElementById('btn-light');
+  const btnDark = document.getElementById('btn-dark');
+
+  function setSurface(mode) {
+    hosts.forEach((el) => { el.dataset.surface = mode; });
+    btnLight.setAttribute('aria-pressed', String(mode === 'light'));
+    btnDark.setAttribute('aria-pressed', String(mode === 'dark'));
+  }
+  btnLight.addEventListener('click', () => setSurface('light'));
+  btnDark.addEventListener('click', () => setSurface('dark'));
+  setSurface('light');
+
+  const sizeButtons = Array.from(document.querySelectorAll('.sizes button'));
+  sizeButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const size = btn.dataset.size + 'px';
+      sizeButtons.forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
+      document.querySelectorAll('.sizer').forEach((m) => {
+        m.style.width = size;
+        m.style.height = size;
+      });
+    });
+  });
+</script>
+
+</body>
+</html>
