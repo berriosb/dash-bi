@@ -1,4 +1,5 @@
 import { WidgetRenderer } from '@/components/widgets/WidgetRenderer';
+import { BrandMark } from '@/components/brand/BrandMark';
 import type { Widget } from '@/lib/widgets/types';
 
 type PublicDashboard = {
@@ -29,7 +30,12 @@ export function DashboardPublicView({ dashboard }: { dashboard: PublicDashboard 
           )}
           <p className="mt-2 text-xs text-muted-foreground">
             Vista pública · Powered by{' '}
-            <a className="underline" href="https://dash-bi.com" rel="noopener noreferrer">
+            <a
+              className="inline-flex items-center gap-1.5 underline"
+              href="https://dash-bi.com"
+              rel="noopener noreferrer"
+            >
+              <BrandMark size={14} />
               dash-bi
             </a>
           </p>

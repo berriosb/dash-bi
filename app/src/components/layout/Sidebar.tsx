@@ -5,6 +5,7 @@ import { usePathname, useSearchParams } from 'next/navigation';
 import { ChevronRight, CircleHelp } from 'lucide-react';
 import { useUIStore } from '@/stores/uiStore';
 import { cn } from '@/lib/cn';
+import { BrandMark } from '@/components/brand/BrandMark';
 import { getActiveNavigationHref, platformNavigation } from './navigation';
 
 export function Sidebar() {
@@ -21,7 +22,7 @@ export function Sidebar() {
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="platform-sidebar__brand">
           <Link href="/dashboards" className="platform-brand" aria-label="dash-bi, ir a dashboards">
-            <span className="platform-brand__mark" aria-hidden="true">db</span>
+            <BrandMark />
             <span className="platform-brand__name">dash-bi</span>
           </Link>
           <span className="platform-sidebar__workspace">Workspace de análisis</span>

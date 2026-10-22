@@ -1,12 +1,16 @@
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
+import { BrandMark } from '@/components/brand/BrandMark';
 
 export default function HomePage() {
   return (
     <main className="flex min-h-screen flex-col items-center justify-center p-8">
       <div className="w-full max-w-2xl space-y-8 text-center">
         <div>
-          <h1 className="text-5xl font-bold tracking-tight">dash-bi</h1>
+          <h1 className="inline-flex items-center gap-3 text-5xl font-bold tracking-tight">
+            <BrandMark size={40} />
+            <span>dash-bi</span>
+          </h1>
           <p className="mt-4 text-lg text-muted-foreground">
             Open source BI platform with AI-genera-dashboards.
             <br />

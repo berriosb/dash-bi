@@ -360,20 +360,6 @@
   letter-spacing: -0.01em;
 }
 
-.platform-brand__mark {
-  display: grid;
-  width: 28px;
-  height: 28px;
-  place-items: center;
-  border-radius: 7px;
-  background: hsl(var(--color-primary-hsl));
-  color: white;
-  font-family: var(--font-family-mono);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: -0.06em;
-}
-
 .platform-sidebar__workspace {
   color: hsl(var(--color-text-muted-hsl));
   font-size: 11px;
