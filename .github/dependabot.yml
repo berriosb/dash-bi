@@ -1,0 +1,71 @@
+# Dependabot configuration for dash-bi
+# https://docs.github.com/en/code-security/dependabot/dependabot-version-updates
+#
+# Por que existe: sin este archivo nadie vigila el estado de las dependencias
+# ni de las GitHub Actions. Es lo que mantiene la flota al dia sin trabajo manual.
+#
+# Convenciones: berriosb/agent-fleet
+
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/app"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "08:00"
+    groups:
+      next:
+        patterns:
+          - "next"
+          - "eslint-config-next"
+      react:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
+      auth:
+        patterns:
+          - "better-auth"
+      db:
+        patterns:
+          - "drizzle-orm"
+          - "drizzle-kit"
+          - "postgres"
+          - "mysql2"
+      ai:
+        patterns:
+          - "ai"
+          - "@ai-sdk/*"
+      testing:
+        patterns:
+          - "vitest"
+          - "@vitest/*"
+          - "@playwright/test"
+          - "@testing-library/*"
+          - "@testcontainers/*"
+      tooling:
+        patterns:
+          - "typescript"
+          - "eslint"
+          - "prettier"
+          - "tailwindcss"
+          - "@tailwindcss/postcss"
+          - "husky"
+          - "lint-staged"
+          - "tsx"
+    open-pull-requests-limit: 5
+
+  # Las GitHub Actions se mantienen solas. checkout/setup-node/setup-python
+  # estaban 3 majors atrasados en varios repos de la flota porque nadie
+  # vigila el ecosistema `github-actions`.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    groups:
+      actions:
+        patterns: ["*"]
+    open-pull-requests-limit: 3
