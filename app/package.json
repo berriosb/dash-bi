@@ -66,7 +66,7 @@
     "@types/papaparse": "^5.5.2",
     "ai": "^6.0.0",
     "bcryptjs": "^2.4.3",
-    "better-auth": "^1.6.22",
+    "better-auth": "^1.7.12",
     "bullmq": "^5.34.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
