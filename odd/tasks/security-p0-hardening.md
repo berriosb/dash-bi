@@ -571,3 +571,22 @@ real Postgres) · `pnpm build` exit 0 · `pnpm audit:check` exit 0
 The unrelated work that was already in the working tree when this feature
 started (41 modified files, 16 untracked) was never staged, edited or
 committed: every commit in this feature names its files explicitly.
+
+### Native review
+
+The native review (receipt-driven development) ran on this candidate and
+closed **approved**, with 11 non-blocking findings, all of them informational
+and none of them opening a correction.
+
+What it actually reviewed is worth stating plainly: the native candidate is
+the `current-changes:workspace` projection, which freezes the working-tree
+diff — and this repository carried 41 modified files of unrelated UI work
+that were never part of this feature. Every one of the 11 findings points at
+that unrelated work (`Header.tsx`, `Sidebar.tsx`, `DemoDashboardViewer.tsx`,
+`dashboards/page.tsx`, `NlqaPanel.tsx`, `HighDensityChart.tsx`). None of them
+is about this feature, and none of them was actioned here: they belong to
+the work they come from.
+
+A committed range could not be submitted instead: the route the facade
+offers pins the workspace projection, and starting with a `baseRef` was
+refused as a retained-selection/candidate mismatch.
