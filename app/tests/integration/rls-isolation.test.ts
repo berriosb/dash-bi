@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { eq, and } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import {
   getTestDb,
   resetDb,
@@ -415,6 +417,81 @@ describe('T1 — Cross-tenant isolation (Postgres RLS, real DB)', () => {
     expect(privs.length).toBe(10);
     for (const row of privs) {
       expect(row.can_select, `dashbi_readonly can still SELECT from public.${row.tablename}`).toBe(false);
+    }
+  });
+
+  itWithDb('dashbi_readonly cannot read the internal tenant tables (migration 0019)', async () => {
+    const internalTables = [
+      'dashboards',
+      'dashboard_versions',
+      'llm_usage',
+      'nlqa_conversations',
+      'nlqa_messages',
+      'scheduled_reports',
+      'scheduled_report_runs',
+      'alert_events',
+      'uploaded_files',
+    ];
+
+    const privs = await db.execute<{ tablename: string; can_select: boolean }>(sql`
+      SELECT t.tablename,
+             has_table_privilege('dashbi_readonly', format('public.%I', t.tablename), 'SELECT') AS can_select
+      FROM pg_tables t
+      WHERE t.schemaname = 'public'
+        AND t.tablename IN (${sql.join(internalTables.map((t) => sql`${t}`), sql`, `)})
+    `);
+    expect(privs.length).toBe(internalTables.length);
+    for (const row of privs) {
+      expect(row.can_select, `dashbi_readonly can still SELECT from public.${row.tablename}`).toBe(false);
+    }
+  });
+
+  itWithDb('migration 0019 revokes a pre-existing default privilege on the public schema', async () => {
+    // Simulate an EXISTING installation: the old bootstrap granted the
+    // read-only role a DEFAULT PRIVILEGE over schema public, so every
+    // internal table created from then on was readable by the only role
+    // that executes user-authored SQL. The migration has to take it back.
+    await db.execute(
+      sql`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO dashbi_readonly`,
+    );
+
+    const countDefaultGrants = async (): Promise<number> => {
+      const rows = await db.execute<{ count: number }>(sql`
+        SELECT count(*)::int AS count
+        FROM pg_default_acl d
+        JOIN pg_namespace n ON n.oid = d.defaclnamespace
+        WHERE n.nspname = 'public'
+          AND d.defaclacl::text LIKE '%dashbi_readonly=r%'
+      `);
+      return rows[0]?.count ?? 0;
+    };
+
+    expect(await countDefaultGrants()).toBe(1);
+
+    // Apply the real migration, read from the file — not a copy of its
+    // statements, so the test cannot drift away from what ships.
+    const migration = readFileSync(
+      resolve(__dirname, '../../drizzle/migrations/0019_readonly_revoke_internal_tables.sql'),
+      'utf8',
+    );
+    await db.execute(sql.raw(migration));
+
+    expect(await countDefaultGrants()).toBe(0);
+
+    // The table that matters: one created AFTER the migration must not be
+    // readable by the read-only role either.
+    await db.execute(
+      sql`CREATE TABLE public.future_table_readonly_probe (id uuid primary key)`,
+    );
+    try {
+      const probe = await db.execute<{ can_select: boolean }>(sql`
+        SELECT has_table_privilege(
+          'dashbi_readonly', 'public.future_table_readonly_probe', 'SELECT'
+        ) AS can_select
+      `);
+      expect(probe[0]?.can_select).toBe(false);
+    } finally {
+      await db.execute(sql`DROP TABLE IF EXISTS public.future_table_readonly_probe`);
     }
   });
 });

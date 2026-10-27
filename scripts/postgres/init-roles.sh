@@ -93,9 +93,19 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public
   GRANT USAGE, SELECT ON SEQUENCES TO :"app_user";
 
 -- La IA solo lee.
+--
+-- El SELECT sobre `public` es para que el rol exista y pueda resolver
+-- objetos; las migraciones 0017 y 0019 le revocan el acceso a TODAS las
+-- tablas internas de dash-bi. El único propósito real de este rol son las
+-- tablas de upload por org, que viven en los esquemas `org_*` y reciben su
+-- GRANT en la migración 0018 y en cada commit (`buildReadOnlyGrantsSQL`).
+--
+-- NO se concede DEFAULT PRIVILEGE sobre `public`: con él, cada tabla
+-- interna que se cree en el futuro volvería a ser legible por el único rol
+-- que ejecuta SQL generado por el usuario, sin que ninguna migración
+-- tuviera que revocarlo. La migración 0019 revoca explícitamente el default
+-- privilege en las instalaciones que ya lo tengan.
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO :"readonly_user";
-ALTER DEFAULT PRIVILEGES IN SCHEMA public
-  GRANT SELECT ON TABLES TO :"readonly_user";
 EOSQL
 
 echo "roles listos: ${POSTGRES_APP_USER} (NOSUPERUSER NOBYPASSRLS), ${POSTGRES_READONLY_USER} (solo SELECT)"

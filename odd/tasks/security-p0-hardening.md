@@ -95,17 +95,19 @@ Verification: `pnpm audit --audit-level=high` output, plus the full CI gate
 
 ### 2. Block the SQL escapes and shrink the read-only role
 
-`app/src/lib/security/validate-query.ts`, `app/drizzle/migrations/00xx_*.sql`, `app/tests/unit/security/*`
+`app/src/lib/security/validate-query.ts`, `app/drizzle/migrations/0019_readonly_revoke_internal_tables.sql`, `app/tests/unit/security/*`, `app/tests/integration/rls-isolation.test.ts`, `scripts/postgres/init-roles.sh`
+
+**Status: done.**
 
 - `DANGEROUS_DB_FUNCTIONS` (validate-query.ts:39-63) lists `pg_read_file`,
   `dblink`, `pg_sleep` and friends, but not `set_config` / `current_setting`.
   `set_config` is available to every role, so a user- or AI-authored statement
-  can rewrite `app.current_org_id` — the GUC every tenant-scoped RLS policy
-  reads through `app_current_org_id()` — and can set `role` on the customer's
-  own database.
+  can rewrite the `app.current_org_id` GUC — the GUC every tenant-scoped RLS
+  policy reads through `app_current_org_id()` — and can set `role` on the
+  customer\'s own database.
 - `DML_DDL_KEYWORDS` (validate-query.ts:18-20) has no `INTO`, `COPY` or
   `PROGRAM`, so `SELECT * INTO evil FROM orders` passes validation and creates
-  a table in the customer's database. This contradicts the T2 control
+  a table in the customer\'s database. This contradicts the T2 control
   ("bloquea DML/DDL").
 - The `dashbi_readonly` role keeps `SELECT` on tenant tables the app never
   intends the AI to read. `scripts/postgres/init-roles.sh:96` grants
@@ -116,14 +118,49 @@ Verification: `pnpm audit --audit-level=high` output, plus the full CI gate
   The spreadsheet connector executes user/AI SQL against this role
   (`connectors/implementations/spreadsheet.ts:174`).
 
-Deliverable: the shared blocklist rejects `set_config`, `current_setting`,
-`INTO`, `COPY` and `PROGRAM` for every SQL-backed connector, and a migration
-revokes `dashbi_readonly`'s SELECT on the internal tenant tables.
+**What was done**
 
-Note: whether the GUC pivot is *exploitable* end to end depends on PostgreSQL's
-STABLE-evaluation semantics for `app_current_org_id()` and is NOT verified here
-(no local Postgres). The blocklist gap is the defect being fixed; it is closed
-by refusing to execute the statement at all.
+- The shared blocklist gained `set_config`, `current_setting`,
+  `pg_terminate_backend`, `pg_cancel_backend`, `INTO`, `COPY` and `PROGRAM`.
+- The three hand-rolled copies of the leading-keyword / semicolon /
+  forbidden-pattern checks collapsed into one `assertSafeSqlStatement(sql,
+  extraKeywords)` helper, called by every SQL-backed branch — postgres, mysql,
+  hubspot, snowflake, spreadsheet/csv/excel and **shopify**, which previously
+  checked only the leading keyword and had no blocklist and no multi-statement
+  check. The blocklist can no longer drift per connector.
+- Migration `0019_readonly_revoke_internal_tables.sql` revokes `ALL` on the
+  nine internal `public` tables from `dashbi_readonly`, idempotently, skipping
+  cleanly when the role or a table is absent.
+- The DEFAULT PRIVILEGE hole is closed too, and it was the reason the
+  migration alone was not enough: the bootstrap granted the read-only role
+  `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES`, so every
+  internal table created *after* 0019 would have been readable again. The
+  bootstrap no longer grants it (`scripts/postgres/init-roles.sh`,
+  `app/tests/integration/postgres.ts`) and 0019 revokes the one existing
+  installations already have.
+- `assertRolePermissions`, `normalizeSqlLimit` and the purity contract of
+  `validateQuery` are untouched.
+
+**Scope check done before implementing** — revoking the read-only role\'s
+access to `public` is safe because the role is used in exactly three places,
+all against the per-org upload schemas (`org_<uuid>`), never against the
+internal tables: `spreadsheet.ts:103`, `spreadsheet.ts:173`,
+`alerts/evaluator.ts:102`. The `uploaded_files` row is read through
+`withOrgContext` (app role). The per-org upload tables get their grant
+explicitly, per table, in `buildReadOnlyGrantsSQL` on every upload commit.
+
+**Not fixed** — the read-only role still has `USAGE` on schema `public`; it
+cannot read anything there, and revoking `USAGE` would break the per-org
+schema resolution path.
+
+**Evidence**
+
+- Unit: `pnpm vitest run tests/unit/security/readonly-role-grants.test.ts tests/unit/security/validate-query-blocked-statements.test.ts` → `Test Files 2 passed (2)`, `Tests 100 passed (100)`
+- Integration: `pnpm vitest run tests/integration/rls-isolation.test.ts` → `Test Files 1 passed (1)`, `Tests 8 passed (8)`, including the two 0019 tests
+- Mutation check: removing the default-privilege revoke from the migration makes the new integration test fail (`expected 0, got 1` at the `countDefaultGrants()` assertion) and restoring it makes it pass again — the test has real regression power, not a vacuous assertion
+- Real database check (throwaway `postgres:16-alpine`): before 0019 the default ACL was `{dashbi_readonly=r/postgres}` and `dashboards` was selectable; after 0019 the default ACL is gone, `dashboards` is not selectable, and **a table created after the migration is not selectable either**; a second run of 0019 is a no-op
+- Full gate: `pnpm lint:strict` exit 0, `pnpm typecheck` exit 0, `pnpm test` exit 0 (`Test Files 159 passed (159)`, `Tests 1899 passed (1899)`, 0 failed, 0 skipped), `pnpm build` exit 0
+- Rollback boundary: the task commit removes the blocklist additions, the `assertSafeSqlStatement` helper, migration 0019, the journal entry, the two new test files and the two test edits. No runtime code depends on any of it beyond the stricter validation.
 
 ### 3. Normalize hosts before the SSRF blocklist
 
