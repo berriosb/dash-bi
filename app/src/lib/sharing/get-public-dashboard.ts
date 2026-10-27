@@ -32,6 +32,48 @@ export type PublicDashboardResult =
     };
 
 /**
+ * Strip the internal query definition from every widget of a stored
+ * dashboard.
+ *
+ * A persisted widget carries `source: { kind: 'query', dataSourceId, query:
+ * { kind: 'sql', sql } }` — the SQL the tenant's own dashboard runs, with
+ * its table names, column names, join logic and business filters. The
+ * public share link and the embed both render the PRE-HYDRATED `data`, so
+ * the SQL is never needed to draw the dashboard; shipping it hands an
+ * anonymous visitor the tenant's schema.
+ *
+ * Only `source` is removed. `id`, `type`, `position`, `config` and `data`
+ * are what the renderer reads, and `data` is the very content the link
+ * exists to share.
+ *
+ * What is deliberately KEPT, and why:
+ * - `id`, `type`, `position`, `config`: the renderer needs them to lay out
+ *   and draw the widget. The table widget's `config.columns[].key` names
+ *   the fields of the pre-hydrated result, so it reveals nothing the
+ *   shipped `data` does not already show.
+ * - `orgId` and the dashboard `id`: internal identifiers, but no schema, no
+ *   connection string and no credential. They are part of the read-only
+ *   view components' prop types, so removing them would break the
+ *   renderer.
+ * - The dashboard `title`/`description`/`theme`: the content of the share.
+ *
+ * This helper is the single owner of that rule: the share path
+ * (`getPublicDashboard`) and the embed path (`getEmbedDashboard`) both go
+ * through it, so the two cannot drift apart again.
+ */
+export function stripWidgetSources(widgets: unknown[]): unknown[] {
+  if (!Array.isArray(widgets)) return [];
+
+  return widgets.map((widget) => {
+    if (typeof widget !== 'object' || widget === null || Array.isArray(widget)) {
+      return widget;
+    }
+    const { source: _source, ...rest } = widget as Record<string, unknown>;
+    return rest;
+  });
+}
+
+/**
  * Resolve a public share token to a dashboard.
  *
  * Sprint 1.5: el lookup inicial del `public_links` por token corre en
@@ -84,7 +126,7 @@ export async function getPublicDashboard(token: string): Promise<PublicDashboard
       title: dashboard.title,
       description: dashboard.description ?? null,
       theme: dashboard.theme,
-      widgets: Array.isArray(dashboard.widgets) ? dashboard.widgets : [],
+      widgets: stripWidgetSources(Array.isArray(dashboard.widgets) ? dashboard.widgets : []),
     },
   };
 }

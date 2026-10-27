@@ -378,32 +378,81 @@ before the body is parsed) instead of being moved to accommodate the test.
 
 ### 6. Stop shipping SQL to anonymous visitors and actually emit the embed CSP
 
-`app/src/lib/sharing/get-public-dashboard.ts`, `app/src/lib/embed/get-embed-dashboard.ts`, `app/src/app/embed/[token]/page.tsx`, `app/src/lib/embed/token.ts`, `deploy/nginx/dash-bi.conf`, `app/tests/unit/**`
+`app/src/lib/sharing/get-public-dashboard.ts`, `app/src/lib/embed/get-embed-dashboard.ts`, `app/src/middleware.ts`, `app/src/lib/embed/token.ts`, `deploy/nginx/dash-bi.conf`, `app/tests/unit/api/dashboard-{share,embed}.test.ts`
+
+**Status: done.**
 
 - `get-public-dashboard.ts:87` returns `dashboard.widgets` verbatim. Stored
   widgets carry `source.query.sql` and `source.dataSourceId`
   (`lib/widgets/validator.ts:269` accepts `source.query` as unknown), so the
-  RSC payload of a public link hands an anonymous visitor the tenant's table
-  names, join logic and business filters. `get-embed-dashboard.ts:100` does the
-  same for embeds.
+  RSC payload of a public link — or of an embed — handed an anonymous visitor
+  the tenant's table names, join logic and business filters.
+  `get-embed-dashboard.ts:100` did the same.
 - `getCspFrameAncestors` (embed/token.ts:203-225) computes a correct
   `frame-ancestors` list, and `get-embed-dashboard.ts:77` passes it on as
-  `config.cspHeader` — which is consumed only as a client-side prop
+  `config.cspHeader` — consumed only as a client-side prop
   (`DashboardEmbedView.tsx:12`) and never set as a response header.
-  `next.config.ts` excludes `/embed/` from `X-Frame-Options` but emits no CSP
-  for it, so the embed route has no browser-side framing restriction.
+  `next.config.ts` excludes `/embed/` from `X-Frame-Options: DENY` and adds no
+  CSP for it, so the embed route had no browser-side framing restriction.
 - `deploy/nginx/dash-bi.conf:38,41` sets `X-Frame-Options SAMEORIGIN` and a
-  global CSP with `frame-ancestors 'none'` for every path, which — in the
-  documented deployment — blocks every embed, legitimate ones included.
+  global CSP with `frame-ancestors 'none'` for every path — in the documented
+  deployment that blocks every embed, legitimate ones included.
 
-Deliverable: the public and embed payloads strip `source` from every widget;
-the embed route emits a `Content-Security-Policy` header with the token's
-`frame-ancestors`; the nginx drop-in stops blanket-framing `/embed/` while
-keeping `X-Frame-Options: DENY` everywhere else.
+**What was done**
 
-Note: `DashboardEmbedView.tsx` and `DashboardPublicView.tsx` are already
-modified by unrelated work in the working tree — the fix is scoped to the
-server-side payload and the route, so those components are not touched.
+- One shared helper, `stripWidgetSources` (exported from the sharing module
+  and consumed by the embed module — the sharing module does not import the
+  embed module, so there is no cycle), removes `source` from every widget on
+  both public paths. Everything else is kept: the renderer reads
+  `widget.data`, and no component of the render path touches `source`
+  (verified against `WidgetRenderer.tsx` and the widget components), so the
+  dashboard still draws. The internals that remain (`orgId`, the dashboard
+  `id`, `config.columns[].key`) are deliberate: the read-only view components
+  require them and they expose no schema and no credential.
+- The middleware emits the header now: it verifies the embed token and sets
+  `Content-Security-Policy: frame-ancestors <the token's own allowed
+  origins>` on `/embed/*` responses, degrading to `frame-ancestors 'none'`
+  when the token cannot be verified — never to a permissive value. It only
+  sets the header; it never rejects the request. `cspHeader` stays in the
+  payload, because `DashboardEmbedView` consumes it as an optional prop.
+- The middleware matcher gained `/embed/:path*`: the token is
+  `emb_<payload>.<signature>`, so it contains a dot and the original matcher
+  treated the path as "a file with an extension" and skipped it. Without this
+  entry the middleware never ran for an embed and the header was never
+  emitted.
+- The nginx drop-in carves out `/embed/`: no blanket `X-Frame-Options` (an
+  empty value makes nginx emit no header) and no global `frame-ancestors`,
+  because a browser applies EVERY CSP it receives and a global `'none'` from
+  nginx would neutralise the per-token header. The other security headers
+  are re-declared in that block, since nginx does not inherit `add_header`
+  into a location that defines its own.
+
+**Behaviour change to be aware of** — the middleware moved from the Edge
+runtime to the Node runtime. It is required: the token HMAC reads
+`EMBED_TOKEN_SECRET` from the environment, the Edge runtime inlines
+`process.env` at BUILD time, and the Docker build carries no secret (verified:
+the Dockerfile defines no secret, they arrive at runtime through
+docker-compose). On Edge every verification would have failed and every
+embed would have fallen back to `frame-ancestors 'none'` — that is, all
+embeds blocked. The cost is one HMAC per embed request plus the Node runtime
+for the middleware as a whole.
+
+**Deliberately not changed** — the server-side Origin check still passes
+when the request carries no `Origin`/`Referer`, and the API's default
+`allowedOrigins` is still `['*']`. Failing closed there would break the embed
+page for a normal top-level navigation (a browser sends no `Origin` on a
+top-level GET), and changing the default would break embeds that were minted
+without an explicit list. The browser-side `frame-ancestors` header is now
+the enforcement, and the residual gap is documented in `token.ts`.
+
+**Evidence**
+
+- RED: `pnpm vitest run tests/unit/api/dashboard-share.test.ts tests/unit/api/dashboard-embed.test.ts` → `Tests 5 failed | 15 passed (20)`, with the raw `SELECT sum(total)` and the data-source id visible in the payloads and the CSP header `null`
+- GREEN: same command → `Test Files 2 passed (2)`, `Tests 20 passed (20)`
+- End-to-end against `next start`: forged token → `frame-ancestors 'none';` (HTTP 200, not rejected); valid token + allowed origin → `frame-ancestors https://portal.client.com;`; valid token + disallowed origin → `frame-ancestors 'none';`; `/share/*` and `/login` get no CSP from the middleware
+- The build output confirms the middleware runs on the Node runtime with both matchers, and that `EMBED_TOKEN_SECRET` stays a runtime read instead of being inlined
+- Full gate: `pnpm lint:strict` exit 0, `pnpm typecheck` exit 0, `pnpm test` exit 0 (`Test Files 161 passed (161)`, `Tests 2044 passed (2044)`, 0 failed, 0 skipped), `pnpm build` exit 0
+- Rollback boundary: the task commit restores the verbatim widget payloads, the middleware without the CSP block, and the nginx server-level headers for every path.
 
 ### 7. Realign the threat model with the code
 

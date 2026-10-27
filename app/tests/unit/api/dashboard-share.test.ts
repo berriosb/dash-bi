@@ -4,6 +4,9 @@ import { UnauthorizedError, ForbiddenError } from '@/lib/auth/context';
 const {
   mockDbInsert,
   mockDbSelect,
+  mockDbExecute,
+  mockFindFirst,
+  mockTxUpdate,
   mockWithOrgContext,
   mockRequireAuth,
   mockGeneratePublicToken,
@@ -11,6 +14,9 @@ const {
 } = vi.hoisted(() => ({
   mockDbInsert: vi.fn(),
   mockDbSelect: vi.fn(),
+  mockDbExecute: vi.fn(),
+  mockFindFirst: vi.fn(),
+  mockTxUpdate: vi.fn(),
   mockWithOrgContext: vi.fn(
     async (..._args: unknown[]) => undefined
   ),
@@ -20,7 +26,7 @@ const {
 }));
 
 vi.mock('@/db/client', () => ({
-  db: { insert: mockDbInsert, select: mockDbSelect },
+  db: { insert: mockDbInsert, select: mockDbSelect, execute: mockDbExecute },
   withOrgContext: mockWithOrgContext,
 }));
 
@@ -46,6 +52,7 @@ vi.mock('@/lib/logger', () => ({
 
 
 import { POST, GET } from '@/app/api/dashboards/[id]/share/route';
+import { getPublicDashboard } from '@/lib/sharing/get-public-dashboard';
 
 function makeReq(body: unknown): Request {
   return new Request('http://localhost/api/dashboards/dash-123/share', {
@@ -249,5 +256,102 @@ describe('GET /api/dashboards/[id]/share', () => {
     const req = makeGetReq();
     const res = await GET(req, { params: Promise.resolve({ id: 'dash-123' }) });
     expect(res.status).toBe(401);
+  });
+});
+
+/**
+ * Security P0 (task 6): the public share link is anonymous. The stored
+ * widget carries the query that produced its data — `source.query.sql` and
+ * `source.dataSourceId` — so shipping the widget verbatim hands an
+ * anonymous visitor the tenant's table names, column names, join logic and
+ * business filters. The dashboard renders from the pre-hydrated `data`, so
+ * the SQL is never needed to draw it.
+ */
+describe('getPublicDashboard — public payload (security P0 task 6)', () => {
+  const widgetWithQueryInternals = {
+    id: 'w-1',
+    type: 'kpi',
+    position: { col: 1, row: 1, colSpan: 6, rowSpan: 1 },
+    config: { title: 'Ingresos netos' },
+    data: { value: 128400, delta: 8.4 },
+    source: {
+      kind: 'query',
+      dataSourceId: 'ds-internal-42',
+      query: {
+        kind: 'sql',
+        sql: "SELECT sum(total) FROM sales JOIN customers ON sales.customer_id = customers.id WHERE region = 'EMEA'",
+      },
+    },
+  };
+
+  const linkRow = {
+    id: 'link-1',
+    org_id: 'org-1',
+    dashboard_id: 'dash-1',
+    token: 'public-token',
+    expires_at: new Date('2030-01-01'),
+    revoked_at: null,
+  };
+
+  const dashboardRow = {
+    id: 'dash-1',
+    orgId: 'org-1',
+    title: 'Ventas',
+    description: null,
+    theme: 'moderno-saas',
+    widgets: [widgetWithQueryInternals],
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockDbExecute.mockResolvedValue([linkRow]);
+    mockFindFirst.mockResolvedValue(dashboardRow);
+    (mockWithOrgContext as unknown as { mockImplementation: (impl: (...args: unknown[]) => Promise<unknown>) => void }).mockImplementation((...args: unknown[]) => {
+      const fn = args[3] as (t: unknown) => Promise<unknown>;
+      return fn({
+        query: { dashboards: { findFirst: mockFindFirst } },
+        update: mockTxUpdate,
+      });
+    });
+    const set = vi.fn().mockReturnValue({
+      where: vi.fn().mockResolvedValue(undefined),
+    });
+    mockTxUpdate.mockReturnValue({ set });
+  });
+
+  it('does not ship the widget query (SQL + data source id) to an anonymous visitor', async () => {
+    const result = await getPublicDashboard('public-token');
+
+    expect(result.status).toBe('ok');
+    if (result.status !== 'ok') return;
+
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain('SELECT sum(total)');
+    expect(serialized).not.toContain('ds-internal-42');
+    expect(serialized).not.toContain('dataSourceId');
+    expect(serialized).not.toContain('source');
+
+    const widgets = result.dashboard.widgets as Record<string, unknown>[];
+    expect(widgets).toHaveLength(1);
+    expect(widgets[0]).not.toHaveProperty('source');
+    expect(widgets[0]).not.toHaveProperty('dataSourceId');
+  });
+
+  it('keeps the widget fields the renderer needs', async () => {
+    const result = await getPublicDashboard('public-token');
+
+    expect(result.status).toBe('ok');
+    if (result.status !== 'ok') return;
+
+    // A fix that dropped the whole widget would satisfy "no source" and
+    // render an empty dashboard. The renderer needs these fields.
+    const widgets = result.dashboard.widgets as Record<string, unknown>[];
+    expect(widgets[0]).toMatchObject({
+      id: 'w-1',
+      type: 'kpi',
+      position: { col: 1, row: 1, colSpan: 6, rowSpan: 1 },
+      config: { title: 'Ingresos netos' },
+      data: { value: 128400, delta: 8.4 },
+    });
   });
 });

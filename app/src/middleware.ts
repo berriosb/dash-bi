@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { getCspFrameAncestors, verifyEmbedToken } from '@/lib/embed/token';
 
 const PUBLIC_PATHS = [
   '/',
@@ -49,11 +50,78 @@ function isPublicPath(pathname: string): boolean {
   return false;
 }
 
+/**
+ * The strictest `frame-ancestors` value: nobody may frame the page.
+ *
+ * It is the fallback for an embed token that cannot be verified here. An
+ * unverifiable token must never widen the framing policy, so the answer is
+ * "no one", not "anyone".
+ */
+const STRICTEST_FRAME_ANCESTORS = "frame-ancestors 'none';";
+
+function isEmbedPath(pathname: string): boolean {
+  return pathname === '/embed' || pathname.startsWith('/embed/');
+}
+
+/**
+ * Extract the embed token from `/embed/<token>`.
+ *
+ * The token is `emb_<base64url payload>.<base64url signature>`; the dot is
+ * part of the token, not a file extension.
+ */
+function extractEmbedToken(pathname: string): string | null {
+  if (!pathname.startsWith('/embed/')) return null;
+  const raw = pathname.slice('/embed/'.length);
+  if (!raw) return null;
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
+/**
+ * Build the `Content-Security-Policy` header for an embed response.
+ *
+ * The header is scoped to the token's OWN allowed origins: the token is
+ * verified here (signature + expiry + origin) and its `allowedOrigins` list
+ * becomes the `frame-ancestors` directive. A token that cannot be verified
+ * degrades to `frame-ancestors 'none'` — never to a permissive value.
+ *
+ * This is the browser-side enforcement the embed route was missing:
+ * `next.config.ts` excludes `/embed/` from `X-Frame-Options: DENY`, so
+ * before this header the only guard was the server-side origin check, which
+ * is skipped when the request carries no `Origin`/`Referer` at all.
+ */
+async function embedCspHeader(req: NextRequest): Promise<string> {
+  const token = extractEmbedToken(req.nextUrl.pathname);
+  if (!token) return STRICTEST_FRAME_ANCESTORS;
+
+  // Same origin resolution the embed page uses: `Origin` first, `Referer`
+  // as the fallback (a browser that frames the page sends `Referer`).
+  const requestOrigin = req.headers.get('origin') ?? req.headers.get('referer') ?? undefined;
+
+  let verification: Awaited<ReturnType<typeof verifyEmbedToken>>;
+  try {
+    verification = await verifyEmbedToken(token, requestOrigin);
+  } catch {
+    // The middleware must never break the request: an unverifiable token
+    // gets the strictest framing policy instead.
+    return STRICTEST_FRAME_ANCESTORS;
+  }
+
+  if (!verification.valid || !verification.payload) {
+    return STRICTEST_FRAME_ANCESTORS;
+  }
+
+  return getCspFrameAncestors(verification.payload.allowedOrigins);
+}
+
 // Exported for unit testing only. Do NOT use in app code.
 // See tests/unit/middleware/public-paths.test.ts.
 export const __testing = { PUBLIC_PATHS, isPublicPath, hasSessionCookie };
 
-export function middleware(req: NextRequest) {
+export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   // Correlation ID: propagate from header if present, otherwise generate.
@@ -72,6 +140,11 @@ export function middleware(req: NextRequest) {
   if (isPublicPath(pathname)) {
     const response = NextResponse.next({ request: { headers: requestHeaders } });
     response.headers.set('x-correlation-id', correlationId);
+    if (isEmbedPath(pathname)) {
+      // The middleware ONLY sets the header; it never rejects the embed
+      // request. The page keeps deciding what to render.
+      response.headers.set('Content-Security-Policy', await embedCspHeader(req));
+    }
     return response;
   }
 
@@ -94,5 +167,18 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\..*).*)'],
+  matcher: [
+    '/((?!_next/static|_next/image|favicon.ico|.*\\..*).*)',
+    // The embed token is `emb_<payload>.<signature>`: it CONTAINS a dot, so
+    // the matcher above treats `/embed/...` as "a file with an extension"
+    // and skips it. Without this entry the middleware never runs for an
+    // embed and the per-token CSP is never emitted.
+    '/embed/:path*',
+  ],
+  // Node.js runtime: the embed CSP needs the token's HMAC, which reads the
+  // secret from the runtime environment (`EMBED_TOKEN_SECRET`). The Edge
+  // runtime inlines `process.env` at BUILD time, and the Docker build has
+  // no secret, so on Edge every verification would fail and every embed
+  // would fall back to `frame-ancestors 'none'` — blocking it.
+  runtime: 'nodejs',
 };
