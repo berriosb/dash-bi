@@ -12,6 +12,7 @@ import { recordLLMUsage, assertOrgCanSpendLlm } from '@/lib/ai/quota';
 import { validateQuery, ValidationError } from '@/lib/security/validate-query';
 import { audit } from '@/lib/audit/log';
 import { checkRateLimit } from '@/lib/rate-limit';
+import { getClientIp } from '@/lib/http/client-ip';
 import { logger } from '@/lib/logger';
 import { redactError } from '@/lib/redact';
 import type { ConnectorType } from '@/lib/connectors/types';
@@ -26,20 +27,42 @@ const AskBodySchema = z.object({
 
 const MAX_HISTORY_TURNS = 6;
 
+/**
+ * Two independent buckets, the same shape as `/api/dashboards/generate`.
+ *
+ * This route used to key ONE bucket on `org:<orgId>:ip:<ip>`, which gave
+ * every member of the org a personal allowance: the effective limit of the
+ * whole org scaled with the number of members behind distinct IPs. The org
+ * bucket is the guarantee the threat model asks for ("rate limit per org"),
+ * and the IP bucket blunts a single noisy client.
+ */
+const NLQA_ASK_PER_ORG = { capacity: 30, refillPerSecond: 0.5 };
+const NLQA_ASK_PER_IP = { capacity: 30, refillPerSecond: 0.5 };
+
 export async function POST(req: Request) {
   try {
     const ctx = await requireAuth(req, 'query.execute');
-    const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
+    const ip = getClientIp(req);
 
-    const nlqaLimit = checkRateLimit({
-      capacity: 30,
-      refillPerSecond: 0.5,
-      key: `nlqa-ask:org:${ctx.orgId}:ip:${ip}`,
+    const orgLimit = checkRateLimit({
+      ...NLQA_ASK_PER_ORG,
+      key: `nlqa-ask:org:${ctx.orgId}`,
     });
-    if (!nlqaLimit.allowed) {
+    if (!orgLimit.allowed) {
       return NextResponse.json(
-        { error: 'rate_limited', retryAfterSeconds: nlqaLimit.retryAfterSeconds },
-        { status: 429, headers: { 'Retry-After': String(nlqaLimit.retryAfterSeconds) } },
+        { error: 'rate_limited', scope: 'org', retryAfterSeconds: orgLimit.retryAfterSeconds },
+        { status: 429, headers: { 'Retry-After': String(orgLimit.retryAfterSeconds) } },
+      );
+    }
+
+    const ipLimit = checkRateLimit({
+      ...NLQA_ASK_PER_IP,
+      key: `nlqa-ask:ip:${ip}`,
+    });
+    if (!ipLimit.allowed) {
+      return NextResponse.json(
+        { error: 'rate_limited', scope: 'ip', retryAfterSeconds: ipLimit.retryAfterSeconds },
+        { status: 429, headers: { 'Retry-After': String(ipLimit.retryAfterSeconds) } },
       );
     }
 

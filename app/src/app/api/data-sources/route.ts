@@ -8,6 +8,7 @@ import { requireAuth } from '@/lib/auth/request';
 import { encryptApiKey } from '@/lib/security/encryption';
 import { validatePostgresHost } from '@/lib/security/validate-connection';
 import { checkRateLimit } from '@/lib/rate-limit';
+import { getClientIp } from '@/lib/http/client-ip';
 import { audit } from '@/lib/audit/log';
 import { getOrGenerateCorrelationId } from '@/lib/errors/to-user-error';
 
@@ -74,6 +75,18 @@ const CreateDataSourceSchema = z.object({
   config: z.unknown(),
 });
 
+/**
+ * Two independent buckets, the same shape as `/api/dashboards/generate`.
+ *
+ * This route used to key ONE bucket on `org:<orgId>:ip:<ip>`, which gave
+ * every member of the org a personal allowance: the effective limit of the
+ * whole org scaled with the number of members behind distinct IPs. The org
+ * bucket is the guarantee the threat model asks for ("rate limit per org"),
+ * and the IP bucket blunts a single noisy client.
+ */
+const DS_CREATE_PER_ORG = { capacity: 30, refillPerSecond: 0.5 };
+const DS_CREATE_PER_IP = { capacity: 30, refillPerSecond: 0.5 };
+
 export async function GET(req: Request) {
   try {
     const ctx = await requireAuth(req, 'datasource.view');
@@ -104,17 +117,27 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const ctx = await requireAuth(req, 'datasource.create');
-    const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
+    const ip = getClientIp(req);
 
-    const dsLimit = checkRateLimit({
-      capacity: 30,
-      refillPerSecond: 0.5,
-      key: `ds-create:org:${ctx.orgId}:ip:${ip}`,
+    const orgLimit = checkRateLimit({
+      ...DS_CREATE_PER_ORG,
+      key: `ds-create:org:${ctx.orgId}`,
     });
-    if (!dsLimit.allowed) {
+    if (!orgLimit.allowed) {
       return NextResponse.json(
-        { error: 'rate_limited', retryAfterSeconds: dsLimit.retryAfterSeconds },
-        { status: 429, headers: { 'Retry-After': String(dsLimit.retryAfterSeconds) } },
+        { error: 'rate_limited', scope: 'org', retryAfterSeconds: orgLimit.retryAfterSeconds },
+        { status: 429, headers: { 'Retry-After': String(orgLimit.retryAfterSeconds) } },
+      );
+    }
+
+    const ipLimit = checkRateLimit({
+      ...DS_CREATE_PER_IP,
+      key: `ds-create:ip:${ip}`,
+    });
+    if (!ipLimit.allowed) {
+      return NextResponse.json(
+        { error: 'rate_limited', scope: 'ip', retryAfterSeconds: ipLimit.retryAfterSeconds },
+        { status: 429, headers: { 'Retry-After': String(ipLimit.retryAfterSeconds) } },
       );
     }
 

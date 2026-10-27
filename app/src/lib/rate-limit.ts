@@ -13,7 +13,17 @@ export interface RateLimitConfig {
   capacity: number;
   /** Tokens added per second (= average rate) */
   refillPerSecond: number;
-  /** Identifier for this bucket (e.g. `org:abc:ip:1.2.3.4`) */
+  /**
+   * Identifier for this bucket.
+   *
+   * Every limited route checks TWO independent buckets: one keyed by the org
+   * (`<prefix>:org:<orgId>`) and one keyed by the client IP
+   * (`<prefix>:ip:<ip>`). The org bucket is the security guarantee the
+   * threat model asks for ("rate limit per org"); the IP bucket blunts a
+   * single noisy client. A single key carrying both — `org:<id>:ip:<ip>` —
+   * would give every member of the org a personal allowance, so the effective
+   * org limit would scale with the number of members.
+   */
   key: string;
 }
 

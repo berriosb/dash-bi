@@ -3,6 +3,7 @@ import { errorResponse } from '@/lib/errors/response';
 import { resolveConnector } from '@/lib/query-engine/resolve';
 import { requireAuth } from '@/lib/auth/request';
 import { checkRateLimit } from '@/lib/rate-limit';
+import { getClientIp } from '@/lib/http/client-ip';
 import { logger } from '@/lib/logger';
 import { redactError } from '@/lib/redact';
 
@@ -18,22 +19,54 @@ export const dynamic = 'force-dynamic';
 const CONNECTION_FAILED_MESSAGE =
   'No pudimos conectar con la fuente de datos. Revisá la configuración y las credenciales.';
 
+/**
+ * Two independent buckets, the same shape as `/api/dashboards/generate`.
+ *
+ * This route used to key ONE bucket on `org:<orgId>:ip:<ip>`, which gave
+ * every member of the org a personal allowance: the effective limit of the
+ * whole org scaled with the number of members behind distinct IPs. The org
+ * bucket is the guarantee the threat model asks for ("rate limit per org"),
+ * and the IP bucket blunts a single noisy client.
+ */
+const DS_TEST_PER_ORG = { capacity: 60, refillPerSecond: 1 };
+const DS_TEST_PER_IP = { capacity: 60, refillPerSecond: 1 };
+
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
   try {
     const ctx = await requireAuth(req, 'datasource.view');
-    const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
+    const ip = getClientIp(req);
 
-    const testLimit = checkRateLimit({
-      capacity: 60,
-      refillPerSecond: 1,
-      key: `ds-test:org:${ctx.orgId}:ip:${ip}`,
+    const orgLimit = checkRateLimit({
+      ...DS_TEST_PER_ORG,
+      key: `ds-test:org:${ctx.orgId}`,
     });
-    if (!testLimit.allowed) {
+    if (!orgLimit.allowed) {
       return NextResponse.json(
-        { ok: false, error: 'rate_limited', retryAfterSeconds: testLimit.retryAfterSeconds },
-        { status: 429, headers: { 'Retry-After': String(testLimit.retryAfterSeconds) } },
+        {
+          ok: false,
+          error: 'rate_limited',
+          scope: 'org',
+          retryAfterSeconds: orgLimit.retryAfterSeconds,
+        },
+        { status: 429, headers: { 'Retry-After': String(orgLimit.retryAfterSeconds) } },
+      );
+    }
+
+    const ipLimit = checkRateLimit({
+      ...DS_TEST_PER_IP,
+      key: `ds-test:ip:${ip}`,
+    });
+    if (!ipLimit.allowed) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: 'rate_limited',
+          scope: 'ip',
+          retryAfterSeconds: ipLimit.retryAfterSeconds,
+        },
+        { status: 429, headers: { 'Retry-After': String(ipLimit.retryAfterSeconds) } },
       );
     }
 

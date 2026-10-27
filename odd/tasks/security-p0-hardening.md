@@ -264,6 +264,9 @@ file says so explicitly.
 
 `app/src/lib/http/client-ip.ts` (new), `app/src/lib/rate-limit.ts`, `app/src/lib/middleware/rate-limit.ts`, `app/src/app/api/**/route.ts`, `app/src/lib/auth/permissions.ts`, `app/tests/unit/**`
 
+**Status: part A done (IP helper + per-org buckets + the viewer/export fix).
+Part B — the routes that had NO limit at all — is still open; see below.**
+
 - Nine call sites read `x-forwarded-for.split(',')[0]`
   (`nlqa/ask:31`, `dashboards/generate:30`, `files/upload:90`, `data-sources:107`,
   `data-sources/[id]/test:14`, `alert-rules/[id]/test-channel:41`,
@@ -276,8 +279,8 @@ file says so explicitly.
 - Several buckets are keyed `org:${orgId}:ip:${ip}` in one string
   (`nlqa-ask`, `widget-explain`, `ds-create`, `ds-test`, `file-upload`), so the
   effective limit scales with the number of members. `dashboards/generate` and
-  `alert-rules/[id]/test-channel` already use two separate buckets — that is the
-  pattern to copy.
+  `alert-rules/[id]/test-channel` already used two separate buckets — that is
+  the pattern to copy.
 - No rate limit at all: `dashboards/[id]/export/pdf` (POST), `files/commit`
   (DDL + bulk insert), `dashboards/[id]/share`, `dashboards/[id]/embed`,
   `scheduled-reports` (POST), `organizations/members` (POST),
@@ -288,10 +291,57 @@ file says so explicitly.
 - `withRateLimit` / `rateLimitByOrgAndIp` in `lib/middleware/rate-limit.ts` have
   zero call sites: the module advertises a wrapper that protects nothing.
 
-Deliverable: one shared `getClientIp` helper that reads the right-most
-trusted hop, two independent buckets (org, IP) on every limited route, the
-missing limits added, `viewer` removed from `export.pdf`, and the unused
-wrapper either wired up or deleted.
+**Part A — what was done**
+
+- New `app/src/lib/http/client-ip.ts` with `getClientIp(req)`: prefers
+  `x-real-ip` (nginx overwrites it with `$remote_addr`, so it cannot be
+  forged), otherwise the LAST hop of `x-forwarded-for` (the one the trusted
+  proxy appended), otherwise `'unknown'`. All nine inline reads now call it,
+  including the `audit_log.ip` write.
+- The trust boundary is documented in the helper: it is only trustworthy
+  behind the documented reverse proxy. The current docker-compose publishes
+  the app directly, with no proxy, so there is no reliable client IP in that
+  topology — which is exactly why the ORG bucket, not the IP bucket, is the
+  guarantee the threat model asks for.
+- The five routes that keyed one combined bucket now check TWO independent
+  buckets (an org one and an IP one), with the same capacities and refill
+  rates, and the 429 response carries the `scope` that failed —
+  `dashboards/generate` and `alert-rules/[id]/test-channel` were the reference
+  shape and were left untouched.
+- `viewer` removed from the `export.pdf` permission.
+
+**Known gap left by this part** — the export UI is not role-gated:
+`src/components/dashboard/ExportShareDialog.tsx` and
+`src/app/(dashboard)/dashboards/[id]/page.tsx` render the export affordance
+without a role check, so a viewer now sees the button and gets a 403 from
+`POST /api/dashboards/[id]/export/pdf`. Both files carry unrelated work in
+flight and are off-limits for this feature, so the UI gate is a follow-up.
+
+**Evidence (part A)**
+
+- RED: `Tests 8 failed | 77 passed (85)` across the four touched test files,
+  plus the missing-module error for the new helper — the failures were the
+  expected assertions (first-hop IP, combined bucket, viewer export)
+- GREEN: `Test Files 4 passed (4)`, `Tests 93 passed (93)`
+- Mutation checks: flipping the helper back to the first hop → 4 targeted
+  failures; restoring the combined `org:...:ip:...` key → 2 targeted
+  failures; both reverted and re-verified green
+- Full gate: `pnpm lint:strict` exit 0, `pnpm typecheck` exit 0, `pnpm test`
+  exit 0 (`Test Files 160 passed (160)`, `Tests 1964 passed (1964)`, 0 failed,
+  0 skipped), `pnpm build` exit 0
+- Two test files outside the originally declared edit surfaces were updated
+  (`tests/unit/auth/permissions.test.ts`, `tests/unit/audit/log.test.ts`):
+  both asserted the behaviour this task ordered to change.
+
+**Part B — still open**
+
+Add the missing limits: `dashboards/[id]/export/pdf` (POST), `files/commit`,
+`dashboards/[id]/share`, `dashboards/[id]/embed`, `scheduled-reports` (POST),
+`organizations/members` (POST), `organizations/llm-key` (PUT/DELETE). Each
+gets the same two-bucket shape (org + IP) with a cap appropriate to what the
+route costs. Also decide the fate of the dead `withRateLimit` /
+`rateLimitByOrgAndIp` wrapper: wire it up or delete it, so the module stops
+advertising protection it does not provide.
 
 ### 6. Stop shipping SQL to anonymous visitors and actually emit the embed CSP
 

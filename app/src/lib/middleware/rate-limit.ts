@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { checkRateLimit, type RateLimitConfig } from '@/lib/rate-limit';
+import { getClientIp } from '@/lib/http/client-ip';
 import { logger } from '@/lib/logger';
 
 export interface RateLimitOptions {
@@ -18,7 +19,7 @@ export function withRateLimit<TArgs extends unknown[]>(
 ): (...args: TArgs) => Promise<Response> {
   return async (...args: TArgs) => {
     const req = args[0] as Request | undefined;
-    const ip = req?.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
+    const ip = req ? getClientIp(req) : 'unknown';
 
     const config: RateLimitConfig = {
       capacity: options.capacity,

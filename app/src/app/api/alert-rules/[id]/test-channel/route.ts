@@ -7,6 +7,7 @@ import { alertRules } from '@/db/schema';
 import { requireAuth } from '@/lib/auth/request';
 import { getOrGenerateCorrelationId } from '@/lib/errors/to-user-error';
 import { checkRateLimit } from '@/lib/rate-limit';
+import { getClientIp } from '@/lib/http/client-ip';
 import { decryptApiKey } from '@/lib/security/encryption';
 import { deliverToChannel } from '@/lib/alerts/channels';
 import type { AlertCondition, AlertChannelConfig } from '@/lib/alerts/types';
@@ -36,10 +37,6 @@ const bodySchema = z.object({
  */
 const TEST_CHANNEL_PER_ORG = { capacity: 5, refillPerSecond: 5 / 60 };
 const TEST_CHANNEL_PER_IP = { capacity: 15, refillPerSecond: 15 / 60 };
-
-function getClientIp(req: Request): string {
-  return req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
-}
 
 export async function POST(
   req: Request,

@@ -9,6 +9,7 @@ import { AiGateway } from '@/lib/ai/gateway';
 import { type LLMProvider } from '@/lib/ai/types';
 import { recordLLMUsage, assertOrgCanSpendLlm } from '@/lib/ai/quota';
 import { checkRateLimit } from '@/lib/rate-limit';
+import { getClientIp } from '@/lib/http/client-ip';
 import { audit } from '@/lib/audit/log';
 
 export const dynamic = 'force-dynamic';
@@ -27,24 +28,42 @@ const ExplainBodySchema = z.object({
   dataSourceId: z.string().optional(),
 });
 
-function getClientIp(req: Request): string {
-  return req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
-}
+/**
+ * Two independent buckets, the same shape as `/api/dashboards/generate`.
+ *
+ * This route used to key ONE bucket on `org:<orgId>:ip:<ip>`, which gave
+ * every member of the org a personal allowance: the effective limit of the
+ * whole org scaled with the number of members behind distinct IPs. The org
+ * bucket is the guarantee the threat model asks for ("rate limit per org"),
+ * and the IP bucket blunts a single noisy client.
+ */
+const EXPLAIN_PER_ORG = { capacity: 30, refillPerSecond: 0.5 };
+const EXPLAIN_PER_IP = { capacity: 30, refillPerSecond: 0.5 };
 
 export async function POST(req: Request) {
   try {
     const ctx = await requireAuth(req, 'query.execute');
     const ip = getClientIp(req);
 
-    const rateLimit = checkRateLimit({
-      capacity: 30,
-      refillPerSecond: 0.5,
-      key: `widget-explain:org:${ctx.orgId}:ip:${ip}`,
+    const orgLimit = checkRateLimit({
+      ...EXPLAIN_PER_ORG,
+      key: `widget-explain:org:${ctx.orgId}`,
     });
-    if (!rateLimit.allowed) {
+    if (!orgLimit.allowed) {
       return NextResponse.json(
-        { error: 'rate_limited', retryAfterSeconds: rateLimit.retryAfterSeconds },
-        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfterSeconds) } },
+        { error: 'rate_limited', scope: 'org', retryAfterSeconds: orgLimit.retryAfterSeconds },
+        { status: 429, headers: { 'Retry-After': String(orgLimit.retryAfterSeconds) } },
+      );
+    }
+
+    const ipLimit = checkRateLimit({
+      ...EXPLAIN_PER_IP,
+      key: `widget-explain:ip:${ip}`,
+    });
+    if (!ipLimit.allowed) {
+      return NextResponse.json(
+        { error: 'rate_limited', scope: 'ip', retryAfterSeconds: ipLimit.retryAfterSeconds },
+        { status: 429, headers: { 'Retry-After': String(ipLimit.retryAfterSeconds) } },
       );
     }
 
