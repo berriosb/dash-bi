@@ -164,25 +164,57 @@ schema resolution path.
 
 ### 3. Normalize hosts before the SSRF blocklist
 
-`app/src/lib/security/validate-connection.ts`, `app/tests/unit/security/*`
+`app/src/lib/security/validate-connection.ts`, `app/tests/security/ssrf.test.ts`
+
+**Status: done.**
 
 - `validatePostgresHost` (validate-connection.ts:29) matches the host string
   literally. The normalizers already exist in the same file —
   `parseIpv4Literal` (line 104) and `isPrivateIpv6` (line 160) — but only
   `validateOutboundUrl` (line 190) uses them.
 - Live bypasses today: `127.1`, `2130706433`, `0177.0.0.1`, `0x7f.0.0.1`,
-  `[::1]`, `fd00::1`, `fe80::1`, `localhost:3000`.
-- The threat model marks "[x] `2130706433` no evada el bloqueo" and prints IPv6
-  regexes that do not exist in the code. Consumers: `postgres.ts:70`,
+  `[::1]`, `fd00::1`, `fe80::1`, `localhost:3000`, `127.0.0.1:5432`,
+  `redis`, `db.internal`, `user:pass@10.0.0.5`.
+- The threat model marks "[x] `2130706433` no evada el bloqueo" and prints
+  IPv6 regexes that do not exist in the code. Consumers: `postgres.ts:70`,
   `mysql.ts:60`, `snowflake.ts:61`, `shopify.ts:28`.
 
-Deliverable: `validatePostgresHost` resolves the host to its effective form
-before comparing against the forbidden set and the private-range patterns, and
-rejects internal hostnames by name.
+**What was done**
 
-DNS rebinding (public at validation time, private at connect time) stays open
-and stays documented as open — closing it requires a pinned lookup in the
-connection agent, which is a separate change.
+- A new `normalizeHostInput` canonicalizes the host before any comparison:
+  URL form → hostname, `user:pass@` prefix, path, trailing dot of a fully
+  qualified name, IPv6 brackets, and the `:port` suffix (stripped only when
+  the value holds exactly one colon, so bare IPv6 survives).
+- `validatePostgresHost` now rejects on five independent nets, each evaluated
+  against both the normalized host and the effective address: the exact-name
+  sets, `isPrivateIpv4`, the existing `PRIVATE_IP_PATTERNS` regexes,
+  `isPrivateIpv6`, and internal service names (a conservative exact-name list
+  plus the `.internal` / `.local` / `.localhost` / `.localdomain` suffixes).
+- **`parseIpv4Literal` had a bug of its own**: the last inet_aton group was
+  shifted by 8 bits too many, so `2130706433` parsed as `1.0.0.0` and `127.1`
+  as `127.0.1.0` — neither of them is loopback, so the normalizer reported
+  them as public. Fixed: the last group now covers the remaining low-order
+  bytes, matching the `inet_aton` semantics the resolver actually applies.
+  The HTTP path was not exposed to it (`new URL()` canonicalizes IPv4 before
+  the helper sees it), but the helper was wrong.
+- Single-label hostnames are NOT rejected: `validatePostgresHost` also
+  validates Snowflake account identifiers (`snowflake.ts:61`), which are
+  legitimately labels without a dot. That trade-off is documented in the code.
+
+**Not fixed** — DNS rebinding (public at validation time, private at connect
+time) remains open in both paths. Closing it needs the resolved address
+pinned at connect time, which is a separate change. The scope note in the
+file says so explicitly.
+
+**Evidence**
+
+- Unit: `pnpm vitest run tests/security/ssrf.test.ts` → RED before the fix `Tests 15 failed | 26 passed (41)`, GREEN after `Test Files 1 passed (1)`, `Tests 50 passed (50)`
+- Security suite: `pnpm vitest run tests/security` → `Test Files 8 passed (8)`, `Tests 176 passed (176)`
+- Normalizer probed directly: `2130706433`, `127.1`, `0177.0.0.1`, `0x7f.0.0.1` all resolve to `127.0.0.1`; `192.168.257` → `192.168.1.1`; `8.8.8.8` unchanged
+- `validateOutboundUrl` proven unchanged: the function body is byte-identical to HEAD, and a differential harness over 38 URLs (inet_aton forms, RFC1918, link-local, IPv6, metadata hosts, public hosts, `file://`/`gopher://`) reports 0 divergences in outcome or error message
+- Full gate: `pnpm lint:strict` exit 0, `pnpm typecheck` exit 0, `pnpm test` exit 0 (`Test Files 159 passed (159)`, `Tests 1940 passed (1940)`, 0 failed, 0 skipped), `pnpm build` exit 0
+- One intentional de-block: `16777343` is now ALLOWED, because the correct `inet_aton` value is `1.0.0.127` (public) and the broken parse used to call it `127.0.0.0`
+- Rollback boundary: the task commit restores the string-level comparison and the old `parseIpv4Literal`. Nothing else depends on the new helper.
 
 ### 4. Stop leaking driver internals to the client
 
