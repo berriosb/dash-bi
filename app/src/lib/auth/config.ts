@@ -150,6 +150,17 @@ export const auth = betterAuth({
   secret: process.env.BETTER_AUTH_SECRET,
   baseURL: process.env.BETTER_AUTH_URL || 'http://localhost:3000',
 
+  // better-auth >= 1.7 validates the Drizzle schema against the fields it
+  // writes, and it writes `user.image` (the OAuth/magic-link avatar). This
+  // schema has always called that column `avatar_url`, so the field is
+  // mapped instead of adding a second, duplicate avatar column: better-auth
+  // now writes the provider avatar where the product already reads it.
+  user: {
+    fields: {
+      image: 'avatarUrl',
+    },
+  },
+
   // Sprint 1.5: better-auth's default `generateId` produces 32-char
   // alphanumeric strings (see `@better-auth/utils/random`). Our schema
   // declares `id uuid PRIMARY KEY DEFAULT gen_random_uuid()` so
