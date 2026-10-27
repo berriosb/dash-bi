@@ -1,0 +1,281 @@
+# Fix: security P0 hardening (audit 2026-09-30 follow-up)
+
+**Branch:** `fix/security-p0-hardening`
+**Source:** repo-wide security audit (4 parallel control sweeps + parent verification)
+**Status:** in progress
+**Scope:** P0 only. P1/P2 findings are recorded in the audit report and left for a
+follow-up feature — this feature must not grow into a multi-area rewrite.
+
+## Context
+
+The audit verdict was **FAIL**: 3 CRITICAL dependency advisories and 8 HIGH
+application findings. Every finding below was re-verified by reading the code
+before entering this feature; the line references are the verified ones.
+
+Two constraints shape the work:
+
+1. **The working tree carries unrelated uncommitted work.** 57 files (UI/brand
+   changes) are modified in the working tree and are NOT part of this feature.
+   Every commit in this feature must stage files explicitly — never `git add -A`.
+   Files already modified by that work are off-limits for editing; the fixes
+   below are deliberately scoped to server-side files instead.
+2. **`docs/security/threat-model.md` marks controls `[x]` that do not exist in
+   the code.** That documentation drift is why these gaps survived. The threat
+   model is corrected as part of this feature so the checkboxes mean something
+   again.
+
+## Tasks
+
+### 1. Patch critical dependencies and make the audit gate real
+
+`app/package.json`, `app/pnpm-lock.yaml`, `.github/workflows/ci.yml`, `app/security-audit-baseline.json`, `docs/security/accepted-advisories.md`
+
+**Status: done.**
+
+- `next@16.3.8` (direct dependency) carries two CRITICAL unauthenticated RCE
+  advisories, patched in `>=16.4.1` (unauthenticated RCE in `use cache`, and in
+  Image Optimization). The declared range is already `^16.3.8`.
+- `@sentry/nextjs@9.47.1` carries a CRITICAL middleware-bypass advisory, patched
+  in `>=9.47.2`. The advisory concerns the tunnel route; the repo does not use a
+  tunnel (`grep tunnel` over `app/sentry*.ts` and `app/src` returns nothing), so
+  it is not reachable — but the version is still vulnerable and must move.
+- The audit gate is inert. `app/package.json` defines `audit:check`
+  (`node scripts/check-audit-baseline.mjs`), but the workflow that calls it
+  lives at `app/.github/workflows/ci.yml`. GitHub Actions only discovers
+  workflows under the repository-root `.github/workflows/`, so that job never
+  runs. The root `ci.yml` has no audit step at all.
+- `app/security-audit-baseline.json` declares `critical: 0, high: 3`, while a
+  live `pnpm audit --audit-level=high` reports 3 critical and 7 high. The
+  baseline is stale and was never enforced, so it drifted silently.
+
+**What was done**
+
+- `next` → `^16.4.3` (installed 16.4.3), `@sentry/nextjs` → `^9.47.2`
+  (installed 9.47.2). No major-version jump.
+- `pnpm.overrides`: `undici` `^6.28.1` → `^6.29.1` (clears GHSA-xjj6-f33q-929c);
+  new `zod@^4.0.0` → `^4.6.6`, a range-scoped override that pins only the zod 4
+  branch (better-auth's) to a patched version and leaves the project's direct
+  `zod@3.25.76` alone.
+- The `audit` job moved into the repository-root `.github/workflows/ci.yml` and
+  runs `pnpm audit:check`. The inert `app/.github/workflows/ci.yml` was deleted
+  — it duplicated the root workflow and was the reason the gate never existed.
+- Baseline refreshed to the real post-patch numbers (`critical: 0, high: 4`)
+  with the four live advisory ids.
+- `docs/security/accepted-advisories.md` documents the two new accepted
+  advisories (`zod` 1243066, `happy-dom` 1243084) and records the fixes.
+
+**Not fixed, with reasons** (both documented in the advisories file)
+
+- `zod` 1243066 — the vulnerable range is `<4.6.6`, which covers every 3.x
+  release; the fix requires migrating the project to zod 4. Out of scope for a
+  security patch.
+- `happy-dom` 1243084 — dev-only, never ships in a runtime container. The
+  `vitest>happy-dom` override does not move it because `happy-dom` is an
+  optional *peer* of Vitest, resolved by the lockfile rather than by range.
+
+**Evidence**
+
+- `pnpm audit --audit-level=high --json` → `critical 0, high 4, moderate 21, low 2`
+- `pnpm audit:check` → `critical 0/0, high 4/4` → `within the accepted baseline`, exit 0
+- `pnpm lint:strict` → exit 0 (0 errors, 0 warnings)
+- `pnpm typecheck` → exit 0
+- `pnpm test` → exit 0 — `Test Files 157 passed (157)`, `Tests 1797 passed (1797)`, 0 failed, 0 skipped
+- `pnpm build` → exit 0 — Next.js 16.4.3 (webpack), 20/20 static pages, 57 routes, no collisions
+- Rollback boundary: `git revert` of the task commit restores `next@16.3.8`,
+  `@sentry/nextjs@9.47.1`, the old overrides, the baseline and the inert
+  workflow file. Nothing else depends on the new versions.
+
+
+Deliverable: dependencies patched, the audit job moved into the root workflow so
+it actually gates PRs, baseline updated to the real post-patch numbers, and the
+accepted-advisories doc updated to explain each remaining finding.
+
+Verification: `pnpm audit --audit-level=high` output, plus the full CI gate
+(`lint:strict && typecheck && test && build`).
+
+### 2. Block the SQL escapes and shrink the read-only role
+
+`app/src/lib/security/validate-query.ts`, `app/drizzle/migrations/00xx_*.sql`, `app/tests/unit/security/*`
+
+- `DANGEROUS_DB_FUNCTIONS` (validate-query.ts:39-63) lists `pg_read_file`,
+  `dblink`, `pg_sleep` and friends, but not `set_config` / `current_setting`.
+  `set_config` is available to every role, so a user- or AI-authored statement
+  can rewrite `app.current_org_id` — the GUC every tenant-scoped RLS policy
+  reads through `app_current_org_id()` — and can set `role` on the customer's
+  own database.
+- `DML_DDL_KEYWORDS` (validate-query.ts:18-20) has no `INTO`, `COPY` or
+  `PROGRAM`, so `SELECT * INTO evil FROM orders` passes validation and creates
+  a table in the customer's database. This contradicts the T2 control
+  ("bloquea DML/DDL").
+- The `dashbi_readonly` role keeps `SELECT` on tenant tables the app never
+  intends the AI to read. `scripts/postgres/init-roles.sh:96` grants
+  `SELECT ON ALL TABLES IN SCHEMA public`, and migration 0017 revokes it only
+  from 10 tables. `dashboards`, `dashboard_versions`, `llm_usage`,
+  `nlqa_conversations`, `nlqa_messages`, `scheduled_reports`,
+  `scheduled_report_runs`, `alert_events` and `uploaded_files` stay readable.
+  The spreadsheet connector executes user/AI SQL against this role
+  (`connectors/implementations/spreadsheet.ts:174`).
+
+Deliverable: the shared blocklist rejects `set_config`, `current_setting`,
+`INTO`, `COPY` and `PROGRAM` for every SQL-backed connector, and a migration
+revokes `dashbi_readonly`'s SELECT on the internal tenant tables.
+
+Note: whether the GUC pivot is *exploitable* end to end depends on PostgreSQL's
+STABLE-evaluation semantics for `app_current_org_id()` and is NOT verified here
+(no local Postgres). The blocklist gap is the defect being fixed; it is closed
+by refusing to execute the statement at all.
+
+### 3. Normalize hosts before the SSRF blocklist
+
+`app/src/lib/security/validate-connection.ts`, `app/tests/unit/security/*`
+
+- `validatePostgresHost` (validate-connection.ts:29) matches the host string
+  literally. The normalizers already exist in the same file —
+  `parseIpv4Literal` (line 104) and `isPrivateIpv6` (line 160) — but only
+  `validateOutboundUrl` (line 190) uses them.
+- Live bypasses today: `127.1`, `2130706433`, `0177.0.0.1`, `0x7f.0.0.1`,
+  `[::1]`, `fd00::1`, `fe80::1`, `localhost:3000`.
+- The threat model marks "[x] `2130706433` no evada el bloqueo" and prints IPv6
+  regexes that do not exist in the code. Consumers: `postgres.ts:70`,
+  `mysql.ts:60`, `snowflake.ts:61`, `shopify.ts:28`.
+
+Deliverable: `validatePostgresHost` resolves the host to its effective form
+before comparing against the forbidden set and the private-range patterns, and
+rejects internal hostnames by name.
+
+DNS rebinding (public at validation time, private at connect time) stays open
+and stays documented as open — closing it requires a pinned lookup in the
+connection agent, which is a separate change.
+
+### 4. Stop leaking driver internals to the client
+
+`app/src/app/api/data-sources/[id]/test/route.ts`, `app/src/app/api/nlqa/ask/route.ts`, `app/src/lib/connectors/implementations/*.ts`, `app/tests/unit/api/*`
+
+- `data-sources/[id]/test/route.ts:31` returns `NextResponse.json(result)`
+  where `result.error` is the raw driver message
+  (`postgres.ts:88`: `password authentication failed for user "dashbi_readonly"`,
+  `getaddrinfo ENOTFOUND db.internal`). `errorResponse` sanitizes *thrown*
+  errors only — a returned error bypasses it entirely. The route's own comment
+  documents this exact leak class and closes only the catch path.
+- `datasource.view` includes `viewer`, so any read-only member can harvest
+  internal hostnames and role names repeatedly.
+- `nlqa/ask/route.ts:246` returns `execErr.message` verbatim on the execution
+  path, while the adjacent `ValidationError` branch is sanitized.
+
+Deliverable: both routes return a fixed, curated error string to the client and
+keep the detail server-side in the log (redacted).
+
+### 5. Make rate limits unspoofable and actually per-org
+
+`app/src/lib/http/client-ip.ts` (new), `app/src/lib/rate-limit.ts`, `app/src/lib/middleware/rate-limit.ts`, `app/src/app/api/**/route.ts`, `app/src/lib/auth/permissions.ts`, `app/tests/unit/**`
+
+- Nine call sites read `x-forwarded-for.split(',')[0]`
+  (`nlqa/ask:31`, `dashboards/generate:30`, `files/upload:90`, `data-sources:107`,
+  `data-sources/[id]/test:14`, `alert-rules/[id]/test-channel:41`,
+  `widgets/explain:31`, `middleware/rate-limit.ts:21`, `audit/log.ts:66`).
+  `deploy/nginx/dash-bi.conf:60` sets `proxy_set_header X-Forwarded-For
+  $proxy_add_x_forwarded_for`, which appends the real peer at the END of the
+  list — so the first hop is the client-controlled one. Every IP bucket is
+  bypassed by rotating the header, and the forged value is what
+  `audit_log.ip` records.
+- Several buckets are keyed `org:${orgId}:ip:${ip}` in one string
+  (`nlqa-ask`, `widget-explain`, `ds-create`, `ds-test`, `file-upload`), so the
+  effective limit scales with the number of members. `dashboards/generate` and
+  `alert-rules/[id]/test-channel` already use two separate buckets — that is the
+  pattern to copy.
+- No rate limit at all: `dashboards/[id]/export/pdf` (POST), `files/commit`
+  (DDL + bulk insert), `dashboards/[id]/share`, `dashboards/[id]/embed`,
+  `scheduled-reports` (POST), `organizations/members` (POST),
+  `organizations/llm-key` (PUT/DELETE).
+- `export.pdf` is granted to `viewer`, so a read-only account can enqueue
+  unbounded Puppeteer renders against a worker whose BullMQ limiter is global
+  (one tenant starves the others).
+- `withRateLimit` / `rateLimitByOrgAndIp` in `lib/middleware/rate-limit.ts` have
+  zero call sites: the module advertises a wrapper that protects nothing.
+
+Deliverable: one shared `getClientIp` helper that reads the right-most
+trusted hop, two independent buckets (org, IP) on every limited route, the
+missing limits added, `viewer` removed from `export.pdf`, and the unused
+wrapper either wired up or deleted.
+
+### 6. Stop shipping SQL to anonymous visitors and actually emit the embed CSP
+
+`app/src/lib/sharing/get-public-dashboard.ts`, `app/src/lib/embed/get-embed-dashboard.ts`, `app/src/app/embed/[token]/page.tsx`, `app/src/lib/embed/token.ts`, `deploy/nginx/dash-bi.conf`, `app/tests/unit/**`
+
+- `get-public-dashboard.ts:87` returns `dashboard.widgets` verbatim. Stored
+  widgets carry `source.query.sql` and `source.dataSourceId`
+  (`lib/widgets/validator.ts:269` accepts `source.query` as unknown), so the
+  RSC payload of a public link hands an anonymous visitor the tenant's table
+  names, join logic and business filters. `get-embed-dashboard.ts:100` does the
+  same for embeds.
+- `getCspFrameAncestors` (embed/token.ts:203-225) computes a correct
+  `frame-ancestors` list, and `get-embed-dashboard.ts:77` passes it on as
+  `config.cspHeader` — which is consumed only as a client-side prop
+  (`DashboardEmbedView.tsx:12`) and never set as a response header.
+  `next.config.ts` excludes `/embed/` from `X-Frame-Options` but emits no CSP
+  for it, so the embed route has no browser-side framing restriction.
+- `deploy/nginx/dash-bi.conf:38,41` sets `X-Frame-Options SAMEORIGIN` and a
+  global CSP with `frame-ancestors 'none'` for every path, which — in the
+  documented deployment — blocks every embed, legitimate ones included.
+
+Deliverable: the public and embed payloads strip `source` from every widget;
+the embed route emits a `Content-Security-Policy` header with the token's
+`frame-ancestors`; the nginx drop-in stops blanket-framing `/embed/` while
+keeping `X-Frame-Options: DENY` everywhere else.
+
+Note: `DashboardEmbedView.tsx` and `DashboardPublicView.tsx` are already
+modified by unrelated work in the working tree — the fix is scoped to the
+server-side payload and the route, so those components are not touched.
+
+### 7. Realign the threat model with the code
+
+`docs/security/threat-model.md`, `docs/security/accepted-advisories.md`
+
+Every checkbox in this feature that was `[x]` while unimplemented gets
+corrected, and each one that this feature actually implements gets a pointer to
+the enforcing code and its test. The threat model is the document future work
+reads to decide what is safe; leaving it lying is how the next audit finds the
+same gaps.
+
+Deliverable: an accurate threat model, with the evidence (file + test) next to
+each control.
+
+## Out of scope (P1/P2, recorded, not fixed here)
+
+- PDF worker isolation (separate service, no DB credentials, no master key) and
+  Chrome sandbox flags.
+- CSRF origin gate on the app's own mutating routes.
+- Audit-event gaps: `auth.*` never emitted, `datasource.tested` never emitted,
+  BYOK audited as `org.settings_updated`, `assertSafeMetadata` skipped in
+  production, non-recursive `redactMetadata`.
+- LLM budget: reserve-before-call, hourly circuit breaker, wire
+  `evaluateLLMQuota` (currently referenced only by tests).
+- Webhook headers stored unencrypted in `alert_rules.channels`.
+- `readonlyDb` silently falling back to `postgresql://localhost:5432/dashbi`.
+- Sheets connector trusting the model-supplied `spreadsheetId`.
+- Upload size checked after buffering; no XLSX expansion cap; `parseStore`
+  without TTL.
+- Embed tokens without default expiry or revocation; origin check skipped when
+  no `Origin`/`Referer` is present.
+- `org_members` RLS policy permitting cross-org writes.
+- Query cache key collision (`JSON.stringify` with an array replacer flattens
+  nested `params`).
+- `withOrgContext` 3-argument overload hard-coding `role='editor'` at 10 call
+  sites.
+- Onboarding page reading a client-supplied `x-user-id` header.
+- Master key rotation path.
+
+## Work-unit commits
+
+One commit per task, Conventional Commits, tests and docs in the same commit as
+the behavior they cover.
+
+| # | Task | Commit message (planned) |
+|---|---|---|
+| 1 | Dependencies + audit gate | `fix(deps): patch critical next and sentry advisories, enforce audit gate in CI` |
+| 2 | SQL escapes + read-only role | `fix(security): block set_config and DML escapes in SQL validation` |
+| 3 | SSRF host normalization | `fix(security): normalize connection hosts before the SSRF blocklist` |
+| 4 | Error sanitization | `fix(security): stop returning raw driver errors to clients` |
+| 5 | Rate limiting | `fix(security): make rate limits unspoofable and per-org` |
+| 6 | Public payload + embed CSP | `fix(security): strip SQL from public payloads and enforce embed CSP` |
+| 7 | Threat model realignment | `docs(security): realign threat model controls with the implemented reality` |

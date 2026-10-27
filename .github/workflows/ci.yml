@@ -11,6 +11,45 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  audit:
+    name: Dependency audit (baseline gate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: app
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm 9.12
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: app/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # `pnpm audit:check` reads app/security-audit-baseline.json and fails
+      # when the critical/high counts exceed the accepted baseline, or when a
+      # new advisory appears. Raw `pnpm audit` cannot be the gate: it exits
+      # non-zero for advisories that have no upstream fix and no reachable
+      # code path (see docs/security/accepted-advisories.md).
+      #
+      # This job used to live at app/.github/workflows/ci.yml, where GitHub
+      # never ran it: Actions only discovers workflows under the repository
+      # root's .github/workflows/. The gate was silently absent for the whole
+      # life of that file.
+      - name: Dependency audit (baseline gate)
+        run: pnpm audit:check
+
   verify:
     name: Lint, typecheck, test, build
     runs-on: ubuntu-latest
