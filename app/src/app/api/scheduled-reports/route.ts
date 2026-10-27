@@ -4,11 +4,25 @@ import { z } from 'zod';
 import { withOrgContext } from '@/db/client';
 import { scheduledReports } from '@/db/schema';
 import { requireAuth } from '@/lib/auth/request';
+import { checkRateLimit } from '@/lib/rate-limit';
+import { getClientIp } from '@/lib/http/client-ip';
 import { parseCronAndNextRun, isValidCron } from '@/lib/reports/cron';
 import { audit } from '@/lib/audit/log';
 import { and, eq, desc } from 'drizzle-orm';
 import { dashboards } from '@/db/schema';
 import { AppErrorException } from '@/lib/errors/types';
+
+/**
+ * Two independent buckets, the same shape as `/api/dashboards/generate`.
+ *
+ * This route had no limit at all, and a scheduled report AMPLIFIES: every
+ * firing of the job renders a PDF, so one created row keeps spending the
+ * PDF worker for as long as it stays enabled. The org bucket is the
+ * guarantee the threat model asks for ("rate limit per org"); the IP bucket
+ * blunts a single noisy client.
+ */
+const SCHEDULED_REPORT_PER_ORG = { capacity: 10, refillPerSecond: 10 / 3600 };
+const SCHEDULED_REPORT_PER_IP = { capacity: 20, refillPerSecond: 20 / 3600 };
 
 const createReportSchema = z.object({
   dashboardId: z.string().uuid(),
@@ -47,6 +61,30 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const { orgId, userId } = await requireAuth(req, 'dashboard.create');
+    const ip = getClientIp(req);
+
+    const orgLimit = checkRateLimit({
+      ...SCHEDULED_REPORT_PER_ORG,
+      key: `scheduled-report:org:${orgId}`,
+    });
+    if (!orgLimit.allowed) {
+      return NextResponse.json(
+        { error: 'rate_limited', scope: 'org', retryAfterSeconds: orgLimit.retryAfterSeconds },
+        { status: 429, headers: { 'Retry-After': String(orgLimit.retryAfterSeconds) } },
+      );
+    }
+
+    const ipLimit = checkRateLimit({
+      ...SCHEDULED_REPORT_PER_IP,
+      key: `scheduled-report:ip:${ip}`,
+    });
+    if (!ipLimit.allowed) {
+      return NextResponse.json(
+        { error: 'rate_limited', scope: 'ip', retryAfterSeconds: ipLimit.retryAfterSeconds },
+        { status: 429, headers: { 'Retry-After': String(ipLimit.retryAfterSeconds) } },
+      );
+    }
+
     const body = await req.json();
 
     const parseResult = createReportSchema.safeParse(body);

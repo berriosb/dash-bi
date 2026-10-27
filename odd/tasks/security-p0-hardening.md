@@ -333,15 +333,48 @@ flight and are off-limits for this feature, so the UI gate is a follow-up.
   (`tests/unit/auth/permissions.test.ts`, `tests/unit/audit/log.test.ts`):
   both asserted the behaviour this task ordered to change.
 
-**Part B — still open**
+**Part B — what was done**
 
-Add the missing limits: `dashboards/[id]/export/pdf` (POST), `files/commit`,
-`dashboards/[id]/share`, `dashboards/[id]/embed`, `scheduled-reports` (POST),
-`organizations/members` (POST), `organizations/llm-key` (PUT/DELETE). Each
-gets the same two-bucket shape (org + IP) with a cap appropriate to what the
-route costs. Also decide the fate of the dead `withRateLimit` /
-`rateLimitByOrgAndIp` wrapper: wire it up or delete it, so the module stops
-advertising protection it does not provide.
+Seven routes had no limit at all. Each now carries the same two-bucket shape,
+checked after `requireAuth` (an unauthenticated request consumes no bucket)
+and before the work the route does:
+
+| Route | Method | Org bucket | IP bucket |
+|---|---|---|---|
+| `dashboards/[id]/export/pdf` | POST | 10/min | 20/min |
+| `files/commit` | POST | 10/min | 20/min |
+| `dashboards/[id]/share` | POST | 20/hour | 50/hour |
+| `dashboards/[id]/embed` | POST | 20/hour | 50/hour |
+| `scheduled-reports` | POST | 10/hour | 20/hour |
+| `organizations/members` | POST | 30/hour | 50/hour |
+| `organizations/llm-key` | PUT, DELETE | 5/min | 10/min |
+
+`app/src/lib/middleware/rate-limit.ts` was deleted: `withRateLimit` and
+`rateLimitByOrgAndIp` had zero consumers repo-wide, and a module that
+advertises a route wrapper which protects nothing is what makes a reviewer
+believe the routes are covered.
+
+**Invariant guard** — `tests/unit/api/route-rate-limits.test.ts` scans the
+route sources under `app/src/app/api/**` for the routes that reach an LLM, an
+outbound HTTP call, a credential write, a PDF export, a bulk DDL, an account
+creation or a recurring export job, and fails if any of them lacks a rate
+limit. The list of 13 sensitive routes is pinned in the test, so the next
+route that reaches one of those effects has to be given a limit or the test
+has to be updated deliberately. This is intentionally loud.
+
+**Test coupling fixed** — `tests/unit/api/llm-key-byok.test.ts` was hitting
+the real in-memory limiter, so six requests in that file shared one org
+bucket and the last one would have been rejected with a 429 for a reason
+unrelated to what the file asserts. It now mocks `@/lib/rate-limit`, and the
+llm-key check went back to the canonical position (right after `requireAuth`,
+before the body is parsed) instead of being moved to accommodate the test.
+
+**Evidence (part B)**
+
+- RED: `pnpm vitest run tests/unit/api/route-rate-limits.test.ts` → `Tests 47 failed | 25 passed (72)`, with the failures naming the seven routes that "declare no rate limit"
+- GREEN: `Test Files 1 passed (1)`, `Tests 72 passed (72)`
+- Mutation checks on `export/pdf`: rewriting the org key to the old combined shape → 2 failures; rewriting the IP key to a per-org IP bucket → 2 failures; both reverted and re-verified green
+- Full gate: `pnpm lint:strict` exit 0, `pnpm typecheck` exit 0, `pnpm test` exit 0 (`Test Files 161 passed (161)`, `Tests 2036 passed (2036)`, 0 failed, 0 skipped), `pnpm build` exit 0
 
 ### 6. Stop shipping SQL to anonymous visitors and actually emit the embed CSP
 

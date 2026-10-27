@@ -36,6 +36,19 @@ vi.mock('@/db/client', () => ({
 
 vi.mock('@/lib/audit/log', () => ({ audit: vi.fn() }));
 
+// The route is rate limited, and the limiter is a module-level in-memory
+// bucket shared by every test in the process. Without this mock the six
+// requests of this file would consume the same org bucket and the last one
+// would be rejected with a 429 — a test that fails because of an unrelated
+// test's traffic, not because of what it asserts.
+vi.mock('@/lib/rate-limit', () => ({
+  checkRateLimit: vi.fn(() => ({
+    allowed: true,
+    remainingTokens: 10,
+    retryAfterSeconds: 0,
+  })),
+}));
+
 function chain(result: unknown) {
   const promise = Promise.resolve(result);
   const thenable: Record<string, unknown> = {
