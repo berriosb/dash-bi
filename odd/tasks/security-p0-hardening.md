@@ -456,16 +456,63 @@ the enforcement, and the residual gap is documented in `token.ts`.
 
 ### 7. Realign the threat model with the code
 
-`docs/security/threat-model.md`, `docs/security/accepted-advisories.md`
+`docs/security/threat-model.md`, `specs/deployment.md`, `specs/embed-mode.md`
+
+**Status: done.**
 
 Every checkbox in this feature that was `[x]` while unimplemented gets
 corrected, and each one that this feature actually implements gets a pointer to
-the enforcing code and its test. The threat model is the document future work
-reads to decide what is safe; leaving it lying is how the next audit finds the
-same gaps.
+the enforcing code and the test that locks it.
 
-Deliverable: an accurate threat model, with the evidence (file + test) next to
-each control.
+**What was done**
+
+- `docs/security/threat-model.md` went from v0.2 to v0.3. Every `[x]` now
+  carries two pointers: the file that enforces the control and the test that
+  locks it. Every unimplemented control is `[ ]` and says what is missing and
+  where the gap lives. The T3 section no longer prints IPv6 regexes that do
+  not exist in the code — it describes what `validate-connection.ts` actually
+  does. The duplicated pre-implementation checklist was de-duplicated and
+  given the same evidence.
+- A new section 0 records, per control, the commit that made it true, so the
+  history of the drift is visible instead of invisible.
+- `specs/deployment.md` publishes the nginx configuration that actually ships
+  (the `/embed/` carve-out, the per-token CSP, no `/pdf-internal` proxy).
+- `specs/embed-mode.md` marks the `frame-ancestors` criterion as implemented
+  and points at the code that emits it.
+
+**Controls demoted from `[x]` to `[ ]` because no code enforced them**
+
+T1 "audit log de cada query ejecutada" · T2 "la IA nunca recibe prompts de SQL
+previos" (the NLQA history does carry the previously generated SQL) · T3 "test
+connection antes de guardar" (the POST persists without connecting) · T4
+"master key rotable sin downtime" and "audit log de cada lectura de key" ·
+T5 "circuit breaker", "alerta en UI", "límites por plan", "budget diario" ·
+T6 "rate limit por IP en links públicos", "view counter + alerta", "expiración
+por defecto en embed" and "revocación de embed" · T7 "validación client-side",
+"revertir en cliente" y "try/catch por widget" · T8 "worker sin DB compartida",
+"`--no-sandbox` solo si es necesario" y "block de dominios internos" · C1
+"redacción recursiva", "no loguear SQL completo" y "no loguear tokens de un
+uso" · C2 "eventos de auth", "datasource tested", "eventos BYOK" y el guard
+`assertSafeMetadata` (que sale temprano en producción) · C4 "restore drill
+probado" · C5 "Renovate" y "SBOM".
+
+**Controls promoted to `[x]` because the code does enforce them**
+
+`robots.txt` (`app/public/robots.txt`, trackeado desde `b80417a`), the share
+route's 30-day default expiry, and the C5 audit gate.
+
+**Verification**
+
+- A pointer-existence sweep over the three documents: 82 distinct
+  repository-relative pointers, 0 missing. The only non-existent path is
+  `app/.github/workflows/ci.yml`, cited on purpose as the place where the
+  inert audit job used to live.
+- The 19 cited test files all exist, and the four quoted test names were
+  grepped and found verbatim.
+- Markdown fence parity checked on all three files.
+- Documentation only: no code changed, so the application gate is unchanged
+  from the last task (lint, typecheck, 2044 tests, build all green at
+  `1166895`).
 
 ## Out of scope (P1/P2, recorded, not fixed here)
 
@@ -495,14 +542,21 @@ each control.
 ## Work-unit commits
 
 One commit per task, Conventional Commits, tests and docs in the same commit as
-the behavior they cover.
+the behavior they cover. All on `fix/security-p0-hardening`, based on `main`
+at `e0ab4b3`.
 
-| # | Task | Commit message (planned) |
+| # | Task | Commit |
 |---|---|---|
-| 1 | Dependencies + audit gate | `fix(deps): patch critical next and sentry advisories, enforce audit gate in CI` |
-| 2 | SQL escapes + read-only role | `fix(security): block set_config and DML escapes in SQL validation` |
-| 3 | SSRF host normalization | `fix(security): normalize connection hosts before the SSRF blocklist` |
-| 4 | Error sanitization | `fix(security): stop returning raw driver errors to clients` |
-| 5 | Rate limiting | `fix(security): make rate limits unspoofable and per-org` |
-| 6 | Public payload + embed CSP | `fix(security): strip SQL from public payloads and enforce embed CSP` |
-| 7 | Threat model realignment | `docs(security): realign threat model controls with the implemented reality` |
+| 1 | Dependencies + audit gate | `f124818` — `fix(deps): patch critical next and sentry advisories, enforce audit gate in CI` |
+| 2 | SQL escapes + read-only role | `7ce0baf` — `fix(security): block SQL escapes and revoke the read-only role from internal tables` |
+| 3 | SSRF host normalization | `b21bb58` — `fix(security): normalize connection hosts before the SSRF blocklist` |
+| 4 | Error sanitization | `811482e` — `fix(security): stop returning raw driver errors to clients` |
+| 5a | Client IP + per-org buckets | `2cbbf50` — `fix(security): make rate limits unspoofable and actually per-org` |
+| 5b | The routes that had no limit | `6598792` — `fix(security): rate limit the routes that had none` |
+| 6 | Public payload + embed CSP | `1166895` — `fix(security): strip SQL from public payloads and enforce the embed CSP` |
+| 7 | Threat model realignment | see the closing commit of this feature |
+
+## Status
+
+All seven tasks are done. The feature is not merged and not pushed: both
+remain the user's decision, as are the P1/P2 findings listed above.

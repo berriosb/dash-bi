@@ -170,7 +170,8 @@ Ubicado en la barra superior del Dashboard Studio (`ExportShareDialog.tsx` o tab
 
 - [ ] Generación de tokens HMAC determinísticos y criptográficamente seguros.
 - [ ] Validación estricta de expiración (tokens vencidos devuelven 401/403).
-- [ ] Cabeceras CSP `frame-ancestors` configuradas acorde a `allowedOrigins`.
+- [x] Cabeceras CSP `frame-ancestors` configuradas acorde a `allowedOrigins` — la directiva se **emite**, no se documenta: `app/src/middleware.ts` (`embedCspHeader`) verifica el token de `/embed/<token>` (firma + expiración + origen) y arma el `Content-Security-Policy` con `getCspFrameAncestors(verification.payload.allowedOrigins)` (`app/src/lib/embed/token.ts`). Un token que no se puede verificar degrada a `frame-ancestors 'none'`, nunca a un valor permisivo; y los origins se sanean antes de interpolarse (`SAFE_ORIGIN`), de modo que un `allowedOrigins` con `;` no puede inyectar directivas.
+  - Test: `app/tests/unit/api/dashboard-embed.test.ts` ("emits frame-ancestors scoped to the token allowed origins") y `app/tests/unit/embed/token.test.ts` (formato de la directiva, `*`, lista vacía, origins inválidos).
 - [ ] `/embed/[token]` renderiza el dashboard completo sin la barra de navegación ni el sidebar administrativo.
 - [ ] Eventos `postMessage` emitidos correctamente con la altura calculada del documento.
 - [ ] Cobertura con tests unitarios y de integración RLS.
