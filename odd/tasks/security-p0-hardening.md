@@ -218,7 +218,9 @@ file says so explicitly.
 
 ### 4. Stop leaking driver internals to the client
 
-`app/src/app/api/data-sources/[id]/test/route.ts`, `app/src/app/api/nlqa/ask/route.ts`, `app/src/lib/connectors/implementations/*.ts`, `app/tests/unit/api/*`
+`app/src/app/api/data-sources/[id]/test/route.ts`, `app/src/app/api/nlqa/ask/route.ts`, `app/src/lib/redact.ts`, `app/tests/unit/api/error-contract-leaks.test.ts`, `app/tests/unit/redact.test.ts`
+
+**Status: done.**
 
 - `data-sources/[id]/test/route.ts:31` returns `NextResponse.json(result)`
   where `result.error` is the raw driver message
@@ -231,8 +233,32 @@ file says so explicitly.
 - `nlqa/ask/route.ts:246` returns `execErr.message` verbatim on the execution
   path, while the adjacent `ValidationError` branch is sanitized.
 
-Deliverable: both routes return a fixed, curated error string to the client and
-keep the detail server-side in the log (redacted).
+**What was done**
+
+- The connector-test route distinguishes a RESOLVED failure from a success:
+  failure now answers `{ ok: false, error: 'connection_failed', message:
+  <curated Spanish>, latencyMs }` and the raw driver text stays server-side,
+  logged with `redactError` and the data-source / org / user context. The
+  success shape and the rate-limit branch are unchanged. The client reads
+  `data?.message ?? data?.error`, so the curated message is what the UI shows
+  and no client change was needed.
+- The NLQA execution branch answers with the same `{ error, message }` shape as
+  its sibling `ValidationError` branch, with a curated message, and logs the
+  reason redacted. The panel reads `errBody?.error`, so the machine code is
+  preserved.
+- `scrubUrlCredentials` was added to `@/lib/redact` and applied inside
+  `redactError`, so the credentials embedded in a connection string
+  (`postgresql://user:pass@host/db`) are scrubbed from every redacted error.
+  `redactSecrets` scrubs API keys, not URL credentials: a short password does
+  not match the generic 40+ character pattern.
+
+**Evidence**
+
+- Unit: `pnpm vitest run tests/unit/redact.test.ts tests/unit/api/error-contract-leaks.test.ts tests/unit/redact-error.test.ts` → `Test Files 3 passed (3)`, `Tests 41 passed (41)`
+- The new leak tests went RED first (`Tests 5 failed | 4 passed (9)`) with the response bodies showing the raw driver text, and GREEN after (`Tests 11 passed (11)`)
+- Mutation check: removing the credential scrub makes "keeps a password-bearing DSN out of the log" fail; restoring it returns the file to green
+- Full gate: `pnpm lint:strict` exit 0, `pnpm typecheck` exit 0, `pnpm test` exit 0 (`Test Files 159 passed (159)`, `Tests 1951 passed (1951)`, 0 failed, 0 skipped), `pnpm build` exit 0
+- Rollback boundary: the task commit restores the raw-error responses and removes `scrubUrlCredentials`. The connector layer was not touched, so the connector tests keep their current expectations.
 
 ### 5. Make rate limits unspoofable and actually per-org
 

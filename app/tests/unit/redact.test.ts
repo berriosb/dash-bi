@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { redactSecrets, redactObject } from '@/lib/redact';
+import { redactSecrets, redactObject, scrubUrlCredentials, redactError } from '@/lib/redact';
 
 // Fixture keys use repeating chars with explicit FAKE markers so:
 // - redacter patterns match (length-based, alphanumeric + underscore + dash)
@@ -76,5 +76,39 @@ describe('redactObject', () => {
     };
 
     expect(redactObject(obj)).toEqual(obj);
+  });
+});
+describe('scrubUrlCredentials', () => {
+  it('replaces the password of a connection string', () => {
+    const dsn = 'postgresql://dashbi:s3cr3t@db.internal:5432/dashbi';
+
+    const result = scrubUrlCredentials(dsn);
+
+    expect(result).not.toContain('s3cr3t');
+    expect(result).toContain('dashbi:[REDACTED]@db.internal:5432');
+  });
+
+  it('replaces the password of every connection string in the text', () => {
+    const text = 'failed: postgresql://u:p1@one.internal:5432/db and mysql://v:p2@two.internal:3306/db';
+
+    const result = scrubUrlCredentials(text);
+
+    expect(result).not.toContain('p1');
+    expect(result).not.toContain('p2');
+  });
+
+  it('leaves a URL without credentials untouched', () => {
+    const url = 'https://api.example.com/v1/models';
+
+    expect(scrubUrlCredentials(url)).toBe(url);
+  });
+
+  it('is applied by redactError, so an error message never carries the password', () => {
+    const error = new Error('connect failed: postgresql://dashbi:s3cr3t@db.internal:5432/dashbi');
+
+    const result = redactError(error);
+
+    expect(result.message).not.toContain('s3cr3t');
+    expect(result.message).toContain('[REDACTED]');
   });
 });

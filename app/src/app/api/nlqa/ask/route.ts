@@ -13,6 +13,7 @@ import { validateQuery, ValidationError } from '@/lib/security/validate-query';
 import { audit } from '@/lib/audit/log';
 import { checkRateLimit } from '@/lib/rate-limit';
 import { logger } from '@/lib/logger';
+import { redactError } from '@/lib/redact';
 import type { ConnectorType } from '@/lib/connectors/types';
 
 export const dynamic = 'force-dynamic';
@@ -243,7 +244,23 @@ export async function POST(req: Request) {
         const message = 'La IA generó una query inválida. Reformulá tu pregunta.';
         return NextResponse.json({ error: 'sql_validation_failed', message }, { status: 422 });
       }
-      const message = execErr instanceof Error ? execErr.message : 'Error ejecutando la query';
+      // The execution failure is a driver-level error: host, port, database
+      // role, auth detail. It used to be returned verbatim, so the client
+      // could read the infrastructure of the customer's own database. The
+      // reason stays in the log; the client gets a fixed message.
+      const detail = redactError(execErr);
+      logger.error(
+        {
+          dataSourceId,
+          orgId: ctx.orgId,
+          userId: ctx.userId,
+          role: ctx.role,
+          error: detail,
+        },
+        'NLQA query execution failed',
+      );
+      const message =
+        'No pudimos ejecutar la consulta sobre la fuente de datos. Probá de nuevo o contactá soporte.';
       return NextResponse.json({ error: 'query_execution_failed', message }, { status: 500 });
     }
     const execMs = Date.now() - execStart;

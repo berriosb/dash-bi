@@ -59,6 +59,25 @@ const URL_PATTERN = /\bhttps?:\/\/[^\s'"<>)]+/gi;
 
 const URL_REDACTED = '[URL_REDACTED]';
 
+/**
+ * Credentials embedded in a connection string:
+ * `postgresql://dashbi:s3cr3t@db.internal:5432/dashbi`.
+ *
+ * `redactSecrets` scrubs API keys, not URL credentials: the generic
+ * 40+ character pattern does not match a short password, and the password
+ * is the part that matters. A driver error message routinely carries the
+ * whole DSN, so this runs before anything is logged.
+ */
+const URL_CREDENTIALS = /([a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^/\s:@]+):[^@\s/]+@/g;
+
+/**
+ * Replace the password of every connection string in a string.
+ */
+export function scrubUrlCredentials(input: string): string {
+  if (!input || typeof input !== 'string') return input;
+  return input.replace(URL_CREDENTIALS, '$1:[REDACTED]@');
+}
+
 /** The loggable shape of an error: a name and a scrubbed message, nothing else. */
 export interface RedactedError {
   name: string;
@@ -83,11 +102,16 @@ export function redactError(error: unknown): RedactedError {
   if (error instanceof Error) {
     return {
       name: error.name,
-      message: redactSecrets(error.message.replace(URL_PATTERN, URL_REDACTED)),
+      message: redactSecrets(
+        scrubUrlCredentials(error.message.replace(URL_PATTERN, URL_REDACTED)),
+      ),
     };
   }
   if (typeof error === 'string') {
-    return { name: 'Error', message: redactSecrets(error.replace(URL_PATTERN, URL_REDACTED)) };
+    return {
+      name: 'Error',
+      message: redactSecrets(scrubUrlCredentials(error.replace(URL_PATTERN, URL_REDACTED))),
+    };
   }
   return { name: 'Error', message: 'Unknown error' };
 }
