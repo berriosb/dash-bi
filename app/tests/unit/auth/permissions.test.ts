@@ -86,8 +86,11 @@ describe('RBAC permissions matrix', () => {
     it('CAN execute queries (read-only)', () => {
       expect(hasPermission('viewer', 'query.execute')).toBe(true);
     });
-    it('CAN export (PDF/PNG)', () => {
-      expect(hasPermission('viewer', 'export.pdf')).toBe(true);
+    it('CANNOT export (PDF/PNG)', () => {
+      // ODD task 5: PDF export runs Puppeteer against a worker whose BullMQ
+      // limiter is global, so a read-only account could enqueue renders that
+      // starve every other tenant. Exporting is an editor capability now.
+      expect(hasPermission('viewer', 'export.pdf')).toBe(false);
     });
     it('CANNOT share public link', () => {
       expect(hasPermission('viewer', 'dashboard.sharePublic')).toBe(false);
@@ -113,9 +116,20 @@ describe('RBAC permissions matrix', () => {
       it(`${role} can execute queries`, () => {
         expect(hasPermission(role, 'query.execute')).toBe(true);
       });
+    }
+  });
+
+  describe('PDF export is not a viewer capability', () => {
+    // The PDF worker is a shared, globally limited resource: a viewer able
+    // to enqueue a render can starve every other tenant.
+    for (const role of ['admin', 'editor'] as const) {
       it(`${role} can export`, () => {
         expect(hasPermission(role, 'export.pdf')).toBe(true);
       });
     }
+
+    it('viewer cannot export', () => {
+      expect(hasPermission('viewer', 'export.pdf')).toBe(false);
+    });
   });
 });

@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import { withOrgContext } from '@/db/client';
 import { dashboards } from '@/db/schema';
 import { verifyEmbedToken, getCspFrameAncestors } from '@/lib/embed/token';
+import { stripWidgetSources } from '@/lib/sharing/get-public-dashboard';
 import { audit } from '@/lib/audit/log';
 
 export type EmbedDashboardResult =
@@ -53,7 +54,7 @@ export async function getEmbedDashboard(
         title: 'Ingresos y rendimiento (Demo)',
         description: 'Dashboard de demostración para pruebas de integración.',
         theme: payload.theme ?? 'moderno-saas',
-        widgets: [
+        widgets: stripWidgetSources([
           {
             type: 'kpi',
             id: 'demo-revenue',
@@ -68,7 +69,7 @@ export async function getEmbedDashboard(
             config: { title: 'Órdenes', format: 'number', showDelta: true },
             data: { value: 1842, delta: 4.1 },
           },
-        ],
+        ]),
       },
       config: {
         theme: payload.theme ?? 'moderno-saas',
@@ -97,7 +98,7 @@ export async function getEmbedDashboard(
       title: dashboard.title,
       description: dashboard.description ?? null,
       theme: dashboard.theme,
-      widgets: Array.isArray(dashboard.widgets) ? dashboard.widgets : [],
+      widgets: stripWidgetSources(Array.isArray(dashboard.widgets) ? dashboard.widgets : []),
     },
     config: {
       theme: payload.theme ?? 'moderno-saas',

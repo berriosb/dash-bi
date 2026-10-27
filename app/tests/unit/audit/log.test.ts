@@ -77,7 +77,10 @@ describe('Audit log helper', () => {
       expect(metadata.keyPreview).toBe('[REDACTED]');
     });
 
-    it('extracts IP from x-forwarded-for header', async () => {
+    it('extracts the trusted IP from x-forwarded-for header', async () => {
+      // The LAST hop is the one the trusted proxy appended; the first hop is
+      // whatever the caller sent, so recording it would let a caller forge
+      // the address stored in audit_log.ip.
       const req = new Request('http://localhost', {
         headers: {
           'x-forwarded-for': '192.168.1.100, 10.0.0.1',
@@ -88,8 +91,22 @@ describe('Audit log helper', () => {
       await audit('org-1', 'user-1', 'auth.login', undefined, { req });
 
       const insertPayload = getInsertPayload();
-      expect(insertPayload.ip).toBe('192.168.1.100'); // first IP
+      expect(insertPayload.ip).toBe('10.0.0.1'); // last hop
       expect(insertPayload.userAgent).toBe('Mozilla/5.0');
+    });
+
+    it('prefers x-real-ip over x-forwarded-for', async () => {
+      const req = new Request('http://localhost', {
+        headers: {
+          'x-real-ip': '203.0.113.42',
+          'x-forwarded-for': '192.168.1.100, 10.0.0.1',
+        },
+      });
+
+      await audit('org-1', 'user-1', 'auth.login', undefined, { req });
+
+      const insertPayload = getInsertPayload();
+      expect(insertPayload.ip).toBe('203.0.113.42');
     });
 
     it('extracts IP from x-real-ip when x-forwarded-for absent', async () => {

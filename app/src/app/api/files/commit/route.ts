@@ -5,6 +5,8 @@ import { sql, eq } from 'drizzle-orm';
 import { withOrgContext } from '@/db/client';
 import { dataSources, uploadedFiles } from '@/db/schema';
 import { requireAuth } from '@/lib/auth/request';
+import { checkRateLimit } from '@/lib/rate-limit';
+import { getClientIp } from '@/lib/http/client-ip';
 import { audit } from '@/lib/audit/log';
 import { encryptApiKey } from '@/lib/security/encryption';
 import { takeParsedForCommit } from '@/lib/connectors/parsers/commit-store';
@@ -19,6 +21,18 @@ import {
 import { type InferredColumn } from '@/lib/connectors/parsers/infer-types';
 
 export const dynamic = 'force-dynamic';
+
+/**
+ * Two independent buckets, the same shape as `/api/dashboards/generate`.
+ *
+ * This route had no limit at all, and it is the most expensive write in the
+ * API: it runs DDL (CREATE SCHEMA/TABLE, RLS policies, indexes) and then
+ * bulk-inserts up to 1M rows. The org bucket is the guarantee the threat
+ * model asks for ("rate limit per org"); the IP bucket blunts a single
+ * noisy client.
+ */
+const FILES_COMMIT_PER_ORG = { capacity: 10, refillPerSecond: 10 / 60 };
+const FILES_COMMIT_PER_IP = { capacity: 20, refillPerSecond: 20 / 60 };
 
 const CommitBodySchema = z.object({
   fileId: z.string().uuid(),
@@ -62,6 +76,29 @@ export async function POST(req: Request) {
 
   try {
     const ctx = await requireAuth(req, 'datasource.create');
+    const ip = getClientIp(req);
+
+    const orgLimit = checkRateLimit({
+      ...FILES_COMMIT_PER_ORG,
+      key: `files-commit:org:${ctx.orgId}`,
+    });
+    if (!orgLimit.allowed) {
+      return NextResponse.json(
+        { error: 'rate_limited', scope: 'org', retryAfterSeconds: orgLimit.retryAfterSeconds },
+        { status: 429, headers: { 'Retry-After': String(orgLimit.retryAfterSeconds) } },
+      );
+    }
+
+    const ipLimit = checkRateLimit({
+      ...FILES_COMMIT_PER_IP,
+      key: `files-commit:ip:${ip}`,
+    });
+    if (!ipLimit.allowed) {
+      return NextResponse.json(
+        { error: 'rate_limited', scope: 'ip', retryAfterSeconds: ipLimit.retryAfterSeconds },
+        { status: 429, headers: { 'Retry-After': String(ipLimit.retryAfterSeconds) } },
+      );
+    }
 
     const stored = takeParsedForCommit(body.fileId);
     if (!stored) {

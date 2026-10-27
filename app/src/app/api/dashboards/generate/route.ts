@@ -10,6 +10,7 @@ import { pruneSchemaForPrompt } from '@/lib/connectors/types';
 import { AiGateway } from '@/lib/ai/gateway';
 import { recordLLMUsage, assertOrgCanSpendLlm } from '@/lib/ai/quota';
 import { checkRateLimit } from '@/lib/rate-limit';
+import { getClientIp } from '@/lib/http/client-ip';
 import { audit } from '@/lib/audit/log';
 import { getOrGenerateCorrelationId } from '@/lib/errors/to-user-error';
 import type { ThemeId, Dashboard, Widget } from '@/lib/widgets/types';
@@ -25,10 +26,6 @@ const GenerateBodySchema = z.object({
   dataSourceId: z.string().min(1),
   dashboardId: z.string().uuid().optional(),
 });
-
-function getClientIp(req: Request): string {
-  return req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
-}
 
 export async function POST(req: Request) {
   const correlationId = getOrGenerateCorrelationId(req);

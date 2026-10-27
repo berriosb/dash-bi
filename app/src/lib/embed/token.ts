@@ -127,7 +127,30 @@ export async function verifyEmbedToken(
     }
   }
 
-  // Check allowed origins
+  // Check allowed origins.
+  //
+  // DECISION (security P0, task 6): a MISSING `Origin`/`Referer` does NOT
+  // fail closed, and the API default `allowedOrigins: ['*']` is left alone.
+  //
+  // Failing closed on a missing header would break the embed page for a
+  // NORMAL browser request: a top-level navigation (someone opening the
+  // embed URL directly, or a preview link) sends neither `Origin` nor
+  // `Referer`, so the dashboard would refuse to render for a legitimate
+  // user. Changing the API default to "no origins" would break every embed
+  // whose token was minted without an explicit list — and the tokens
+  // already minted keep their own `allowedOrigins` anyway, so the change
+  // would only create a split between old and new embeds.
+  //
+  // The browser-side enforcement is the CSP `frame-ancestors` header that
+  // the middleware emits for `/embed/*` (`app/src/middleware.ts`): a
+  // browser that frames the page from an origin the token does not allow is
+  // blocked by the browser, whatever the request headers said. This origin
+  // check stays as defense in depth for the data path.
+  //
+  // RESIDUAL GAP, stated explicitly: a request with no `Origin`/`Referer`
+  // (e.g. `curl`, or an embedder that sets `Referrer-Policy: no-referrer`)
+  // passes this check. It can read the rendered dashboard, but it cannot
+  // frame it from a disallowed origin.
   if (requestOrigin && payload.allowedOrigins && payload.allowedOrigins.length > 0) {
     const isWildcard = payload.allowedOrigins.includes('*');
     if (!isWildcard) {

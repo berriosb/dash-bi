@@ -22,7 +22,10 @@ const PERMISSIONS: Record<string, OrgRole[]> = {
   "dashboard.viewAlerts": ["admin", "editor", "viewer"],
 
   "query.execute": ["admin", "editor", "viewer"],
-  "export.pdf": ["admin", "editor", "viewer"],
+  // PDF export runs Puppeteer against a worker whose BullMQ limiter is
+  // GLOBAL: a read-only account that can enqueue a render can starve every
+  // other tenant. Exporting is an editor capability.
+  "export.pdf": ["admin", "editor"],
 
   "audit.read": ["admin"],
 };

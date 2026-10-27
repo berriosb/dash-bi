@@ -10,6 +10,7 @@ import { parseExcel } from '@/lib/connectors/parsers/excel';
 import { inferColumns } from '@/lib/connectors/parsers/infer-types';
 import { safeTableName } from '@/lib/connectors/parsers/normalize';
 import { checkRateLimit } from '@/lib/rate-limit';
+import { getClientIp } from '@/lib/http/client-ip';
 import { logger } from '@/lib/logger';
 import { storeParsedForCommit } from '@/lib/connectors/parsers/commit-store';
 import { detectFormat } from '@/lib/connectors/parsers/detect-format';
@@ -19,6 +20,18 @@ export const runtime = 'nodejs';
 
 const MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024; // 100MB
 const MAX_ROWS = 1_000_000;
+
+/**
+ * Two independent buckets, the same shape as `/api/dashboards/generate`.
+ *
+ * This route used to key ONE bucket on `org:<orgId>:ip:<ip>`, which gave
+ * every member of the org a personal allowance: the effective limit of the
+ * whole org scaled with the number of members behind distinct IPs. The org
+ * bucket is the guarantee the threat model asks for ("rate limit per org"),
+ * and the IP bucket blunts a single noisy client.
+ */
+const FILE_UPLOAD_PER_ORG = { capacity: 5, refillPerSecond: 0.05 }; // 1 upload per 20s
+const FILE_UPLOAD_PER_IP = { capacity: 5, refillPerSecond: 0.05 }; // 1 upload per 20s
 
 interface InMemoryUpload {
   filename: string;
@@ -87,17 +100,27 @@ async function readMultipart(req: Request): Promise<InMemoryUpload> {
 export async function POST(req: Request) {
   try {
     const ctx = await requireAuth(req, 'datasource.create');
-    const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
+    const ip = getClientIp(req);
 
-    const limit = checkRateLimit({
-      capacity: 5,
-      refillPerSecond: 0.05, // 1 upload per 20s
-      key: `file-upload:org:${ctx.orgId}:ip:${ip}`,
+    const orgLimit = checkRateLimit({
+      ...FILE_UPLOAD_PER_ORG,
+      key: `file-upload:org:${ctx.orgId}`,
     });
-    if (!limit.allowed) {
+    if (!orgLimit.allowed) {
       return NextResponse.json(
-        { error: 'rate_limited', retryAfterSeconds: limit.retryAfterSeconds },
-        { status: 429, headers: { 'Retry-After': String(limit.retryAfterSeconds) } },
+        { error: 'rate_limited', scope: 'org', retryAfterSeconds: orgLimit.retryAfterSeconds },
+        { status: 429, headers: { 'Retry-After': String(orgLimit.retryAfterSeconds) } },
+      );
+    }
+
+    const ipLimit = checkRateLimit({
+      ...FILE_UPLOAD_PER_IP,
+      key: `file-upload:ip:${ip}`,
+    });
+    if (!ipLimit.allowed) {
+      return NextResponse.json(
+        { error: 'rate_limited', scope: 'ip', retryAfterSeconds: ipLimit.retryAfterSeconds },
+        { status: 429, headers: { 'Retry-After': String(ipLimit.retryAfterSeconds) } },
       );
     }
 

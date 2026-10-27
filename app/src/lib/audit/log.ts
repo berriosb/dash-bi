@@ -1,6 +1,7 @@
 import { withOrgContext } from '@/db/client';
 import { auditLog } from '@/db/schema';
 import { logger } from '@/lib/logger';
+import { getClientIp } from '@/lib/http/client-ip';
 import { redactSecrets } from '@/lib/redact';
 import {
   assertSafeMetadata,
@@ -47,25 +48,16 @@ export interface AuditOptions {
   metadata?: Record<string, unknown>;
 }
 
-/**
- * Request-like minimal interface (compatible con Next.js Request y
- * Fetch API Request, sin acoplar al tipo).
- */
-type RequestLike = {
-  headers: {
-    get(name: string): string | null;
-  };
-};
-
-function extractRequestMetadata(req: RequestLike | undefined): {
+function extractRequestMetadata(req: Request | undefined): {
   ip?: string;
   userAgent?: string;
 } {
   if (!req) return {};
   return {
-    ip: req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
-      ?? req.headers.get('x-real-ip')
-      ?? undefined,
+    // The resolved client IP, not the first hop of `x-forwarded-for`: that
+    // hop is the caller-controlled one, and recording it let a caller forge
+    // the address stored in `audit_log.ip`. See `@/lib/http/client-ip`.
+    ip: getClientIp(req),
     userAgent: req.headers.get('user-agent') ?? undefined,
   };
 }

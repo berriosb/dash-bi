@@ -2,16 +2,53 @@ import { NextResponse } from 'next/server';
 import { errorResponse } from '@/lib/errors/response';
 import { requireAuth } from '@/lib/auth/request';
 import { enqueuePdfExport, getPdfJobStatus } from '@/lib/export/pdf-enqueue';
+import { checkRateLimit } from '@/lib/rate-limit';
+import { getClientIp } from '@/lib/http/client-ip';
 import { audit } from '@/lib/audit/log';
 import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
+
+/**
+ * Two independent buckets, the same shape as `/api/dashboards/generate`.
+ *
+ * This route had no limit at all: every authenticated member could enqueue
+ * Puppeteer renders without bound, and the PDF worker's BullMQ limiter is
+ * GLOBAL, so one tenant could starve every other tenant. The org bucket is
+ * the guarantee the threat model asks for ("rate limit per org"); the IP
+ * bucket blunts a single noisy client.
+ */
+const PDF_EXPORT_PER_ORG = { capacity: 10, refillPerSecond: 10 / 60 };
+const PDF_EXPORT_PER_IP = { capacity: 20, refillPerSecond: 20 / 60 };
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id: dashboardId } = await params;
 
   try {
     const ctx = await requireAuth(req, 'export.pdf');
+    const ip = getClientIp(req);
+
+    const orgLimit = checkRateLimit({
+      ...PDF_EXPORT_PER_ORG,
+      key: `pdf-export:org:${ctx.orgId}`,
+    });
+    if (!orgLimit.allowed) {
+      return NextResponse.json(
+        { error: 'rate_limited', scope: 'org', retryAfterSeconds: orgLimit.retryAfterSeconds },
+        { status: 429, headers: { 'Retry-After': String(orgLimit.retryAfterSeconds) } },
+      );
+    }
+
+    const ipLimit = checkRateLimit({
+      ...PDF_EXPORT_PER_IP,
+      key: `pdf-export:ip:${ip}`,
+    });
+    if (!ipLimit.allowed) {
+      return NextResponse.json(
+        { error: 'rate_limited', scope: 'ip', retryAfterSeconds: ipLimit.retryAfterSeconds },
+        { status: 429, headers: { 'Retry-After': String(ipLimit.retryAfterSeconds) } },
+      );
+    }
 
     const body = await req.json().catch(() => ({}));
     const pageSize = body.pageSize === 'A4' ? 'A4' : 'Letter';

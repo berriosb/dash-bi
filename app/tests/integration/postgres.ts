@@ -102,9 +102,10 @@ async function applyMigrations(db: TestDb): Promise<void> {
   `);
   await db.execute(sql`GRANT USAGE ON SCHEMA public TO dashbi_readonly`);
   await db.execute(sql`GRANT SELECT ON ALL TABLES IN SCHEMA public TO dashbi_readonly`);
-  await db.execute(
-    sql`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO dashbi_readonly`,
-  );
+  // No DEFAULT PRIVILEGE for the read-only role: migrations 0017 and 0019
+  // revoke its access to every internal table, and a default privilege would
+  // hand the next internal table to the role that runs user-authored SQL.
+  // The per-org upload tables get their grant in buildReadOnlyGrantsSQL.
 
   // Create a non-superuser that the test runs as to exercise FORCE RLS.
   // The default `test` user created by Testcontainers is a superuser, which

@@ -134,6 +134,13 @@
       "when": 1791993600000,
       "tag": "0018_readonly_grants_for_org_schemas",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1791997200000,
+      "tag": "0019_readonly_revoke_internal_tables",
+      "breakpoints": true
     }
   ]
 }

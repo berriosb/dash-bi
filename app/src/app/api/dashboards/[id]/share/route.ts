@@ -5,6 +5,8 @@ import { withOrgContext } from '@/db/client';
 import { dashboards, publicLinks } from '@/db/schema';
 import { requireAuth } from '@/lib/auth/request';
 import { generatePublicToken } from '@/lib/sharing/token';
+import { checkRateLimit } from '@/lib/rate-limit';
+import { getClientIp } from '@/lib/http/client-ip';
 import { audit } from '@/lib/audit/log';
 import { AppErrorException } from '@/lib/errors/types';
 
@@ -12,6 +14,18 @@ export const dynamic = 'force-dynamic';
 
 const DEFAULT_EXPIRY_DAYS = 30;
 const MAX_EXPIRY_DAYS = 365;
+
+/**
+ * Two independent buckets, the same shape as `/api/dashboards/generate`.
+ *
+ * This route had no limit at all, and it mints a bearer token that grants
+ * anonymous read access to a dashboard for up to a year. Minting them
+ * without bound is how a link farm gets built out of one account. The org
+ * bucket is the guarantee the threat model asks for ("rate limit per org");
+ * the IP bucket blunts a single noisy client.
+ */
+const DASHBOARD_SHARE_PER_ORG = { capacity: 20, refillPerSecond: 20 / 3600 };
+const DASHBOARD_SHARE_PER_IP = { capacity: 50, refillPerSecond: 50 / 3600 };
 
 function sanitizeExpiresInDays(value: unknown): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) return DEFAULT_EXPIRY_DAYS;
@@ -29,6 +43,29 @@ export async function POST(
 
   try {
     const ctx = await requireAuth(req, 'dashboard.sharePublic');
+    const ip = getClientIp(req);
+
+    const orgLimit = checkRateLimit({
+      ...DASHBOARD_SHARE_PER_ORG,
+      key: `dashboard-share:org:${ctx.orgId}`,
+    });
+    if (!orgLimit.allowed) {
+      return NextResponse.json(
+        { error: 'rate_limited', scope: 'org', retryAfterSeconds: orgLimit.retryAfterSeconds },
+        { status: 429, headers: { 'Retry-After': String(orgLimit.retryAfterSeconds) } },
+      );
+    }
+
+    const ipLimit = checkRateLimit({
+      ...DASHBOARD_SHARE_PER_IP,
+      key: `dashboard-share:ip:${ip}`,
+    });
+    if (!ipLimit.allowed) {
+      return NextResponse.json(
+        { error: 'rate_limited', scope: 'ip', retryAfterSeconds: ipLimit.retryAfterSeconds },
+        { status: 429, headers: { 'Retry-After': String(ipLimit.retryAfterSeconds) } },
+      );
+    }
 
     const body = await req.json().catch(() => ({}));
     const expiresInDays = sanitizeExpiresInDays(body.expiresInDays);

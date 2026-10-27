@@ -5,6 +5,8 @@ import { z } from 'zod';
 import { withOrgContext } from '@/db/client';
 import { orgMembers, users } from '@/db/schema';
 import { requireAuth } from '@/lib/auth/request';
+import { checkRateLimit } from '@/lib/rate-limit';
+import { getClientIp } from '@/lib/http/client-ip';
 import { audit } from '@/lib/audit/log';
 import {
   getOrGenerateCorrelationId,
@@ -16,6 +18,18 @@ const InviteMemberSchema = z.object({
   email: z.string().email('Email inválido'),
   role: z.enum(['admin', 'editor', 'viewer']),
 });
+
+/**
+ * Two independent buckets, the same shape as `/api/dashboards/generate`.
+ *
+ * This route had no limit at all, and it creates a user row plus a
+ * membership for an arbitrary email, so it is an account-creation
+ * amplifier: one caller could mint users at the speed of the network. The
+ * org bucket is the guarantee the threat model asks for ("rate limit per
+ * org"); the IP bucket blunts a single noisy client.
+ */
+const ORG_INVITE_PER_ORG = { capacity: 30, refillPerSecond: 30 / 3600 };
+const ORG_INVITE_PER_IP = { capacity: 50, refillPerSecond: 50 / 3600 };
 
 export async function GET(req: Request) {
   try {
@@ -60,6 +74,30 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const ctx = await requireAuth(req, 'org.invite');
+    const ip = getClientIp(req);
+
+    const orgLimit = checkRateLimit({
+      ...ORG_INVITE_PER_ORG,
+      key: `org-invite:org:${ctx.orgId}`,
+    });
+    if (!orgLimit.allowed) {
+      return NextResponse.json(
+        { error: 'rate_limited', scope: 'org', retryAfterSeconds: orgLimit.retryAfterSeconds },
+        { status: 429, headers: { 'Retry-After': String(orgLimit.retryAfterSeconds) } },
+      );
+    }
+
+    const ipLimit = checkRateLimit({
+      ...ORG_INVITE_PER_IP,
+      key: `org-invite:ip:${ip}`,
+    });
+    if (!ipLimit.allowed) {
+      return NextResponse.json(
+        { error: 'rate_limited', scope: 'ip', retryAfterSeconds: ipLimit.retryAfterSeconds },
+        { status: 429, headers: { 'Retry-After': String(ipLimit.retryAfterSeconds) } },
+      );
+    }
+
     const rawBody = await req.json().catch(() => ({}));
     const parseResult = InviteMemberSchema.safeParse(rawBody);
 

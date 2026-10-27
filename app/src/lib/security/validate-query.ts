@@ -14,9 +14,16 @@ export type { ConnectorType };
 /**
  * DML/DDL keywords. Shared by every SQL-backed connector so a new connector
  * cannot ship with a weaker list than the one before it.
+ *
+ * `INTO` is here because `SELECT * INTO evil FROM orders` is CTAS: it
+ * creates a table, i.e. DDL, in the customer's database, and the threat
+ * model claims DML/DDL is blocked. `COPY` and `PROGRAM` are here because
+ * `COPY orders TO PROGRAM '...'` is command execution on MySQL, and
+ * `COPY` is DDL-ish on Postgres.
  */
 const DML_DDL_KEYWORDS = [
   'INSERT', 'UPDATE', 'DELETE', 'DROP', 'TRUNCATE', 'ALTER', 'CREATE', 'GRANT', 'REVOKE',
+  'INTO', 'COPY', 'PROGRAM',
 ] as const;
 
 /**
@@ -48,12 +55,41 @@ const DANGEROUS_DB_FUNCTIONS = [
   // Network egress from the DB
   'dblink', 'dblink_connect', 'dblink_send_query',
   'pg_connect_backend', 'pg_forward_wal', 'lo_create', 'lo_unlink',
+  // Session control: kill another backend (DoS against the DB)
+  'pg_terminate_backend', 'pg_cancel_backend',
+  // Tenant context GUCs: every tenant-scoped RLS policy reads the org
+  // through `app_current_org_id()`, which reads the `app.current_org_id`
+  // GUC. `set_config` can re-point that GUC mid-statement — or set `role`
+  // on the customer's own database — and `current_setting` reads it back.
+  'set_config', 'current_setting',
   // Internal SECURITY DEFINER helpers (cross-tenant system functions)
   'dashbi_due_alert_rules', 'dashbi_count_enabled_alert_rules',
   'dashbi_load_alert_rule', 'dashbi_resolve_public_link',
   'dashbi_user_belongs_to_org', 'dashbi_slug_is_taken',
   'dashbi_due_scheduled_reports',
 ] as const;
+
+/**
+ * Accepted false positives of the blocklist, all of them on the fail-closed
+ * side. The list is matched as WORDS (`\b`), so a snake_case column that
+ * merely CONTAINS a blocked word is not a blocked word: `into_count` and
+ * `copy_count` pass. What IS over-blocked:
+ *
+ *  - a column literally named `copy` (or `program`, or `into`);
+ *  - a string literal containing the word `into` — e.g.
+ *    `SELECT 'copied into the archive' AS note`;
+ *  - a legitimate `current_setting('search_path')` on the customer's own
+ *    database.
+ *
+ * That trade is deliberate: a false NEGATIVE here re-opens a tenant
+ * isolation hole (a `set_config` call re-points the `app.current_org_id`
+ * GUC that every RLS policy reads through `app_current_org_id()`), while a
+ * false positive costs one query that has to be rephrased. A comment and
+ * string-literal stripper would narrow the list, but it is deliberately
+ * NOT used: mishandling a literal there is a fail-open hole, which is
+ * strictly worse than an over-block — the same reasoning that keeps
+ * `SELECT *` and `password_reset_required_at` rejected below.
+ */
 
 /**
  * Build the forbidden-statement pattern for a SQL-backed connector.
@@ -73,6 +109,38 @@ function buildForbiddenPattern(extraKeywords: readonly string[] = []): RegExp {
     .join('|');
 
   return new RegExp(`\\b(${alternatives})\\b`, 'i');
+}
+
+/**
+ * The shared SQL guard. EVERY SQL-backed connector runs exactly these three
+ * checks, in this order, against the SAME blocklist.
+ *
+ * The checks used to be re-implemented per branch, and they drifted: the
+ * shopify branch only verified the leading keyword, so a blocked token
+ * walked straight through it. One helper, one blocklist — a new connector
+ * now gets the whole protection by calling this instead of re-listing the
+ * rules.
+ */
+function assertSafeSqlStatement(sql: string, extraKeywords: readonly string[] = []): void {
+  const upper = sql.toUpperCase();
+
+  // Solo lectura
+  if (!/^(SELECT|WITH|EXPLAIN)/.test(upper)) {
+    throw new ValidationError('Only SELECT queries allowed');
+  }
+
+  // Prohibir stacked queries (separados por ;)
+  // Permitir ; al final, pero nada después
+  const semicolons = sql.split(';').filter((s) => s.trim().length > 0);
+  if (semicolons.length > 1) {
+    throw new ValidationError('Multi-statement queries not allowed');
+  }
+
+  // Prohibir DML/DDL y funciones potencialmente peligrosas (SLEEP, BENCHMARK, etc.)
+  const forbidden = buildForbiddenPattern(extraKeywords);
+  if (forbidden.test(sql)) {
+    throw new ValidationError('DML/DDL or forbidden function statements not allowed');
+  }
 }
 
 function stripParenthesizedSubqueries(sql: string): string {
@@ -143,25 +211,8 @@ export function validateQuery(
     }
 
     const sql = query.sql.trim();
-    const upper = sql.toUpperCase();
 
-    // Solo lectura
-    if (!/^(SELECT|WITH|EXPLAIN)/.test(upper)) {
-      throw new ValidationError('Only SELECT queries allowed');
-    }
-
-    // Prohibir stacked queries (separados por ;)
-    // Permitir ; al final, pero nada después
-    const semicolons = sql.split(';').filter((s) => s.trim().length > 0);
-    if (semicolons.length > 1) {
-      throw new ValidationError('Multi-statement queries not allowed');
-    }
-
-    // Prohibir DML/DDL y funciones potencialmente peligrosas (SLEEP, BENCHMARK, etc.)
-    const forbidden = buildForbiddenPattern();
-    if (forbidden.test(sql)) {
-      throw new ValidationError('DML/DDL or forbidden function statements not allowed');
-    }
+    assertSafeSqlStatement(sql);
 
     // Role-based filter: viewer no puede acceder a columnas PII (Sprint 1 v0.2)
     if (role) {
@@ -193,11 +244,11 @@ export function validateQuery(
 
   if (dataSourceType === 'shopify') {
     if (query.kind === 'sql') {
+      // Same shared guard as every other SQL-backed connector: the shopify
+      // branch used to check only the leading keyword, so the blocklist
+      // could drift away from the other connectors.
       const sql = query.sql.trim();
-      const upper = sql.toUpperCase();
-      if (!/^(SELECT|WITH|EXPLAIN)/.test(upper)) {
-        throw new ValidationError('Only SELECT queries allowed');
-      }
+      assertSafeSqlStatement(sql);
       if (role) {
         assertRolePermissions(sql, role);
       }
@@ -215,18 +266,7 @@ export function validateQuery(
       throw new ValidationError('Hubspot expects a SQL query');
     }
     const sql = query.sql.trim();
-    const upper = sql.toUpperCase();
-    if (!/^(SELECT|WITH|EXPLAIN)/.test(upper)) {
-      throw new ValidationError('Only SELECT queries allowed');
-    }
-    const semicolons = sql.split(';').filter((s) => s.trim().length > 0);
-    if (semicolons.length > 1) {
-      throw new ValidationError('Multi-statement queries not allowed');
-    }
-    const forbidden = buildForbiddenPattern();
-    if (forbidden.test(sql)) {
-      throw new ValidationError('DML/DDL statements not allowed');
-    }
+    assertSafeSqlStatement(sql);
     if (role) assertRolePermissions(sql, role);
     return normalizeSqlLimit(sql);
   }
@@ -250,18 +290,7 @@ export function validateQuery(
       throw new ValidationError('Snowflake expects a SQL query');
     }
     const sql = query.sql.trim();
-    const upper = sql.toUpperCase();
-    if (!/^(SELECT|WITH|EXPLAIN)/.test(upper)) {
-      throw new ValidationError('Only SELECT queries allowed');
-    }
-    const semicolons = sql.split(';').filter((s) => s.trim().length > 0);
-    if (semicolons.length > 1) {
-      throw new ValidationError('Multi-statement queries not allowed');
-    }
-    const forbidden = buildForbiddenPattern(['MERGE']);
-    if (forbidden.test(sql)) {
-      throw new ValidationError('DML/DDL statements not allowed');
-    }
+    assertSafeSqlStatement(sql, ['MERGE']);
     if (role) assertRolePermissions(sql, role);
     return normalizeSqlLimit(sql);
   }
@@ -273,18 +302,7 @@ export function validateQuery(
     // Validate the embedded SQL the same way as postgres: SELECT-only,
     // single statement, no DML/DDL, optional role-based PII filter.
     const sql = query.sql.trim();
-    const upper = sql.toUpperCase();
-    if (!/^(SELECT|WITH|EXPLAIN)/.test(upper)) {
-      throw new ValidationError('Only SELECT queries allowed');
-    }
-    const semicolons = sql.split(';').filter((s) => s.trim().length > 0);
-    if (semicolons.length > 1) {
-      throw new ValidationError('Multi-statement queries not allowed');
-    }
-    const forbidden = buildForbiddenPattern();
-    if (forbidden.test(sql)) {
-      throw new ValidationError('DML/DDL statements not allowed');
-    }
+    assertSafeSqlStatement(sql);
     if (role) assertRolePermissions(sql, role);
     return normalizeSqlLimit(sql);
   }

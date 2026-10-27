@@ -12,7 +12,9 @@ import { recordLLMUsage, assertOrgCanSpendLlm } from '@/lib/ai/quota';
 import { validateQuery, ValidationError } from '@/lib/security/validate-query';
 import { audit } from '@/lib/audit/log';
 import { checkRateLimit } from '@/lib/rate-limit';
+import { getClientIp } from '@/lib/http/client-ip';
 import { logger } from '@/lib/logger';
+import { redactError } from '@/lib/redact';
 import type { ConnectorType } from '@/lib/connectors/types';
 
 export const dynamic = 'force-dynamic';
@@ -25,20 +27,42 @@ const AskBodySchema = z.object({
 
 const MAX_HISTORY_TURNS = 6;
 
+/**
+ * Two independent buckets, the same shape as `/api/dashboards/generate`.
+ *
+ * This route used to key ONE bucket on `org:<orgId>:ip:<ip>`, which gave
+ * every member of the org a personal allowance: the effective limit of the
+ * whole org scaled with the number of members behind distinct IPs. The org
+ * bucket is the guarantee the threat model asks for ("rate limit per org"),
+ * and the IP bucket blunts a single noisy client.
+ */
+const NLQA_ASK_PER_ORG = { capacity: 30, refillPerSecond: 0.5 };
+const NLQA_ASK_PER_IP = { capacity: 30, refillPerSecond: 0.5 };
+
 export async function POST(req: Request) {
   try {
     const ctx = await requireAuth(req, 'query.execute');
-    const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
+    const ip = getClientIp(req);
 
-    const nlqaLimit = checkRateLimit({
-      capacity: 30,
-      refillPerSecond: 0.5,
-      key: `nlqa-ask:org:${ctx.orgId}:ip:${ip}`,
+    const orgLimit = checkRateLimit({
+      ...NLQA_ASK_PER_ORG,
+      key: `nlqa-ask:org:${ctx.orgId}`,
     });
-    if (!nlqaLimit.allowed) {
+    if (!orgLimit.allowed) {
       return NextResponse.json(
-        { error: 'rate_limited', retryAfterSeconds: nlqaLimit.retryAfterSeconds },
-        { status: 429, headers: { 'Retry-After': String(nlqaLimit.retryAfterSeconds) } },
+        { error: 'rate_limited', scope: 'org', retryAfterSeconds: orgLimit.retryAfterSeconds },
+        { status: 429, headers: { 'Retry-After': String(orgLimit.retryAfterSeconds) } },
+      );
+    }
+
+    const ipLimit = checkRateLimit({
+      ...NLQA_ASK_PER_IP,
+      key: `nlqa-ask:ip:${ip}`,
+    });
+    if (!ipLimit.allowed) {
+      return NextResponse.json(
+        { error: 'rate_limited', scope: 'ip', retryAfterSeconds: ipLimit.retryAfterSeconds },
+        { status: 429, headers: { 'Retry-After': String(ipLimit.retryAfterSeconds) } },
       );
     }
 
@@ -243,7 +267,23 @@ export async function POST(req: Request) {
         const message = 'La IA generó una query inválida. Reformulá tu pregunta.';
         return NextResponse.json({ error: 'sql_validation_failed', message }, { status: 422 });
       }
-      const message = execErr instanceof Error ? execErr.message : 'Error ejecutando la query';
+      // The execution failure is a driver-level error: host, port, database
+      // role, auth detail. It used to be returned verbatim, so the client
+      // could read the infrastructure of the customer's own database. The
+      // reason stays in the log; the client gets a fixed message.
+      const detail = redactError(execErr);
+      logger.error(
+        {
+          dataSourceId,
+          orgId: ctx.orgId,
+          userId: ctx.userId,
+          role: ctx.role,
+          error: detail,
+        },
+        'NLQA query execution failed',
+      );
+      const message =
+        'No pudimos ejecutar la consulta sobre la fuente de datos. Probá de nuevo o contactá soporte.';
       return NextResponse.json({ error: 'query_execution_failed', message }, { status: 500 });
     }
     const execMs = Date.now() - execStart;

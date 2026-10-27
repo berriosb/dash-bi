@@ -1,5 +1,21 @@
 // T3 del threat model: validar host del Postgres al configurar data source
 // Bloquea: localhost, 127.0.0.1, AWS/GCP metadata endpoints, RFC1918 private IPs
+//
+// The `host` field is free text (`z.string().min(1).max(253)`), so it can
+// carry a URL, a port, a `user:pass@` prefix, IPv6 brackets, a trailing dot
+// or an alternate `inet_aton` encoding. Every one of those used to slip past
+// the raw-string comparison and reach a socket, so the comparison is now
+// done on a canonical form of the host, never on the raw string.
+//
+// Scope note: this is a *string-level* control. It does NOT defeat DNS
+// rebinding, where a hostname resolves to a public IP during validation and
+// to a private one at connect time. Closing that requires pinning the
+// resolved address at connect time (a custom lookup in the connection
+// agent), tracked separately.
+
+// ─────────────────────────────────────────────────────────────────
+// Shared host blocklists and normalizers (T3/T6)
+// ─────────────────────────────────────────────────────────────────
 
 const FORBIDDEN_HOSTS = new Set([
   'localhost',
@@ -10,61 +26,6 @@ const FORBIDDEN_HOSTS = new Set([
   'metadata.google.internal',      // GCP metadata
   'metadata.azure.com',            // Azure metadata
 ]);
-
-const PRIVATE_IP_PATTERNS: RegExp[] = [
-  /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/,             // 10.0.0.0/8
-  /^172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}$/, // 172.16.0.0/12
-  /^192\.168\.\d{1,3}\.\d{1,3}$/,                // 192.168.0.0/16
-  /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/,            // 127.0.0.0/8 (loopback)
-  /^169\.254\.\d{1,3}\.\d{1,3}$/,                // 169.254.0.0/16 (link-local)
-];
-
-export class SSRFError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'SSRFError';
-  }
-}
-
-export function validatePostgresHost(host: string): void {
-  if (!host) {
-    throw new SSRFError('Host is required');
-  }
-
-  const normalized = host.trim().toLowerCase();
-
-  // Check forbidden exact matches
-  if (FORBIDDEN_HOSTS.has(normalized)) {
-    throw new SSRFError(`Host '${host}' is not allowed`);
-  }
-
-  // Check private IP ranges
-  for (const pattern of PRIVATE_IP_PATTERNS) {
-    if (pattern.test(normalized)) {
-      throw new SSRFError(`Host '${host}' is in a private IP range (not allowed)`);
-    }
-  }
-
-  // Allow public hostnames (DNS will resolve at connect time)
-}
-
-// ─────────────────────────────────────────────────────────────────
-// Outbound HTTP validation (T3/T6)
-//
-// `validatePostgresHost` guards DB connections. User-supplied HTTP
-// targets (alert webhooks, embed/share callbacks) need the same
-// guarantees, plus normalization the DB path never needed: URLs carry a
-// port, an optional IPv6 bracket form, and may use the alternate
-// inet_aton encodings that glibc's resolver happily accepts.
-//
-// Scope note: this is a *string-level* control. It does not defeat DNS
-// rebinding, where a hostname resolves to a public IP during validation
-// and to a private one at connect time. Closing that requires pinning the
-// resolved address at connect time (custom lookup in the HTTP agent),
-// tracked separately.
-// ─────────────────────────────────────────────────────────────────
-
-const ALLOWED_PROTOCOLS = new Set(['http:', 'https:']);
 
 /**
  * Hostnames that mean "this machine" or "this cloud account" regardless
@@ -83,12 +44,39 @@ const BLOCKED_HOSTNAMES = new Set([
   'metadata.azure.com',
 ]);
 
-export class OutboundUrlError extends SSRFError {
-  constructor(message: string) {
-    super(message);
-    this.name = 'OutboundUrlError';
-  }
-}
+const PRIVATE_IP_PATTERNS: RegExp[] = [
+  /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/,             // 10.0.0.0/8
+  /^172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}$/, // 172.16.0.0/12
+  /^192\.168\.\d{1,3}\.\d{1,3}$/,                // 192.168.0.0/16
+  /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/,            // 127.0.0.0/8 (loopback)
+  /^169\.254\.\d{1,3}\.\d{1,3}\.\d{1,3}$/,        // 169.254.0.0/16 (link-local)
+];
+
+/**
+ * Service names of the databases and caches that run next to the app.
+ * They are reachable through the container network even though no public
+ * address points at them.
+ */
+const INTERNAL_SERVICE_NAMES = new Set([
+  'postgres',
+  'postgresql',
+  'mysql',
+  'mariadb',
+  'redis',
+  'mongodb',
+  'memcached',
+  'rabbitmq',
+  'kafka',
+  'elasticsearch',
+  'minio',
+  'db',
+  'database',
+]);
+
+/**
+ * Suffixes reserved for names that only resolve inside a private network.
+ */
+const INTERNAL_HOST_SUFFIXES = ['.internal', '.local', '.localhost', '.localdomain'];
 
 /**
  * Parse a host into a canonical dotted-quad IPv4 string, or null when it
@@ -131,10 +119,12 @@ function parseIpv4Literal(host: string): string | null {
   const last = numbers[lastIndex];
   if (last === undefined || last >= 256 ** (4 - lastIndex)) return null;
 
-  // Left-align into a full 32-bit address.
+  // Left-align into a full 32-bit address: every group but the last one
+  // is a single octet, and the last one covers the remaining low-order
+  // bytes ("127.1" → 127.0.0.1, not 127.0.1.0).
   let address = 0;
   for (const [index, value] of numbers.entries()) {
-    const shift = 8 * (3 - index);
+    const shift = index === lastIndex ? 0 : 8 * (3 - index);
     address += value * 2 ** shift;
   }
 
@@ -170,6 +160,148 @@ function isPrivateIpv6(host: string): boolean {
     if (literal && isPrivateIpv4(literal)) return true;
   }
   return false;
+}
+
+/**
+ * Canonicalize a user-supplied host into the form the socket would use.
+ *
+ * Everything that can hide the real target is removed here: the URL
+ * wrapper, the `user:pass@` userinfo, the path, the trailing slash, the
+ * IPv6 brackets, the port and the trailing dot of a fully qualified name.
+ */
+function normalizeHostInput(raw: string): string {
+  let value = raw.trim().toLowerCase();
+  if (!value) return value;
+
+  // URL form ("postgres://user:pass@host:5432/db") — the URL parser
+  // already drops the userinfo, the port and the path.
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) {
+    try {
+      value = new URL(value).hostname.toLowerCase();
+    } catch {
+      // Not a parseable URL: keep the raw value and normalize it below.
+    }
+  }
+
+  // userinfo prefix ("user:pass@host")
+  const at = value.lastIndexOf('@');
+  if (at !== -1) value = value.slice(at + 1);
+
+  // path and trailing slash ("host/db", "host/")
+  const slash = value.indexOf('/');
+  if (slash !== -1) value = value.slice(0, slash);
+
+  // Trailing dot of a fully qualified name ("localhost." → "localhost").
+  if (value.endsWith('.')) value = value.slice(0, -1);
+
+  // IPv6 brackets ("[::1]", "[::1]:5432")
+  if (value.startsWith('[')) {
+    const close = value.indexOf(']');
+    return close !== -1 ? value.slice(1, close) : value;
+  }
+
+  // Port suffix ("host:5432"). A bare IPv6 address holds several colons,
+  // so the port is only stripped when there is exactly one — otherwise
+  // "::1" would become ":" and "2001:db8::1" would lose its tail.
+  const colon = value.lastIndexOf(':');
+  if (colon !== -1 && colon === value.indexOf(':') && /^\d+$/.test(value.slice(colon + 1))) {
+    value = value.slice(0, colon);
+  }
+
+  return value;
+}
+
+/**
+ * Internal service name — either a known container name or a name under
+ * a suffix that only resolves inside a private network.
+ */
+function isInternalServiceName(host: string): boolean {
+  if (INTERNAL_SERVICE_NAMES.has(host)) return true;
+  return INTERNAL_HOST_SUFFIXES.some((suffix) => host.endsWith(suffix));
+}
+
+export class SSRFError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SSRFError';
+  }
+}
+
+export function validatePostgresHost(host: string): void {
+  if (!host) {
+    throw new SSRFError('Host is required');
+  }
+
+  // Canonical form of the host, and the address the socket would reach.
+  const normalized = normalizeHostInput(host);
+  if (!normalized) {
+    throw new SSRFError(`Host '${host}' is not allowed`);
+  }
+
+  const literal = parseIpv4Literal(normalized);
+  const effective = literal ?? normalized;
+
+  // Check forbidden exact matches
+  if (
+    FORBIDDEN_HOSTS.has(normalized) ||
+    FORBIDDEN_HOSTS.has(effective) ||
+    BLOCKED_HOSTNAMES.has(normalized) ||
+    BLOCKED_HOSTNAMES.has(effective)
+  ) {
+    throw new SSRFError(`Host '${host}' is not allowed`);
+  }
+
+  // Check private IP ranges
+  if (isPrivateIpv4(effective)) {
+    throw new SSRFError(`Host '${host}' is in a private IP range (not allowed)`);
+  }
+  for (const pattern of PRIVATE_IP_PATTERNS) {
+    if (pattern.test(normalized) || pattern.test(effective)) {
+      throw new SSRFError(`Host '${host}' is in a private IP range (not allowed)`);
+    }
+  }
+  if (isPrivateIpv6(normalized) || isPrivateIpv6(effective)) {
+    throw new SSRFError(`Host '${host}' is in a private IP range (not allowed)`);
+  }
+
+  // Check internal service names reachable through the container network
+  if (isInternalServiceName(normalized) || isInternalServiceName(effective)) {
+    throw new SSRFError(`Host '${host}' is an internal service name (not allowed)`);
+  }
+
+  // Allow public hostnames (DNS will resolve at connect time).
+  //
+  // A single-label hostname is NOT rejected by default: this validator is
+  // also called with a Snowflake account identifier, which is legitimately
+  // a label with no dot ("myaccount", "org-account"). The trade-off is
+  // that an internal service name that is not on the list above still
+  // passes — hence the explicit list and the `.internal` / `.local`
+  // suffixes instead of a blanket "no dots" rule.
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Outbound HTTP validation (T3/T6)
+//
+// `validatePostgresHost` guards DB connections. User-supplied HTTP
+// targets (alert webhooks, embed/share callbacks) need the same
+// guarantees, and the URL parser normalizes what the DB path has to
+// normalize by hand: it resolves the alternate `inet_aton` encodings that
+// glibc's resolver happily accepts and keeps IPv6 in its bracket form.
+//
+// Scope note: this is a *string-level* control. It does not defeat DNS
+// rebinding, where a hostname resolves to a public IP during validation
+// and to a private one at connect time. Closing that requires pinning the
+// resolved address at connect time (custom lookup in the HTTP agent),
+// tracked separately.
+// ─────────────────────────────────────────────────────────────────
+
+const ALLOWED_PROTOCOLS = new Set(['http:', 'https:']);
+
+export class OutboundUrlError extends SSRFError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'OutboundUrlError';
+  }
 }
 
 export interface ValidateOutboundUrlOptions {

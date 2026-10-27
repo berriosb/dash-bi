@@ -623,35 +623,118 @@ docker compose exec -T postgres psql -U $POSTGRES_USER -d $POSTGRES_DB -c "DROP 
 
 ### 8.1 Nginx config (production)
 
+> Este bloque es **el mismo archivo que shippea**: `deploy/nginx/dash-bi.conf`. No lo
+> reescribas a mano: copialo de ahí, reemplazá `__YOUR_DOMAIN__` por tu dominio y recargá nginx.
+>
+> ```bash
+> sudo cp deploy/nginx/dash-bi.conf /etc/nginx/sites-available/dash-bi
+> sudo ln -s /etc/nginx/sites-available/dash-bi /etc/nginx/sites-enabled/
+> sudo sed -i 's/__YOUR_DOMAIN__/<tu-dominio-real>/g' /etc/nginx/sites-available/dash-bi
+> sudo nginx -t && sudo systemctl reload nginx
+> ```
+>
+> Lo que cambió respecto de la versión anterior de este documento:
+>
+> - **`/embed/` tiene su propio `location`.** Es la única ruta que se puede framear desde otro
+>   origen, y solo desde los orígenes que autoriza el token. El `frame-ancestors` lo emite la
+>   app **por token** (`app/src/middleware.ts`); nginx no puede mandar un `frame-ancestors`
+>   global ni un `X-Frame-Options` en ese bloque, porque el navegador aplica **todas** las
+>   políticas CSP que recibe y un `frame-ancestors 'none'` de nginx bloquearía también los
+>   embeds legítimos.
+> - **El worker de PDF (`:3001`) ya no se proxya.** Es alcanzable solo desde el contenedor de la
+>   app por la red interna de Docker; nginx nunca debe hacer `proxy_pass` a él.
+> - **Ojo con `add_header`:** en nginx las directivas `add_header` **no se heredan** si el bloque
+>   define las suyas, por eso el bloque `/embed/` repite todas las cabeceras de seguridad.
+
 ```nginx
-# /etc/nginx/sites-available/dashbi
+# deploy/nginx/dash-bi.conf — drop-in de staging.
+#
+# Install:
+#   sudo cp deploy/nginx/dash-bi.conf /etc/nginx/sites-available/dash-bi
+#   sudo ln -s /etc/nginx/sites-available/dash-bi /etc/nginx/sites-enabled/
+#   sudo sed -i 's/__YOUR_DOMAIN__/<your-real-domain>/g' /etc/nginx/sites-available/dash-bi
+#   sudo nginx -t && sudo systemctl reload nginx
+#
+# Then issue the cert:
+#   sudo certbot --nginx -d bi.<your-real-domain>
+#
+# Notes:
+# - The `__YOUR_DOMAIN__` placeholder MUST be replaced before reload —
+#   nginx would otherwise respond on the wrong name.
+# - The PDF worker port (3001) is intentionally NOT exposed. It is only
+#   reachable from the app container over the internal `dashbi` Docker
+#   network. Nginx must never proxy_pass to it.
+
 server {
     listen 80;
-    server_name bi.example.com;
+    server_name bi.__YOUR_DOMAIN__;
     return 301 https://$host$request_uri;
 }
 
 server {
     listen 443 ssl http2;
-    server_name bi.example.com;
+    server_name bi.__YOUR_DOMAIN__;
 
-    ssl_certificate /etc/letsencrypt/live/bi.example.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/bi.example.com/privkey.pem;
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers 'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384';
+    ssl_certificate     /etc/letsencrypt/live/bi.__YOUR_DOMAIN__/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/bi.__YOUR_DOMAIN__/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_ciphers         'ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305';
     ssl_prefer_server_ciphers off;
 
-    # HSTS
-    add_header Strict-Transport-Security "max-age=63072000" always;
-    add_header X-Frame-Options "SAMEORIGIN" always;
+    # Security headers
+    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload" always;
     add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://api.openai.com https://api.anthropic.com https://generativelanguage.googleapis.com; frame-ancestors 'none'; base-uri 'self';" always;
 
-    # CSP
-    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://api.openai.com https://api.anthropic.com https://generativelanguage.googleapis.com; frame-ancestors 'none';" always;
+    # CSV / Excel ingest up to 110 MB
+    client_max_body_size 110M;
 
-    client_max_body_size 110M;  # para CSV/Excel uploads
+    # Health endpoint: drop access logs (monitoring hits it every 30s)
+    location = /api/health {
+        proxy_pass http://localhost:3000;
+        access_log off;
+    }
 
+    # Embeds: `/embed/<token>` es la única ruta que se puede framear desde
+    # otro origen, y solo desde los origenes que autoriza el token.
+    #
+    # La aplicación emite el `frame-ancestors` correcto POR TOKEN
+    # (app/src/middleware.ts). Aquí no se puede mandar un `frame-ancestors`
+    # global ni un `X-Frame-Options`: el navegador aplica TODAS las
+    # políticas CSP que recibe, así que un `frame-ancestors 'none'` de nginx
+    # bloquearía también los embeds legítimos.
+    #
+    # OJO: en nginx las directivas `add_header` NO se heredan si el bloque
+    # define las suyas, por eso se repiten aquí todas las cabeceras de
+    # seguridad del nivel `server`.
+    location /embed/ {
+        add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        # Sin `X-Frame-Options`: el framing lo controla el CSP por token.
+        # Un valor vacío hace que nginx no envíe la cabecera.
+        add_header X-Frame-Options "" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+        # Sin `frame-ancestors` aquí: lo emite la app según el token.
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://api.openai.com https://api.anthropic.com https://generativelanguage.googleapis.com; base-uri 'self';" always;
+
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+        proxy_read_timeout 60s;
+        proxy_send_timeout 60s;
+    }
+
+    # App
     location / {
         proxy_pass http://localhost:3000;
         proxy_http_version 1.1;
@@ -662,23 +745,8 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_cache_bypass $http_upgrade;
-
         proxy_read_timeout 60s;
         proxy_send_timeout 60s;
-    }
-
-    # PDF worker interno (NO expuesto públicamente)
-    # Se accede solo desde la app Next.js
-    location /pdf-internal {
-        internal;
-        proxy_pass http://pdf-worker:3001;
-        proxy_read_timeout 60s;
-    }
-
-    # Healthcheck (sin auth, usado por monitoring)
-    location = /api/health {
-        proxy_pass http://localhost:3000;
-        access_log off;
     }
 }
 ```
