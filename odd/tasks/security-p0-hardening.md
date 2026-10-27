@@ -547,19 +547,43 @@ at `e0ab4b3`.
 
 | # | Task | Commit |
 |---|---|---|
-| 1 | Dependencies + audit gate | `f124818` — `fix(deps): patch critical next and sentry advisories, enforce audit gate in CI` |
-| 2 | SQL escapes + read-only role | `7ce0baf` — `fix(security): block SQL escapes and revoke the read-only role from internal tables` |
-| 3 | SSRF host normalization | `b21bb58` — `fix(security): normalize connection hosts before the SSRF blocklist` |
-| 4 | Error sanitization | `811482e` — `fix(security): stop returning raw driver errors to clients` |
-| 5a | Client IP + per-org buckets | `2cbbf50` — `fix(security): make rate limits unspoofable and actually per-org` |
-| 5b | The routes that had no limit | `6598792` — `fix(security): rate limit the routes that had none` |
-| 6 | Public payload + embed CSP | `1166895` — `fix(security): strip SQL from public payloads and enforce the embed CSP` |
-| 7 | Threat model realignment | `f0dcaa2` — `docs(security): realign the threat model with the code that exists` |
+| 1 | Dependencies + audit gate | `20b029a` — `fix(deps): patch critical next and sentry advisories, enforce audit gate in CI` |
+| 2 | SQL escapes + read-only role | `a7ce7ab` — `fix(security): block SQL escapes and revoke the read-only role from internal tables` |
+| 3 | SSRF host normalization | `24da208` — `fix(security): normalize connection hosts before the SSRF blocklist` |
+| 4 | Error sanitization | `eb18668` — `fix(security): stop returning raw driver errors to clients` |
+| 5a | Client IP + per-org buckets | `b9eafd3` — `fix(security): make rate limits unspoofable and actually per-org` |
+| 5b | The routes that had no limit | `d321b29` — `fix(security): rate limit the routes that had none` |
+| 6 | Public payload + embed CSP | `15af258` — `fix(security): strip SQL from public payloads and enforce the embed CSP` |
+| 7 | Threat model realignment | `ad6dd21` — `docs(security): realign the threat model with the code that exists` |
+| — | Closing record | `55a6af2` — `docs(security): record the closing commit identity and the final gate` |
+| — | Native review record | `3aa9615` — `docs(security): record the native review outcome for the P0 feature` |
+| 8 | `better-auth` a la línea parcheada | `0375b6d` — `fix(deps): bump better-auth to 1.7.14 — clears an auth-bypass advisory` |
+
+**Task 8 — `better-auth` a la línea parcheada.** La tarea no estaba prevista: apareció
+cuando `main` avanzó con un bump a `better-auth` 1.6.x, que arrastra un advisory
+**CRÍTICO** ("OAuth state can be used as a Magic Link to sign in as another user", más
+"OAuth Proxy lets an attacker sign in as another user"). Esta app tiene magic link y
+Google OAuth activos, así que el vector es alcanzable. `better-auth >= 1.7.7` parchea
+los tres; el bump va a `^1.7.14`.
+
+La línea 1.7 además valida el schema Drizzle contra los campos que escribe, y escribe
+`user.image` — la columna que en este schema siempre fue `avatar_url`. El campo se
+**mapea** (`user: { fields: { image: 'avatarUrl' } }`) en vez de agregar una columna
+duplicada, así que el avatar del proveedor sigue landing donde el producto lo lee. Sin
+el mapeo, `POST /api/auth/sign-up/email` responde 500 y el signup se rompe.
+
+**Los hashes de esta tabla cambiaron**: `main` avanzó con 2 commits durante el trabajo y
+la branch se rebasó encima, así que los identificadores de los commits anteriores a ese
+rebase (`f124818`, `7ce0baf`, `b21bb58`, `811482e`, `2cbbf50`, `6598792`, `1166895`,
+`f0dcaa2`, `bfc7b19`, `d27dc2a`) ya no existen en la branch. Los de arriba son los
+actuales.
 
 ## Status
 
-All seven tasks are done. The feature is not merged and not pushed: both
-remain the user's decision, as are the P1/P2 findings listed above.
+All eight tasks are done. The feature is open as PR #18
+(`fix/security-p0-hardening` → `main`), CI en verde: `Dependency audit (baseline
+gate)`, `Lint, typecheck, test, build` y `Playwright E2E`. El merge sigue siendo
+decisión del usuario, igual que los hallazgos P1/P2 listados arriba.
 
 ### Verification of the final state
 
@@ -571,6 +595,11 @@ real Postgres) · `pnpm build` exit 0 · `pnpm audit:check` exit 0
 The unrelated work that was already in the working tree when this feature
 started (41 modified files, 16 untracked) was never staged, edited or
 committed: every commit in this feature names its files explicitly.
+
+The CI run that gates PR #18 is green on all three jobs, including the
+Playwright one across the three browser engines — the webkit engine could not
+run locally because the host lacks `libicu74`/`libxml2`/`libflite1` and `sudo`
+was not available, so that engine is covered by CI evidence only.
 
 ### Native review
 
