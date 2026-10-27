@@ -554,9 +554,20 @@ at `e0ab4b3`.
 | 5a | Client IP + per-org buckets | `2cbbf50` — `fix(security): make rate limits unspoofable and actually per-org` |
 | 5b | The routes that had no limit | `6598792` — `fix(security): rate limit the routes that had none` |
 | 6 | Public payload + embed CSP | `1166895` — `fix(security): strip SQL from public payloads and enforce the embed CSP` |
-| 7 | Threat model realignment | see the closing commit of this feature |
+| 7 | Threat model realignment | `f0dcaa2` — `docs(security): realign the threat model with the code that exists` |
 
 ## Status
 
 All seven tasks are done. The feature is not merged and not pushed: both
 remain the user's decision, as are the P1/P2 findings listed above.
+
+### Verification of the final state
+
+`pnpm lint:strict` exit 0 · `pnpm typecheck` exit 0 · `pnpm test` exit 0
+(161 files, 2044 tests, 0 failed, 0 skipped, integration included against a
+real Postgres) · `pnpm build` exit 0 · `pnpm audit:check` exit 0
+(`critical 0/0, high 4/4`).
+
+The unrelated work that was already in the working tree when this feature
+started (41 modified files, 16 untracked) was never staged, edited or
+committed: every commit in this feature names its files explicitly.
