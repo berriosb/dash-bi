@@ -2,6 +2,7 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { sql } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
+import { assertOrgContextIntact } from './org-context';
 import * as schema from './schema';
 import type { OrgRole } from '@/lib/auth/permissions';
 
@@ -220,6 +221,12 @@ export async function withOrgContextReadOnly<T>(
     const start = Date.now();
     try {
       const result = await fn(tx);
+      // Second line of defense against the `set_config` pivot: the tenant
+      // context is a plain GUC that ANY role can re-point, and every
+      // tenant-scoped RLS policy reads it. `validate-query.ts` blocks the
+      // keyword; this checks the EFFECT, after the statement ran and before
+      // the rows can leave the transaction. See `db/org-context.ts`.
+      await assertOrgContextIntact(tx, { orgId, userId, role });
       logger.debug(
         { orgId, userId, role, durationMs: Date.now() - start, mode: 'readonly' },
         'withOrgContextReadOnly completed',
