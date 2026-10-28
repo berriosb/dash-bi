@@ -9,6 +9,8 @@ const {
   mockEvaluate,
   mockPdf,
   mockClose,
+  mockSetRequestInterception,
+  mockPageOn,
 } = vi.hoisted(() => ({
   mockLaunch: vi.fn(),
   mockNewPage: vi.fn(),
@@ -18,6 +20,8 @@ const {
   mockEvaluate: vi.fn(),
   mockPdf: vi.fn(),
   mockClose: vi.fn(),
+  mockSetRequestInterception: vi.fn(),
+  mockPageOn: vi.fn(),
 }));
 
 const mockPage = {
@@ -26,6 +30,8 @@ const mockPage = {
   waitForSelector: mockWaitForSelector,
   evaluate: mockEvaluate,
   pdf: mockPdf,
+  setRequestInterception: mockSetRequestInterception,
+  on: mockPageOn,
 };
 
 const mockBrowser = {
@@ -44,6 +50,7 @@ vi.mock('@/lib/logger', () => ({
 }));
 
 import { renderPdf } from '@/worker/render-pdf';
+import { logger } from '@/lib/logger';
 
 const baseJob = {
   url: 'http://localhost:3000/dashboard/dash-1/print?token=abc',
@@ -64,18 +71,154 @@ describe('renderPdf', () => {
     mockEvaluate.mockResolvedValue(undefined);
     mockPdf.mockResolvedValue(fakePdfBuffer);
     mockClose.mockResolvedValue(undefined);
+    // El worker valida que la URL que navega sea el origen de la app.
+    process.env.NEXT_PUBLIC_APP_URL = 'http://localhost:3000';
   });
 
-  it('launches puppeteer with headless: true and no-sandbox args', async () => {
+  /**
+   * The renderer is the process that ends up running tenant-controlled
+   * content (a dashboard page with the tenant's branding). It must not
+   * carry the worker's secrets: `DATABASE_MIGRATION_URL` is the DB OWNER,
+   * `LLM_KEY_ENCRYPTION_KEY` decrypts every BYOK, `REDIS_URL` and
+   * `RESEND_API_KEY` are credentials too. Puppeteer hands `process.env` to
+   * the browser process by default.
+   */
+  it('launches Chrome with a minimal env, without the worker secrets', async () => {
+    process.env.DATABASE_URL = 'postgres://app:secret@postgres:5432/dashbi';
+    process.env.DATABASE_MIGRATION_URL = 'postgres://owner:secret@postgres:5432/dashbi';
+    process.env.LLM_KEY_ENCRYPTION_KEY = 'a'.repeat(64);
+    process.env.REDIS_URL = 'redis://:redissecret@redis:6379';
+    process.env.RESEND_API_KEY = 're_secret';
+
+    await renderPdf(baseJob);
+
+    const options = mockLaunch.mock.calls[0]![0] as { env?: Record<string, string> };
+    const env = options.env ?? {};
+    expect(env).not.toHaveProperty('DATABASE_URL');
+    expect(env).not.toHaveProperty('DATABASE_MIGRATION_URL');
+    expect(env).not.toHaveProperty('DATABASE_READONLY_URL');
+    expect(env).not.toHaveProperty('LLM_KEY_ENCRYPTION_KEY');
+    expect(env).not.toHaveProperty('REDIS_URL');
+    expect(env).not.toHaveProperty('RESEND_API_KEY');
+    expect(env).not.toHaveProperty('PDF_WORKER_SECRET');
+    // The browser still needs a PATH to find its own libraries.
+    expect(env.PATH).toBe(process.env.PATH);
+  });
+
+  it('launches puppeteer headless WITHOUT disabling the sandbox', async () => {
     await renderPdf(baseJob);
 
     expect(mockLaunch).toHaveBeenCalledTimes(1);
-    expect(mockLaunch).toHaveBeenCalledWith(
-      expect.objectContaining({
-        headless: true,
-        args: expect.arrayContaining(['--no-sandbox', '--disable-setuid-sandbox']),
-      })
+    const options = mockLaunch.mock.calls[0]![0] as { headless: boolean; args: string[] };
+    expect(options.headless).toBe(true);
+    expect(options.args).not.toContain('--no-sandbox');
+    expect(options.args).not.toContain('--disable-setuid-sandbox');
+  });
+
+  it('falls back to --no-sandbox when the sandbox is unavailable, and says so', async () => {
+    mockLaunch.mockRejectedValueOnce(new Error('No usable sandbox!'));
+
+    await renderPdf(baseJob);
+
+    expect(mockLaunch).toHaveBeenCalledTimes(2);
+    const fallback = mockLaunch.mock.calls[1]![0] as { args: string[] };
+    expect(fallback.args).toContain('--no-sandbox');
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ sandbox: false }),
+      expect.stringContaining('sandbox'),
     );
+  });
+
+  it('does not fall back for a failure that is not about the sandbox', async () => {
+    mockLaunch.mockRejectedValue(new Error('chrome binary missing'));
+
+    await expect(renderPdf(baseJob)).rejects.toThrow('chrome binary missing');
+    expect(mockLaunch).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * The worker navigates to whatever URL the job carries. If the payload
+   * could name an arbitrary host, the renderer becomes an open proxy that
+   * screenshots whatever it can reach from inside the container network.
+   */
+  it('refuses to navigate to a URL outside the app origin', async () => {
+    await expect(
+      renderPdf({ ...baseJob, url: 'http://169.254.169.254/latest/meta-data/' }),
+    ).rejects.toThrow();
+
+    expect(mockGoto).not.toHaveBeenCalled();
+  });
+
+  it('navigates to the app origin', async () => {
+    await renderPdf(baseJob);
+    expect(mockGoto).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not log the one-time print token', async () => {
+    await renderPdf(baseJob);
+
+    const logged = JSON.stringify((logger.info as ReturnType<typeof vi.fn>).mock.calls);
+    expect(logged).not.toContain('token=abc');
+  });
+
+  /**
+   * The rendered page can reference any host: a widget that shows a
+   * product image takes the URL from the customer's own data. Without an
+   * interceptor, the renderer fetches it from inside the container
+   * network, where the databases and the cache are reachable by name.
+   */
+  describe('request interception', () => {
+    function handlerFor(): (request: {
+      url: () => string;
+      abort: () => void;
+      continue: () => void;
+    }) => void {
+      const call = mockPageOn.mock.calls.find((c) => c[0] === 'request');
+      if (!call) throw new Error('no request handler registered');
+      return call[1] as never;
+    }
+
+    function probe(url: string): { abort: ReturnType<typeof vi.fn>; cont: ReturnType<typeof vi.fn> } {
+      const abort = vi.fn();
+      const cont = vi.fn();
+      handlerFor()({ url: () => url, abort, continue: cont });
+      return { abort, cont };
+    }
+
+    it('intercepts the requests of the page', async () => {
+      await renderPdf(baseJob);
+      expect(mockSetRequestInterception).toHaveBeenCalledWith(true);
+    });
+
+    it('blocks requests to internal hosts', async () => {
+      await renderPdf(baseJob);
+
+      for (const url of [
+        'http://redis:6379/x.png',
+        'http://postgres:5432/x.png',
+        'http://169.254.169.254/latest/meta-data/',
+        'http://127.0.0.1:3000/x.png',
+        'http://assets.internal/x.png',
+      ]) {
+        const { abort, cont } = probe(url);
+        expect(abort, url).toHaveBeenCalled();
+        expect(cont, url).not.toHaveBeenCalled();
+      }
+    });
+
+    it('allows the app origin and public hosts', async () => {
+      await renderPdf(baseJob);
+
+      for (const url of [
+        'http://localhost:3000/dashboard/dash-1/print',
+        'https://cdn.example.com/logo.png',
+        'data:image/png;base64,AAAA',
+      ]) {
+        const { abort, cont } = probe(url);
+        expect(cont, url).toHaveBeenCalled();
+        expect(abort, url).not.toHaveBeenCalled();
+      }
+    });
   });
 
   it('uses Letter viewport by default', async () => {
@@ -118,6 +261,25 @@ describe('renderPdf', () => {
   it('does not inject branding when logoUrl is missing', async () => {
     await renderPdf({ ...baseJob, branding: {} });
     expect(mockEvaluate).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The logo URL is tenant-supplied text and it is injected as an
+   * `<img src>` into the page Chrome loads: without validation the
+   * renderer fetches whatever the tenant points it at, from inside the
+   * container network.
+   */
+  it('does not inject a logo whose URL is not a public asset', async () => {
+    await renderPdf({
+      ...baseJob,
+      branding: { logoUrl: 'http://redis:6379/logo.png' },
+    });
+
+    expect(mockEvaluate).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: expect.any(String) }),
+      expect.stringContaining('logo'),
+    );
   });
 
   it('configures page.pdf() with printBackground and consistent margins', async () => {
