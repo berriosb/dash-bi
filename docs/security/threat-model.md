@@ -2,7 +2,7 @@
 
 > Análisis de amenazas antes de codear dash-bi. Define los controles de seguridad obligatorios antes de implementar SQL execution, BYOK, multi-tenant y AI integration.
 
-**Status:** v0.4 (reconciliado contra el código — 2026-10-28)
+**Status:** v0.5 (reconciliado contra el código — 2026-10-28)
 **Prioridad:** P0 — bloquea implementación
 **Responsable:** codehak
 
@@ -25,6 +25,7 @@ Este documento declaraba controles implementados que el código no tenía. La ta
 | **T2 / C1** — errores de driver | `811482e` | El error crudo del driver ya no vuelve al cliente. |
 | **T2** — segunda línea contra el pivote del GUC | `110bcfd` | El GUC `app.current_org_id` es texto plano y Postgres no lo protege: contra un Postgres 16 real se comprobó que **una sola sentencia** re-apunta el contexto y devuelve filas de otra org. `withOrgContextReadOnly` verifica el contexto después de la sentencia y antes de que las filas salgan de la transacción, y limpia los GUC de sesión si detecta manipulación. |
 | **T5** — el control de export se oculta a `viewer` | `7d73e1b` | El backend ya respondía 403; ahora la UI tampoco renderiza el botón "Exportar & Compartir" cuando el rol de la org activa sabe que no puede exportar. |
+| **T8** — aislamiento del worker de PDF | `fix/worker-pdf-isolation` | El renderer corre en un servicio sin credenciales de base de datos ni master key (los job workers van aparte, con import dinámico), Chrome se lanza con el sandbox activo y un env mínimo, las peticiones a hosts internos se abortan y la URL del logo del tenant se valida. |
 
 Los controles que **no** están implementados y que antes figuraban como `[x]` se marcaron `[ ]` y dicen dónde vive el hueco. Los que sí están implementados y antes figuraban como `[ ]` (por ejemplo `robots.txt`) se marcaron `[x]`.
 
@@ -276,11 +277,19 @@ if (!ipLimit.allowed) {
 **Amenaza:** URL maliciosa en public link ejecuta JS en el contexto de Puppeteer cuando se exporta a PDF.
 
 **Controles obligatorios:**
-- [ ] Puppeteer corre en **worker service separado** (no comparte DB con app principal) — **no implementado**: el worker es un proceso separado (`app/src/worker/index.ts`), pero **comparte la base de datos con la app**: `docker-compose.yml` le da al servicio `pdf-worker` `DATABASE_URL`, `DATABASE_MIGRATION_URL` (**el owner de las tablas**) y `LLM_KEY_ENCRYPTION_KEY`. El aislamiento es de proceso, no de credenciales.
-- [ ] `--no-sandbox` solo si es necesario (con `--disable-setuid-sandbox`) — **no implementado como control**: `app/src/worker/render-pdf.ts:30` lanza Chrome **siempre** con `['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']`. No hay condición, ni justificación, ni ruta alternativa sin sandbox.
-- [x] Timeout en cada navegación (30s max) — `app/src/worker/render-pdf.ts:38` (`timeout: 30_000` en `page.goto`) y 15s en `waitForSelector`.
-- [ ] Block de dominios internos (mismas allowlists que T3, incluyendo IPv6) — **no implementado**: el worker no instala intercepción de requests (`page.setRequestInterception` / `setRequestInterception(true)` no aparecen en `app/src/worker/render-pdf.ts`); la página puede pedir cualquier host, interna o externa.
-- [x] Cleanup garantizado (try/finally + `browser.close()`) — `app/src/worker/render-pdf.ts:72`.
+- [x] Puppeteer corre en **worker service separado** (no comparte DB con app principal) — el servicio `pdf-worker` ya no recibe **ninguna** credencial de base de datos ni la master key: solo `REDIS_URL`, la URL de la app y el log level (`docker-compose.yml`, `app/docker-compose.yml`). Los workers que sí necesitan la base de datos y la master key (alertas y reportes programados) viven en otro servicio, `jobs-worker`, que **no abre Chrome**. Además el entrypoint los carga con `import()` dinámico (`app/src/worker/index.ts` → `app/src/worker/job-workers.ts`), así que el proceso del renderer ni siquiera importa el cliente de base de datos.
+  - Test: `app/tests/unit/worker/worker-role.test.ts` (el rol `pdf` no carga los job workers) y `app/tests/unit/scripts/worker-isolation.test.ts` (los compose declaran las credenciales correctas por servicio).
+  - Residuo: el servicio `app` todavía declara `DATABASE_MIGRATION_URL` (el owner) porque las migraciones se corren desde su contenedor; el `migrate` one-shot del compose raíz ya existe como alternativa.
+- [x] `--no-sandbox` solo si es necesario (con `--disable-setuid-sandbox`) — Chrome se lanza **con el sandbox activo** por defecto; `--no-sandbox` solo se agrega como reintento cuando el sandbox no está disponible en el entorno, y ese reintento queda registrado como `WARN` en cada render (`app/src/worker/render-pdf.ts`, `launchBrowser`).
+  - Test: `app/tests/unit/worker/render-pdf.test.ts` ("launches puppeteer headless WITHOUT disabling the sandbox", "falls back to --no-sandbox when the sandbox is unavailable, and says so").
+  - El navegador además se lanza con un **env mínimo**: Puppeteer le pasa `process.env` al proceso del browser, y ese proceso es el que renderiza contenido del tenant. Solo ve una allowlist (`PATH`, `HOME`, `LANG`, `TZ`…), nunca `DATABASE_URL`, `DATABASE_MIGRATION_URL`, `LLM_KEY_ENCRYPTION_KEY`, `REDIS_URL` ni `RESEND_API_KEY`.
+- [x] Timeout en cada navegación (30s max) — `app/src/worker/render-pdf.ts` (`timeout: 30_000` en `page.goto`) y 15s en `waitForSelector`.
+- [x] Block de dominios internos (mismas allowlists que T3, incluyendo IPv6) — el renderer instala intercepción de requests (`page.setRequestInterception(true)`): se permite el origen de la app y los hosts públicos, y se aborta todo lo demás. Cubre el caso de un widget que muestra una imagen con la URL que viene de los **datos del cliente** (no solo del branding).
+  - La URL del logo del tenant se valida además **en el origen** (`validateTenantAssetUrl`), y si no es un asset público el PDF se renderiza sin logo en vez de ir a buscarlo.
+  - La URL que el worker navega tiene que ser el origen de la app: si no, el trabajo se rechaza (el worker no es un proxy abierto que capture lo que alcance desde la red interna).
+  - Test: `app/tests/unit/worker/render-pdf.test.ts` ("blocks requests to internal hosts", "allows the app origin and public hosts", "does not inject a logo whose URL is not a public asset") y `app/tests/unit/security/validate-tenant-asset-url.test.ts`.
+  - Residuo: DNS rebinding (la dirección resuelta no se fija en el momento de la petición), igual que en el resto de los validadores del repo.
+- [x] Cleanup garantizado (try/finally + `browser.close()`) — `app/src/worker/render-pdf.ts`.
 - [x] Memoria limitada (max 2GB por export) — límite de memoria del contenedor `pdf-worker` en `docker-compose.yml` (`deploy.resources.limits.memory: 2G`). Es un tope **de contenedor**, no por export.
 - [x] Queue con concurrencia limitada (max 3 exports simultáneos) — `app/src/worker/index.ts:54` (`PDF_CONCURRENCY = 3`), con además un limiter de 10 jobs/minuto.
 
