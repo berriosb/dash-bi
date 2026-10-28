@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { hasPermission } from '@/lib/auth/permissions';
+import { hasPermission, canExportPdf } from '@/lib/auth/permissions';
 
 /**
  * Tests de la matriz RBAC. Verifica que cada permiso esté asignado al rol correcto
@@ -130,6 +130,33 @@ describe('RBAC permissions matrix', () => {
 
     it('viewer cannot export', () => {
       expect(hasPermission('viewer', 'export.pdf')).toBe(false);
+    });
+  });
+
+  /**
+   * `canExportPdf` es la decisión que la UI usa para mostrar o no el control
+   * de export. El backend ya responde 403 a un viewer (permissions.ts,
+   * "export.pdf"), pero el botón visible hacía que el usuariomineral
+   * descubriera el permiso por la vía del error.
+   */
+  describe('canExportPdf (UI gate)', () => {
+    it('hides the export control for a viewer', () => {
+      expect(canExportPdf('viewer')).toBe(false);
+    });
+
+    it('shows the export control for an editor', () => {
+      expect(canExportPdf('editor')).toBe(true);
+    });
+
+    it('shows the export control for an admin', () => {
+      expect(canExportPdf('admin')).toBe(true);
+    });
+
+    it('keeps the control when the role is unknown (no session)', () => {
+      // Rol desconocido = visitante sin sesión (el demo público). El
+      // backend responde 401 igual; la UI no puede inventar un permiso que
+      // no conoce, pero tampoco debe quitarle una superficie que ya existía.
+      expect(canExportPdf(null)).toBe(true);
     });
   });
 });

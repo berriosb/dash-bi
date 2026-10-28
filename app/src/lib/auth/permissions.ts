@@ -33,3 +33,21 @@ const PERMISSIONS: Record<string, OrgRole[]> = {
 export function hasPermission(role: OrgRole, action: string): boolean {
   return PERMISSIONS[action]?.includes(role) ?? false;
 }
+
+/**
+ * Whether the UI should offer the export/share control.
+ *
+ * The backend already answers 403 for a viewer (`export.pdf` is an editor
+ * capability). This is the other half: the button used to be rendered for
+ * every role, so a viewer discovered the permission the hard way — by
+ * clicking and reading the error.
+ *
+ * `role === null` means "the role is not known": no session, or the orgs
+ * query has not resolved. The affordance is kept in that case (the public
+ * demo has no session and the API answers 401 anyway) — a role that is
+ * KNOWN to be insufficient is what gets hidden.
+ */
+export function canExportPdf(role: OrgRole | null): boolean {
+  if (role === null) return true;
+  return hasPermission(role, 'export.pdf');
+}

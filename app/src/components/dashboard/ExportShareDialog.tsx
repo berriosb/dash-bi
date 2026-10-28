@@ -5,6 +5,8 @@ import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
+import { useActiveOrgRole } from '@/hooks/use-active-org-role';
+import { canExportPdf } from '@/lib/auth/permissions';
 import { exportDashboardPdf, type ExportPdfProgress } from '@/lib/export/client-export';
 import {
   Download,
@@ -48,6 +50,7 @@ export function ExportShareDialog({
   const [open, setOpen] = React.useState(defaultOpen);
   const [activeTab, setActiveTab] = React.useState<'pdf' | 'png' | 'share' | 'embed'>('pdf');
   const { toast } = useToast();
+  const { role } = useActiveOrgRole();
 
   // PDF Export State
   const [pageSize, setPageSize] = React.useState<'Letter' | 'A4'>('Letter');
@@ -286,6 +289,22 @@ export function ExportShareDialog({
         return 'Procesando...';
     }
   };
+
+  // El control de export/share no se le muestra a un viewer.
+  //
+  // El backend ya responde 403 (`export.pdf` es de editor:
+  // `app/src/lib/auth/permissions.ts`), pero el botón se renderizaba para
+  // todos los roles: el usuario descubría el permiso por la vía del error.
+  //
+  // El gate es fail-open MIENTRAS el rol no se conoce: mientras la consulta
+  // de orgs no responde, `role` es `null` y el botón se muestra. Ocultarlo
+  // en esa ventana lo haría parpadear en cada carga de dashboard para todos
+  // los roles, incluidos los que sí pueden exportar. Lo que no puede pasar
+  // es que un viewer CONOCIDO vea el botón: en cuanto el rol resuelve, el
+  // control desaparece. Sin sesión (demo público) el rol queda en `null` y la
+  // superficie se conserva — el backend responde 401 igual, y quitársela a
+  // un visitante sería un cambio de producto, no de seguridad.
+  if (!canExportPdf(role)) return null;
 
   return (
     <>

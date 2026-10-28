@@ -1,12 +1,32 @@
 // @vitest-environment happy-dom
 import { describe, it, expect } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 import { DemoDashboardViewer } from '@/components/demo/DemoDashboardViewer';
 
+/**
+ * El visor renderiza el diálogo de export, que consulta el rol del usuario
+ * para decidir si muestra el control. Eso requiere un QueryClient — en la
+ * app lo provee `components/providers/Providers.tsx` en el layout raíz.
+ */
+function renderViewer() {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <DemoDashboardViewer />
+    </QueryClientProvider>,
+  );
+}
+
 describe('DemoDashboardViewer', () => {
   it('renders SaaS preset by default with Modo Demo badge', () => {
-    render(<DemoDashboardViewer />);
+    renderViewer();
 
     expect(screen.getByText('Modo Demo')).toBeDefined();
     expect(screen.getByRole('heading', { name: /SaaS Analytics|Ingresos y rendimiento/i })).toBeDefined();
@@ -14,7 +34,7 @@ describe('DemoDashboardViewer', () => {
   });
 
   it('switches to E-commerce preset when clicked', () => {
-    render(<DemoDashboardViewer />);
+    renderViewer();
 
     const ecomBtn = screen.getByRole('button', { name: 'E-commerce / Retail' });
     fireEvent.click(ecomBtn);
@@ -24,7 +44,7 @@ describe('DemoDashboardViewer', () => {
   });
 
   it('switches to Agency preset when clicked', () => {
-    render(<DemoDashboardViewer />);
+    renderViewer();
 
     const agencyBtn = screen.getByRole('button', { name: 'Agencia / Marketing' });
     fireEvent.click(agencyBtn);
@@ -34,7 +54,7 @@ describe('DemoDashboardViewer', () => {
   });
 
   it('toggles theme when theme button is clicked', () => {
-    render(<DemoDashboardViewer />);
+    renderViewer();
 
     const themeBtn = screen.getByTitle('Alternar tema visual');
     expect(screen.getByText(/Tema: Moderno/)).toBeDefined();
@@ -44,7 +64,7 @@ describe('DemoDashboardViewer', () => {
   });
 
   it('toggles the AI NLQA Assistant panel when button is clicked', () => {
-    render(<DemoDashboardViewer />);
+    renderViewer();
 
     expect(screen.queryByText('Asistente IA de Analítica (NLQA)')).toBeNull();
 
