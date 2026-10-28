@@ -99,25 +99,16 @@ services:
     restart: unless-stopped
     environment:
       - NODE_ENV=production
-      # Rol de la app: NOSUPERUSER NOBYPASSRLS (HIGH-5). Con el superuser
-      # de bootstrap, RLS no se aplica y el aislamiento es decorativo.
-      - DATABASE_URL=postgres://${POSTGRES_APP_USER:?POSTGRES_APP_USER required}:${POSTGRES_APP_PASSWORD:?POSTGRES_APP_PASSWORD required}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB required}
-      # Solo para `pnpm db:migrate`: es el owner de las tablas.
-      - DATABASE_MIGRATION_URL=postgres://${POSTGRES_USER:?POSTGRES_USER required}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB required}
-      - DATABASE_READONLY_URL=postgres://${POSTGRES_READONLY_USER:?POSTGRES_READONLY_USER required}:${POSTGRES_READONLY_PASSWORD:?POSTGRES_READONLY_PASSWORD required}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB required}
+      # Solo el renderer. Este proceso abre Chrome sobre contenido del
+      # tenant: no tiene (y no debe tener) credenciales de base de datos ni
+      # la master key que descifra las BYOK. El runner de jobs va aparte.
+      - WORKER_ROLE=pdf
       - REDIS_URL=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD required}@redis:6379
-      - LLM_KEY_ENCRYPTION_KEY=${LLM_KEY_ENCRYPTION_KEY:?LLM_KEY_ENCRYPTION_KEY required (32 bytes hex)}
-      - PDF_WORKER_SECRET=${PDF_WORKER_SECRET:?PDF_WORKER_SECRET required (>=16 chars)}
-      - EMAIL_PROVIDER=${EMAIL_PROVIDER:-resend}
-      - RESEND_API_KEY=${RESEND_API_KEY:-}
-      - EMAIL_FROM=${EMAIL_FROM:-noreply@dash-bi.com}
       - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
       - INTERNAL_APP_URL=${INTERNAL_APP_URL:-http://app:3000}
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - EXPORTS_DIR=/var/lib/dash-bi/exports
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
     volumes:
@@ -133,6 +124,54 @@ services:
         limits:
           cpus: '2'
           memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    networks: [dashbi]
+
+  jobs-worker:
+    build:
+      context: ./app
+      dockerfile: Dockerfile.worker
+    image: dashbi/pdf-worker:${VERSION:-latest}
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      # Alertas y reportes programados. Necesitan la base de datos y la
+      # master key (descifran la URL de los canales de alerta), pero NO
+      # abren Chrome.
+      - WORKER_ROLE=jobs
+      # Rol de la app: NOSUPERUSER NOBYPASSRLS (HIGH-5). Con el superuser
+      # de bootstrap, RLS no se aplica y el aislamiento es decorativo.
+      - DATABASE_URL=postgres://${POSTGRES_APP_USER:?POSTGRES_APP_USER required}:${POSTGRES_APP_PASSWORD:?POSTGRES_APP_PASSWORD required}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB required}
+      - DATABASE_READONLY_URL=postgres://${POSTGRES_READONLY_USER:?POSTGRES_READONLY_USER required}:${POSTGRES_READONLY_PASSWORD:?POSTGRES_READONLY_PASSWORD required}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB required}
+      # SIN `DATABASE_MIGRATION_URL`: esa es la credencial de OWNER de las
+      # tablas y solo la usan las migraciones (`pnpm db:migrate`).
+      - REDIS_URL=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD required}@redis:6379
+      - LLM_KEY_ENCRYPTION_KEY=${LLM_KEY_ENCRYPTION_KEY:?LLM_KEY_ENCRYPTION_KEY required (32 bytes hex)}
+      - EMAIL_PROVIDER=${EMAIL_PROVIDER:-resend}
+      - RESEND_API_KEY=${RESEND_API_KEY:-}
+      - EMAIL_FROM=${EMAIL_FROM:-noreply@dash-bi.com}
+      # El runner encola los PDF: necesita la URL de la app para armar el
+      # link de impresión.
+      - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "process.exit(0)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
         reservations:
           cpus: '0.5'
           memory: 512M

@@ -123,16 +123,11 @@ services:
       redis:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_APP_USER:-dashbi_app}:${POSTGRES_APP_PASSWORD}@postgres:5432/${POSTGRES_DB:-dashbi}
-      DATABASE_MIGRATION_URL: postgresql://${POSTGRES_USER:-dashbi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-dashbi}
-      DATABASE_READONLY_URL: postgresql://${POSTGRES_READONLY_USER:-dashbi_readonly}:${POSTGRES_READONLY_PASSWORD}@postgres:5432/${POSTGRES_DB:-dashbi}
+      # Solo el renderer. Este proceso abre Chrome sobre contenido del
+      # tenant: no tiene (y no debe tener) credenciales de base de datos ni
+      # la master key que descifra las BYOK. El runner de jobs va aparte.
+      WORKER_ROLE: pdf
       REDIS_URL: redis://redis:6379
-      LLM_KEY_ENCRYPTION_KEY: ${LLM_KEY_ENCRYPTION_KEY:?LLM_KEY_ENCRYPTION_KEY required (32 bytes hex)}
-      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-resend}
-      RESEND_API_KEY: ${RESEND_API_KEY:-}
-      EMAIL_FROM: ${EMAIL_FROM:-dash-bi <noreply@dash-bi.com>}
-      PDF_WORKER_PORT: 3001
-      PDF_WORKER_SECRET: ${PDF_WORKER_SECRET:?PDF_WORKER_SECRET required}
       NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
       INTERNAL_APP_URL: ${INTERNAL_APP_URL:-http://app:3000}
       NODE_ENV: ${NODE_ENV:-production}
@@ -148,6 +143,43 @@ services:
         limits:
           cpus: "2"
           memory: 2G
+
+  jobs-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: dash-bi-jobs-worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # Alertas y reportes programados. Necesitan la base de datos y la
+      # master key (descifran la URL de los canales de alerta), pero NO
+      # abren Chrome. Sin `DATABASE_MIGRATION_URL`: esa es la credencial de
+      # owner y solo la usan las migraciones.
+      WORKER_ROLE: jobs
+      DATABASE_URL: postgresql://${POSTGRES_APP_USER:-dashbi_app}:${POSTGRES_APP_PASSWORD}@postgres:5432/${POSTGRES_DB:-dashbi}
+      DATABASE_READONLY_URL: postgresql://${POSTGRES_READONLY_USER:-dashbi_readonly}:${POSTGRES_READONLY_PASSWORD}@postgres:5432/${POSTGRES_DB:-dashbi}
+      REDIS_URL: redis://redis:6379
+      LLM_KEY_ENCRYPTION_KEY: ${LLM_KEY_ENCRYPTION_KEY:?LLM_KEY_ENCRYPTION_KEY required (32 bytes hex)}
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-resend}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-dash-bi <noreply@dash-bi.com>}
+      # El runner encola los PDF: necesita la URL de la app para armar el
+      # link de impresión.
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+      NODE_ENV: ${NODE_ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    expose:
+      - "3001"
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1G
 
 volumes:
   pgdata:

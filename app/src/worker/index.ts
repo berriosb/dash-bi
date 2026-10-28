@@ -1,18 +1,7 @@
 import { Worker } from 'bullmq';
 import { Redis } from 'ioredis';
 import { renderPdf } from './render-pdf';
-import { runAlertDispatcher } from '@/lib/alerts/dispatcher';
-import { runAlertEvaluator } from '@/lib/alerts/evaluator';
-import {
-  ALERT_DISPATCHER_QUEUE,
-  ALERT_EVALUATE_QUEUE,
-  ensureDispatcherScheduled,
-} from '@/lib/alerts/queue';
-import { processDueScheduledReports } from '@/lib/reports/runner';
-import {
-  SCHEDULED_REPORTS_QUEUE,
-  ensureScheduledReportsScheduled,
-} from '@/lib/reports/queue';
+import { attachWorkerLogging } from './worker-logging';
 import { logger } from '@/lib/logger';
 
 const PDF_QUEUE_NAME = 'pdf-export';
@@ -20,23 +9,33 @@ const PDF_CONCURRENCY = 3;
 const PDF_RATE_LIMIT_MAX = 10;
 const PDF_RATE_LIMIT_DURATION_MS = 60_000;
 
-function attachWorkerLogging(worker: Worker, name: string): Worker {
-  worker.on('completed', (job) => {
-    logger.info({ worker: name, jobId: job.id }, `${name}: job completed`);
-  });
+/**
+ * Which half of the worker this process runs.
+ *
+ * - `pdf`  — ONLY the PDF renderer. This is the process that loads
+ *   tenant-controlled content in Chrome, so it must run in a container
+ *   with no database credentials and no master key.
+ * - `jobs` — the alert and scheduled-report workers. They need the
+ *   database and the master key, and they never open a browser.
+ * - `all`  — both, in one process. Kept for local development; the
+ *   deployment splits them (see `docker-compose.yml`).
+ */
+export type WorkerRole = 'pdf' | 'jobs' | 'all';
 
-  worker.on('failed', (job, err) => {
-    logger.error(
-      { worker: name, jobId: job?.id, err: err?.message, attemptsMade: job?.attemptsMade },
-      `${name}: job failed`
-    );
-  });
-
-  worker.on('error', (err) => {
-    logger.error({ worker: name, err: err.message }, `${name}: worker error`);
-  });
-
-  return worker;
+/**
+ * Read the role from the environment.
+ *
+ * An unset variable keeps the historical behaviour (everything in one
+ * process). An UNKNOWN value is a configuration mistake that would
+ * silently run more than intended, so it fails at boot instead.
+ */
+export function resolveWorkerRole(raw: string | undefined): WorkerRole {
+  const value = (raw ?? '').trim().toLowerCase();
+  if (value === '') return 'all';
+  if (value === 'pdf' || value === 'jobs' || value === 'all') return value;
+  throw new Error(
+    `Invalid WORKER_ROLE '${raw}'. Use 'pdf' (renderer only), 'jobs' (alerts and reports) or 'all'.`,
+  );
 }
 
 /**
@@ -59,94 +58,38 @@ export function createPdfWorker(connection: Redis): Worker {
   return attachWorkerLogging(worker, 'pdf-worker');
 }
 
-/**
- * Create and start a BullMQ Worker subscribed to alert-dispatcher queue.
- * Scans due alert rules every minute and enqueues evaluation jobs.
- */
-export function createAlertDispatcherWorker(connection: Redis): Worker {
-  const worker = new Worker(
-    ALERT_DISPATCHER_QUEUE,
-    async (job) => {
-      logger.info({ jobId: job.id }, 'alert-dispatcher: processing tick');
-      return await runAlertDispatcher(job);
-    },
-    {
-      connection,
-      concurrency: 1,
-    }
-  );
-
-  return attachWorkerLogging(worker, 'alert-dispatcher');
-}
-
-/**
- * Create and start a BullMQ Worker subscribed to alert-evaluate queue.
- * Runs SQL metrics against read-only user and evaluates thresholds.
- */
-export function createAlertEvaluatorWorker(connection: Redis): Worker {
-  const worker = new Worker(
-    ALERT_EVALUATE_QUEUE,
-    async (job) => {
-      logger.info({ jobId: job.id, ruleId: job.data?.alertRuleId }, 'alert-evaluator: evaluating rule');
-      return await runAlertEvaluator(job);
-    },
-    {
-      connection,
-      concurrency: 5,
-    }
-  );
-
-  return attachWorkerLogging(worker, 'alert-evaluator');
-}
-
-/**
- * Create and start a BullMQ Worker subscribed to scheduled-reports-due queue.
- * Checks reports where nextRunAt <= NOW() and triggers generation/email delivery.
- */
-export function createScheduledReportsWorker(connection: Redis): Worker {
-  const worker = new Worker(
-    SCHEDULED_REPORTS_QUEUE,
-    async (job) => {
-      logger.info({ jobId: job?.id }, 'scheduled-reports: processing due reports');
-      return await processDueScheduledReports();
-    },
-    {
-      connection,
-      concurrency: 1,
-    }
-  );
-
-  return attachWorkerLogging(worker, 'scheduled-reports');
-}
-
 export interface WorkerCoordinator {
   workers: Worker[];
   closeAll: () => Promise<void>;
 }
 
 /**
- * Start all background workers (PDF renderer, alert dispatcher & evaluator, scheduled reports).
- * Registers repeatable schedule jobs in Redis.
+ * Start the workers this process is responsible for.
+ *
+ * The job workers are imported DYNAMICALLY on purpose: a renderer-only
+ * container must not load the database client, the Drizzle schema or the
+ * encryption module. With a static import, the renderer container would
+ * still hold the DB credentials in its process memory, and a Chrome
+ * renderer compromise would inherit them.
  */
-export async function startAllWorkers(connection: Redis): Promise<WorkerCoordinator> {
-  // Ensure repeatable schedules are active in Redis
-  await ensureDispatcherScheduled();
-  await ensureScheduledReportsScheduled(connection);
+export async function startWorkers(
+  connection: Redis,
+  role: WorkerRole,
+): Promise<WorkerCoordinator> {
+  const workers: Worker[] = [];
 
-  const pdfWorker = createPdfWorker(connection);
-  const alertDispatcherWorker = createAlertDispatcherWorker(connection);
-  const alertEvaluatorWorker = createAlertEvaluatorWorker(connection);
-  const scheduledReportsWorker = createScheduledReportsWorker(connection);
+  if (role === 'pdf' || role === 'all') {
+    workers.push(createPdfWorker(connection));
+  }
 
-  const workers = [
-    pdfWorker,
-    alertDispatcherWorker,
-    alertEvaluatorWorker,
-    scheduledReportsWorker,
-  ];
+  if (role === 'jobs' || role === 'all') {
+    const jobs = await import('./job-workers');
+    await jobs.ensureJobSchedules(connection);
+    workers.push(...jobs.createJobWorkers(connection));
+  }
 
   const closeAll = async () => {
-    logger.info({}, 'workers: shutting down all workers');
+    logger.info({ count: workers.length }, 'workers: shutting down all workers');
     await Promise.all(workers.map((w) => w.close()));
   };
 
@@ -161,11 +104,22 @@ if (isEntryPoint) {
     maxRetriesPerRequest: null,
   });
 
-  startAllWorkers(connection)
+  let role: WorkerRole;
+  try {
+    role = resolveWorkerRole(process.env.WORKER_ROLE);
+  } catch (error) {
+    logger.error(
+      { err: error instanceof Error ? error.message : String(error) },
+      'workers: invalid WORKER_ROLE',
+    );
+    process.exit(1);
+  }
+
+  startWorkers(connection, role)
     .then(({ workers, closeAll }) => {
       logger.info(
-        { count: workers.length },
-        'workers: all background workers running (pdf, alerts, reports)'
+        { count: workers.length, role },
+        'workers: background workers running',
       );
 
       const shutdown = async (signal: string) => {
