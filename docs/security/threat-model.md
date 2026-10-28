@@ -2,7 +2,7 @@
 
 > Análisis de amenazas antes de codear dash-bi. Define los controles de seguridad obligatorios antes de implementar SQL execution, BYOK, multi-tenant y AI integration.
 
-**Status:** v0.3 (reconciliado contra el código — 2026-10-27)
+**Status:** v0.4 (reconciliado contra el código — 2026-10-28)
 **Prioridad:** P0 — bloquea implementación
 **Responsable:** codehak
 
@@ -23,6 +23,8 @@ Este documento declaraba controles implementados que el código no tenía. La ta
 | **T6** — payload público y CSP por token | `1166895` | El share y el embed ya no envían `source.query.sql` ni `source.dataSourceId`, y el middleware emite `frame-ancestors` con los orígenes del propio token. |
 | **C5** — gate de auditoría | `f124818` | El job vivía en `app/.github/workflows/ci.yml`, donde GitHub nunca lo ejecutaba (Actions solo descubre workflows bajo `.github/workflows/` de la raíz). Movido al workflow de la raíz y baseline actualizado. |
 | **T2 / C1** — errores de driver | `811482e` | El error crudo del driver ya no vuelve al cliente. |
+| **T2** — segunda línea contra el pivote del GUC | `110bcfd` | El GUC `app.current_org_id` es texto plano y Postgres no lo protege: contra un Postgres 16 real se comprobó que **una sola sentencia** re-apunta el contexto y devuelve filas de otra org. `withOrgContextReadOnly` verifica el contexto después de la sentencia y antes de que las filas salgan de la transacción, y limpia los GUC de sesión si detecta manipulación. |
+| **T5** — el control de export se oculta a `viewer` | `7d73e1b` | El backend ya respondía 403; ahora la UI tampoco renderiza el botón "Exportar & Compartir" cuando el rol de la org activa sabe que no puede exportar. |
 
 Los controles que **no** están implementados y que antes figuraban como `[x]` se marcaron `[ ]` y dicen dónde vive el hueco. Los que sí están implementados y antes figuraban como `[ ]` (por ejemplo `robots.txt`) se marcaron `[x]`.
 
@@ -72,6 +74,10 @@ describe('T1 — Cross-tenant isolation (Postgres RLS, real DB)', () => {
 - [x] DB user read-only (defense in depth) — ver **T1**: rol `dashbi_readonly` + migración `0019`.
 - [x] Funciones peligrosas de DB bloqueadas — `DANGEROUS_DB_FUNCTIONS` (`app/src/lib/security/validate-query.ts:46`): `set_config` y `current_setting` (re-apuntan el GUC `app.current_org_id` que leen todas las policies RLS), `pg_terminate_backend` y `pg_cancel_backend`, `pg_read_file` y familia, `lo_import`/`lo_export`, `load_file`, `dblink`, `pg_sleep`, `benchmark`, `COPY … TO PROGRAM`.
   - Test: `app/tests/unit/security/validate-query-blocked-statements.test.ts`.
+- [x] **Segunda línea** contra el pivote del GUC (la blocklist es la primera) — el GUC es texto plano y Postgres no protege: cualquier rol puede re-apuntar `app.current_org_id` para su propia sesión. Comprobado contra un Postgres 16 real: **una sola sentencia** re-apunta el contexto y devuelve filas de otra org (`WITH x AS (SELECT set_config('app.current_org_id', '<otra org>', true)) SELECT … FROM otra_org.uploads`), y la forma de **sesión** (`set_config(…, false)`) también funciona, incluso reemplazando el valor transaccional que la app fija. Escribir sigue bloqueado: el rol es solo-SELECT.
+  - `withOrgContextReadOnly` —el único camino por donde corre SQL de usuario (conector de spreadsheet y evaluador de alertas— verifica org, usuario y rol **después** de la sentencia y **antes** de que las filas salgan de la transacción. Un contexto manipulado aborta la transacción con `tenant.cross_tenant_access` (403) y **limpia los GUC de sesión**: un valor de sesión sobrevive al rollback, así que sin esa limpieza la conexión volvería al pool con el id de otra org.
+  - Archivo: `app/src/db/org-context.ts` (`assertOrgContextIntact`), cableado en `app/src/db/client.ts`.
+  - Tests: `app/tests/unit/db/org-context.test.ts`, `app/tests/unit/db/with-org-context-readonly.test.ts`, `app/tests/integration/org-context-guard.test.ts` (el leak reproducido contra Postgres real y el guard cortándolo).
 - [x] Policy engine que valida ANTES de ejecutar — la validación vive en la **ruta** y **dentro de cada connector**, no en la clase `AiGateway`: `app/src/app/api/nlqa/ask/route.ts:236` valida antes de `executeWithTimeout`, y `app/src/lib/query-engine/execute.ts:73` re-valida con el rol antes de ejecutar. Los connectors vuelven a validar por su cuenta (`app/src/lib/connectors/implementations/`): `postgres.ts:147`, `mysql.ts:133`, `hubspot.ts:140`, `snowflake.ts:151`, `shopify.ts:130`, `spreadsheet.ts:166`.
 - [ ] La IA nunca recibe prompts de SQL previos del usuario — **no implementado**: el historial del NLQA **sí** incluye el SQL generado en turnos anteriores (`app/src/app/api/nlqa/ask/route.ts:126` → `sql: row.generatedSql`, que `app/src/lib/ai/gateway.ts:266` interpola en el prompt como `SQL usado: …`). El control compensatorio existe y es el que importa: la validación es una blocklist determinista aplicada a la **salida** del modelo, así que el modelo no puede salir del blocklist a fuerza de persuasión — pero la afirmación literal del control es falsa.
 
@@ -194,6 +200,9 @@ formatters: {
   - Test: `app/tests/unit/api/route-rate-limits.test.ts`.
 - [x] `export.pdf` no es un permiso de `viewer` — `export.pdf` quedó en `["admin", "editor"]`; un viewer recibe 403 antes de consumir bucket.
   - Test: `app/tests/unit/api/route-rate-limits.test.ts` ("refuses a viewer: exporting is an editor capability").
+- [x] **Y la UI tampoco le muestra el botón** — el control "Exportar & Compartir" no se renderiza cuando el rol de la org activa **sabe** que no puede exportar. El rol sale del mismo `GET /api/organizations` que ya cachea el `OrgSwitcher` del header (clave `["my-orgs"]`), así que no hay request extra. Mientras el rol es **desconocido** (query sin resolver, o demo público sin sesión) el control se conserva: un viewer con el rol conocido nunca lo ve, y en el demo el backend responde 401 igual.
+  - Archivos: `app/src/hooks/use-active-org-role.ts`, `canExportPdf()` en `app/src/lib/auth/permissions.ts`, `app/src/components/dashboard/ExportShareDialog.tsx`.
+  - Test: `app/tests/unit/components/ExportShareDialog.test.tsx` ("no muestra el botón a un viewer").
 - [ ] Límites escalonados por plan (20/200/ilimitado) — **no implementado**: las capacidades son constantes fijas por ruta (`app/src/app/api/nlqa/ask/route.ts`, `app/src/app/api/dashboards/generate/route.ts`, etc.) y **no** varían por `org.plan`. El plan solo aparece en el presupuesto de gasto.
 - [x] Presupuesto de gasto por org, chequeado ANTES de gastar — `app/src/lib/ai/quota.ts`: `PLAN_LLM_BUDGET_USD` (free `$5`, pro `$50`, enterprise `0` = ilimitado) y `assertOrgCanSpendLlm()`, llamado desde `app/src/app/api/nlqa/ask/route.ts`, `app/src/app/api/dashboards/generate/route.ts` y `app/src/app/api/widgets/explain/route.ts` antes de invocar al modelo.
   - Test: `app/tests/unit/ai/quota.test.ts`.
