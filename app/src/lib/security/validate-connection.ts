@@ -366,3 +366,43 @@ export function validateOutboundUrl(
 
   return parsed;
 }
+
+/**
+ * Validate a URL that a TENANT supplies and that a browser will fetch on
+ * the app's behalf.
+ *
+ * `validateOutboundUrl` is the shared HTTP guard, but it is tuned for
+ * outbound calls the app makes itself (webhooks, Slack). A tenant-supplied
+ * ASSET is stricter: it ends up as an `<img src>` in a page that the PDF
+ * renderer loads, from inside the container network where the databases and
+ * the cache live.
+ *
+ * On top of the shared checks (scheme, loopback/link-local/private
+ * literals, alternate IPv4 notations) this rejects:
+ *
+ * - the service names that run next to the app (`redis`, `postgres`, `db`…),
+ *   which resolve only inside the container network;
+ * - the suffixes reserved for private networks (`.internal`, `.local`,
+ *   `.localhost`, `.localdomain`);
+ * - single-label hostnames, which only resolve inside a private network.
+ *
+ * Residual (documented, same as the rest of the file): DNS rebinding. The
+ * hostname is checked, the address it resolves to is not pinned at fetch
+ * time.
+ */
+export function validateTenantAssetUrl(url: string): URL {
+  const parsed = validateOutboundUrl(url);
+  const host = parsed.hostname.toLowerCase();
+
+  if (INTERNAL_SERVICE_NAMES.has(host)) {
+    throw new OutboundUrlError(`Host '${host}' is an internal service (not allowed)`);
+  }
+  if (INTERNAL_HOST_SUFFIXES.some((suffix) => host.endsWith(suffix))) {
+    throw new OutboundUrlError(`Host '${host}' is in a private network (not allowed)`);
+  }
+  if (!host.includes('.') && !host.includes(':')) {
+    throw new OutboundUrlError(`Host '${host}' is not a public hostname (not allowed)`);
+  }
+
+  return parsed;
+}
