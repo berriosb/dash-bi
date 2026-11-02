@@ -73,29 +73,6 @@ not reachable.
   backported fix for the 3.x line.
 - **Recheck**: 2026-12-14.
 
-## happy-dom 20.11.1 — 1 advisory (1243084)
-
-- **Path**: `better-auth > vitest > happy-dom` (the peer-optional DOM
-  implementation used by the component tests).
-- **Advisory**: incomplete fix for CVE-2026-33943 — unsanitized `img`
-  handling.
-- **Patched versions**: `>=21.0.4`.
-- **Why not fixed**: `happy-dom` is a dev-only dependency that never ships
-  in a runtime container; it exists to give Vitest a DOM. The advisory
-  concerns markup sanitization inside a simulated browser, so the worst case
-  is a test that fails to observe an XSS it should have observed — a gap in
-  test signal, not a runtime hole.
-- **Why the override did not work**: `pnpm.overrides["vitest>happy-dom"]`
-  changes the declared range, but `happy-dom` is an *optional peer
-  dependency* of Vitest and the resolution is pinned by the lockfile entry
-  rather than by the range, so the override does not move the installed
-  version.
-- **Residual risk**: test-signal only. No production code path imports
-  `happy-dom`.
-- **Retires when**: Vitest's optional peer resolves to `>=21.0.4` (Vitest
-  5.x), or the project replaces the DOM environment.
-- **Recheck**: 2026-12-14.
-
 ---
 
 ## Fixed during the hardening pass (kept for the record)
@@ -112,5 +89,6 @@ not reachable.
 | 1 critical | `@sentry/nextjs` 9.47.1 — middleware bypass via the tunnel route (not reachable: the repo uses no tunnel) | bumped to `@sentry/nextjs@9.47.2` |
 | GHSA-xjj6-f33q-929c | `undici` DoS via excessive content-encodings | `pnpm.overrides.undici: ^6.29.1` |
 | 1 high (`braces`, id 1240992) | `@sentry/nextjs` webpack plugin chain | dropped when `@sentry/nextjs` moved to 9.47.2 |
+| 2 high (`happy-dom`, ids 1243084 y 1243623) | `happy-dom` 20.11.1 — import alias sin sanitizar (CVE-2026-33943 incompleto) y SSRF por `iframe`/`link stylesheet` al parsear HTML no confiable | bump directo de la dev dependency a `happy-dom@^21.0.4` (la versión que resuelve LOS DOS), en vez de esperar a que Vitest 5.x mueva su peer opcional |
 
-Result: **36 findings → 27** (3 critical → 0, 7 high → 4).
+Result: **36 findings → 25** (3 critical → 0, 7 high → 3).
