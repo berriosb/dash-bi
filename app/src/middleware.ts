@@ -1,5 +1,8 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { getCspFrameAncestors, verifyEmbedToken } from '@/lib/embed/token';
+import { checkRequestOrigin, configuredTrustedOrigins } from '@/lib/security/csrf';
+import { ERROR_CATALOG, statusFromCode, type AppError } from '@/lib/errors/types';
+import { logger } from '@/lib/logger';
 
 const PUBLIC_PATHS = [
   '/',
@@ -121,6 +124,58 @@ async function embedCspHeader(req: NextRequest): Promise<string> {
 // See tests/unit/middleware/public-paths.test.ts.
 export const __testing = { PUBLIC_PATHS, isPublicPath, hasSessionCookie };
 
+/**
+ * The origin the request was addressed to.
+ *
+ * The `Host` header is what the browser put in the URL (nginx overwrites
+ * it with `$host`), so it is the origin the request really went to. The
+ * protocol comes from `X-Forwarded-Proto`, which the documented proxy
+ * OVERWRITES with `$scheme`; a cross-origin page cannot set it (a
+ * browser would preflight a custom header).
+ */
+function requestOrigin(req: NextRequest): string | null {
+  const host = req.headers.get('host')?.trim();
+  if (!host) return null;
+
+  const forwarded = req.headers.get('x-forwarded-proto')?.split(',')[0]?.trim();
+  const protocol =
+    forwarded === 'http' || forwarded === 'https'
+      ? forwarded
+      : (req.nextUrl.protocol.replace(':', '') || 'http');
+
+  return `${protocol}://${host}`;
+}
+
+/**
+ * better-auth mounts its own origin check on `/api/auth/*`
+ * (`originCheckMiddleware`), so the gate below does not apply there.
+ */
+function hasOwnOriginCheck(pathname: string): boolean {
+  return pathname === '/api/auth' || pathname.startsWith('/api/auth/');
+}
+
+/**
+ * The CSRF gate.
+ *
+ * `SameSite=Lax` does not protect the app's own mutating routes from a
+ * SAME-SITE attacker: a page on `evil.example.com` can POST to
+ * `app.example.com` and the session cookie travels with it. And the
+ * attack needs no preflight (`text/plain` is CORS-safelisted).
+ *
+ * The browser always sends `Origin` on a state-changing request and
+ * cannot be tricked into sending another one, so the check is: the
+ * origin has to be ours.
+ */
+function csrfVerdict(req: NextRequest): ReturnType<typeof checkRequestOrigin> {
+  return checkRequestOrigin({
+    method: req.method,
+    origin: req.headers.get('origin'),
+    referer: req.headers.get('referer'),
+    requestOrigin: requestOrigin(req),
+    trustedOrigins: configuredTrustedOrigins(),
+  });
+}
+
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
@@ -128,6 +183,36 @@ export async function middleware(req: NextRequest) {
   // Set on both request (for downstream handlers) and response (for client + logs).
   const correlationId =
     req.headers.get('x-correlation-id') ?? `req_${crypto.randomUUID()}`;
+
+  // The CSRF gate comes FIRST: a forged request gets a 403 with a clear
+  // reason, not a redirect to the login page.
+  if (!hasOwnOriginCheck(pathname)) {
+    const verdict = csrfVerdict(req);
+    if (!verdict.allowed) {
+      logger.warn(
+        {
+          correlationId,
+          path: pathname,
+          method: req.method,
+          reason: verdict.reason,
+          origin: req.headers.get('origin') ?? null,
+        },
+        'csrf: rejected a cross-origin state-changing request',
+      );
+
+      const body: AppError = {
+        code: 'auth.forbidden',
+        message: ERROR_CATALOG['auth.forbidden'].defaultMessage,
+        correlationId,
+        retryable: ERROR_CATALOG['auth.forbidden'].retryable,
+      };
+      const response = NextResponse.json(body, {
+        status: statusFromCode('auth.forbidden'),
+      });
+      response.headers.set('x-correlation-id', correlationId);
+      return response;
+    }
+  }
 
   const requestHeaders = new Headers(req.headers);
   requestHeaders.set('x-correlation-id', correlationId);
