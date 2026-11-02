@@ -2,7 +2,7 @@
 
 > Análisis de amenazas antes de codear dash-bi. Define los controles de seguridad obligatorios antes de implementar SQL execution, BYOK, multi-tenant y AI integration.
 
-**Status:** v0.5 (reconciliado contra el código — 2026-10-28)
+**Status:** v0.6 (reconciliado contra el código — 2026-11-02)
 **Prioridad:** P0 — bloquea implementación
 **Responsable:** codehak
 
@@ -26,6 +26,7 @@ Este documento declaraba controles implementados que el código no tenía. La ta
 | **T2** — segunda línea contra el pivote del GUC | `110bcfd` | El GUC `app.current_org_id` es texto plano y Postgres no lo protege: contra un Postgres 16 real se comprobó que **una sola sentencia** re-apunta el contexto y devuelve filas de otra org. `withOrgContextReadOnly` verifica el contexto después de la sentencia y antes de que las filas salgan de la transacción, y limpia los GUC de sesión si detecta manipulación. |
 | **T5** — el control de export se oculta a `viewer` | `7d73e1b` | El backend ya respondía 403; ahora la UI tampoco renderiza el botón "Exportar & Compartir" cuando el rol de la org activa sabe que no puede exportar. |
 | **T8** — aislamiento del worker de PDF | `fix/worker-pdf-isolation` | El renderer corre en un servicio sin credenciales de base de datos ni master key (los job workers van aparte, con import dinámico), Chrome se lanza con el sandbox activo y un env mínimo, las peticiones a hosts internos se abortan y la URL del logo del tenant se valida. |
+| **C6** — gate CSRF por origen | `fix/csrf-origin-gate` | Las rutas mutantes de la app verifican el `Origin` (o el `Referer`): `SameSite=Lax` no frena a un atacante same-site, y el ataque no necesita preflight porque `text/plain` es CORS-safelisted. |
 
 Los controles que **no** están implementados y que antes figuraban como `[x]` se marcaron `[ ]` y dicen dónde vive el hueco. Los que sí están implementados y antes figuraban como `[ ]` (por ejemplo `robots.txt`) se marcaron `[x]`.
 
@@ -330,6 +331,14 @@ if (!ipLimit.allowed) {
 - [ ] Renovate bot para updates — **no implementado**: no hay `renovate.json` ni `.renovaterc` en el repositorio.
 - [x] Lockfile pinned — `app/pnpm-lock.yaml` + `pnpm install --frozen-lockfile` en el job `verify` de `.github/workflows/ci.yml`.
 - [ ] SBOM generado — **no implementado**: no hay job, script ni herramienta de SBOM (CycloneDX / Syft) en `.github/workflows/ci.yml` ni en `app/package.json`.
+
+### C6 — CSRF (origen verificado en las rutas mutantes)
+- [x] Gate de `Origin` en las rutas mutantes de la app — `app/src/middleware.ts` (`csrfVerdict`): en `POST`/`PUT`/`PATCH`/`DELETE` el `Origin` (o, si falta, el `Referer`) tiene que ser del propio origen de la request o de los orígenes que declara la configuración (`BETTER_AUTH_URL`, `NEXT_PUBLIC_APP_URL`). Un origen ajeno, un `Origin: null` (iframe sandboxeado) o un origen malformado se rechazan con **403** y el contrato de error estándar (`auth.forbidden`).
+  - Por qué hace falta: la cookie de sesión es `SameSite=Lax`, que frena un POST de otro dominio registrable, pero **no** a un atacante *same-site* (`evil.example.com` → `app.example.com`): la cookie viaja porque el sitio es el mismo. Y el ataque no necesita preflight: `Content-Type: text/plain` es CORS-safelisted, así que un `fetch` cross-origin sale sin preflight y `req.json()` parsea el body igual.
+  - Test: `app/tests/unit/security/csrf-origin.test.ts` (la decisión) y `app/tests/unit/middleware/csrf-gate.test.ts` (el middleware).
+- [x] Las rutas de better-auth no pasan por este gate — `/api/auth/*` tiene su propio control de origen (`originCheckMiddleware` de better-auth); el gate los excluye explícitamente para no duplicar la política de confianza de la librería.
+- [ ] Token CSRF por sesión (doble submit) — **no implementado**: el control es el `Origin`, no un token. Cubre el escenario del atacante same-site (que es el que `SameSite=Lax` no cubre) y el cross-site (que el navegador bloquea con la cookie), pero no el caso de un cliente que falsifique el `Origin` a mano: eso exigiría una credencial que el navegador no puede mandar sola.
+- [ ] Requests sin `Origin` ni `Referer` se aceptan — **decisión deliberada**: un request sin ninguno de los dos headers no lo hace un navegador (un navegador moderno siempre manda `Origin` en una request mutante), sino curl, un cliente server-to-server o un test. No hay credencial ambiental que abusar, y rechazarlos rompería a los clientes no-navegador sin agregar protección.
 
 ---
 
