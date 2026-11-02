@@ -21,6 +21,46 @@ function slugify(value: string): string {
     .slice(0, 64) || 'org';
 }
 
+/**
+ * Lee un límite de tasa desde el entorno, con fallback.
+ *
+ * Un valor no numérico o no positivo se ignora: un typo en la variable
+ * tiene que dejar el límite de producción en su valor por defecto, no
+ * desactivarlo.
+ */
+function rateLimitFromEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === '') return fallback;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    logger.warn({ env: name, reason: 'invalid value, using default' }, 'auth rate limit override ignored');
+    return fallback;
+  }
+  return parsed;
+}
+
+/**
+ * Techos del limitador de auth.
+ *
+ * Los valores por defecto son los de producción y no cambian: el
+ * limitador sigue activo y con el mismo tope. Lo que se hace configurable
+ * es el techo, y solo para entornos donde el traffic es de una sola IP.
+ *
+ * El motivo es concreto: la suite e2e crea una cuenta por test, y los tres
+ * proyectos de Playwright (chromium, firefox, mobile-safari) salen todos
+ * desde 127.0.0.1. Con el tope de 3 sign-ups por minuto, el cuarto signup
+ * dentro de la ventana recibía un 429 y el test fallaba por un límite que
+ * no tenía nada que ver con el código bajo prueba. Peor: el síntoma
+ * cambiaba según qué proyecto corría primero, así que parecía un problema
+ * de un navegador concreto cuando era del limitador.
+ *
+ * Subir el techo en el entorno de e2e deja el limitador ejercitándose —
+ * no se desactiva — y con un techo que la suite no atraviesa.
+ */
+const authRateLimitMax = rateLimitFromEnv('AUTH_RATE_LIMIT_MAX', 30);
+const signUpRateLimitMax = rateLimitFromEnv('AUTH_RATE_LIMIT_SIGN_UP_MAX', 3);
+const signInRateLimitMax = rateLimitFromEnv('AUTH_RATE_LIMIT_SIGN_IN_MAX', 5);
+
 async function uniqueSlug(tx: Tx, base: string): Promise<string> {
   let candidate = base;
   let suffix = 0;
@@ -272,10 +312,10 @@ export const auth = betterAuth({
   rateLimit: {
     enabled: true,
     window: 60,  // 1 minuto
-    max: 30,     // 30 requests por ventana (global)
+    max: authRateLimitMax,
     customRules: {
-      '/sign-in/email': { window: 60, max: 5 },
-      '/sign-up/email': { window: 60, max: 3 },
+      '/sign-in/email': { window: 60, max: signInRateLimitMax },
+      '/sign-up/email': { window: 60, max: signUpRateLimitMax },
       '/magic-link/send': { window: 60, max: 3 },
       '/forgot-password': { window: 60, max: 3 },
       '/reset-password': { window: 60, max: 5 },
