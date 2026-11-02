@@ -57,6 +57,35 @@ function rateLimitFromEnv(name: string, fallback: number): number {
  * Subir el techo en el entorno de e2e deja el limitador ejercitándose —
  * no se desactiva — y con un techo que la suite no atraviesa.
  */
+/**
+ * Si la cookie de sesión debe llevar el flag `Secure`.
+ *
+ * No se deriva de NODE_ENV sino del esquema real de la URL pública.
+ *
+ * Con NODE_ENV=production la cookie salía con `Secure` siempre, y el
+ * navegador solo la manda por HTTPS. Chrome y Firefox aceptan un
+ * origen `http://localhost` como confiable y la dejan pasar; WebKit no.
+ * El síntoma era un bucle de redirección en mobile-safari: /dashboards
+ * respondía con un redirect a /login porque la cookie nunca salía.
+ *
+ * Pero el problema de fondo no es el test: dash-bi es self-hosted, y un
+ * operador que lo sirva por HTTP en una red interna —o detrás de un
+ * proxy que termina TLS y publica un origin http://— queda con una
+ * cookie que el navegador no manda, y nadie puede entrar. La pregunta
+ * correcta es "la app se sirve por HTTPS", y eso se deduce de la URL
+ * pública.
+ *
+ * AUTH_USE_SECURE_COOKIES fuerza el valor cuando la respuesta
+ * automatica no alcanza.
+ */
+function useSecureCookiesFromEnv(): boolean {
+  const override = process.env.AUTH_USE_SECURE_COOKIES;
+  if (override === 'true') return true;
+  if (override === 'false') return false;
+  const publicUrl = process.env.BETTER_AUTH_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? '';
+  return publicUrl.startsWith('https://');
+}
+
 const authRateLimitMax = rateLimitFromEnv('AUTH_RATE_LIMIT_MAX', 30);
 const signUpRateLimitMax = rateLimitFromEnv('AUTH_RATE_LIMIT_SIGN_UP_MAX', 3);
 const signInRateLimitMax = rateLimitFromEnv('AUTH_RATE_LIMIT_SIGN_IN_MAX', 5);
@@ -209,7 +238,7 @@ export const auth = betterAuth({
   // `defaultRandom()` and pass it back through RETURNING.
   advanced: {
     cookiePrefix: 'dashbi',
-    useSecureCookies: process.env.NODE_ENV === 'production',
+    useSecureCookies: useSecureCookiesFromEnv(),
     database: {
       generateId: false,
     },
