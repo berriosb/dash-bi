@@ -10,6 +10,7 @@ import { executeWithTimeout } from '@/lib/query-engine/execute';
 import { AiGateway, type NLQAHistoryTurn } from '@/lib/ai/gateway';
 import { recordLLMUsage, assertOrgCanSpendLlm } from '@/lib/ai/quota';
 import { validateQuery, ValidationError } from '@/lib/security/validate-query';
+import { sqlLogFields } from '@/lib/log/sql-preview';
 import { audit } from '@/lib/audit/log';
 import { checkRateLimit } from '@/lib/rate-limit';
 import { getClientIp } from '@/lib/http/client-ip';
@@ -235,7 +236,7 @@ export async function POST(req: Request) {
       // executed. Nothing writes back into `queryToRun`.
       sqlResult.sql = validateQuery(queryToRun, dataSourceType, ctx.role) ?? sqlResult.sql;
     } catch (err) {
-      logger.warn({ sql: sqlResult.sql, error: err }, 'NLQA SQL failed validation');
+      logger.warn({ ...sqlLogFields(sqlResult.sql), error: err }, 'NLQA SQL failed validation');
       const message = 'La IA generó una query inválida. Reformula tu pregunta.';
       await withOrgContext(ctx.orgId, ctx.userId, ctx.role, async (tx) =>
         tx.insert(nlqaMessages).values({
@@ -263,7 +264,7 @@ export async function POST(req: Request) {
       // server fault, so it must answer with the same 422 the validateQuery
       // branch above returns — not a 500.
       if (execErr instanceof ValidationError) {
-        logger.warn({ sql: sqlResult.sql, error: execErr }, 'NLQA SQL rejected by role policy');
+        logger.warn({ ...sqlLogFields(sqlResult.sql), error: execErr }, 'NLQA SQL rejected by role policy');
         const message = 'La IA generó una query inválida. Reformulá tu pregunta.';
         return NextResponse.json({ error: 'sql_validation_failed', message }, { status: 422 });
       }
