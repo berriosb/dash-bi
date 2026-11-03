@@ -1,6 +1,6 @@
 import pino, { type Logger } from 'pino';
 import pinoPretty from 'pino-pretty';
-import { redactSecrets } from './redact';
+import { redactLogError, redactLogObject } from './redact';
 
 // Logger estructurado con redacción automática de secrets
 // Cumple T4 del threat model: API keys nunca en logs
@@ -27,29 +27,53 @@ const redact = {
   censor: '[REDACTED]',
 };
 
-const baseOptions: pino.LoggerOptions = {
-  level: isTest ? 'silent' : process.env.LOG_LEVEL || 'info',
-  redact,
-  base: {
-    env: process.env.NODE_ENV,
-    service: 'dash-bi',
-    version: process.env.npm_package_version || '0.1.0',
-  },
-  // Custom formatter para redactar strings completos que matchean patterns
-  formatters: {
-    log(obj) {
-      // Redactar cualquier string que parezca API key
-      const redacted: Record<string, unknown> = {};
-      for (const [key, value] of Object.entries(obj)) {
-        redacted[key] = typeof value === 'string' ? redactSecrets(value) : value;
-      }
-      return redacted;
+/**
+ * The formatter pino runs on every line.
+ *
+ * The old one only redacted TOP-LEVEL strings, so `logger.error({ err })`
+ * wrote the error's message AND stack in clear: a driver error routinely
+ * carries a DSN with a password, and an SDK error carries an API key.
+ *
+ * Now every value is walked: strings are scrubbed, errors become their
+ * scrubbed shape (message and stack), and nested objects and arrays are
+ * walked too.
+ */
+export function formatLogObject(obj: Record<string, unknown>): Record<string, unknown> {
+  return redactLogObject(obj);
+}
+
+/**
+ * The options the logger is built with.
+ *
+ * Exported so the tests can build a logger with the SAME options over a
+ * capturable destination: the point of the test is the behavior of the
+ * real configuration, not of a copy of it.
+ */
+export function buildLoggerOptions(): pino.LoggerOptions {
+  return {
+    level: isTest ? 'silent' : process.env.LOG_LEVEL || 'info',
+    redact,
+    base: {
+      env: process.env.NODE_ENV,
+      service: 'dash-bi',
+      version: process.env.npm_package_version || '0.1.0',
     },
-  },
-};
+    formatters: {
+      log: formatLogObject,
+    },
+    serializers: {
+      // Pino's own `stdSerializers.err` writes the message and the stack in
+      // clear, and it only covers the `err` key: `logger.error({ error })`
+      // was serialized to `{}` (the diagnostics lost) or leaked. These
+      // replace it for both keys.
+      err: redactLogError,
+      error: redactLogError,
+    },
+  };
+}
 
 export const logger = pino(
-  baseOptions,
+  buildLoggerOptions(),
   isDev && !isTest
     ? pinoPretty({
         colorize: true,

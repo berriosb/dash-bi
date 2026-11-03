@@ -98,20 +98,82 @@ export interface RedactedError {
  * commonly attaches the offending payload as the cause, and a redacted
  * summary of it still leaks the shape of what was sent.
  */
+/**
+ * Scrub a string for the log: URLs (they carry single-use tokens),
+ * connection-string credentials, then secret-shaped values.
+ */
+export function scrubLogText(input: string): string {
+  return redactSecrets(scrubUrlCredentials(input.replace(URL_PATTERN, URL_REDACTED)));
+}
+
 export function redactError(error: unknown): RedactedError {
   if (error instanceof Error) {
     return {
       name: error.name,
-      message: redactSecrets(
-        scrubUrlCredentials(error.message.replace(URL_PATTERN, URL_REDACTED)),
-      ),
+      message: scrubLogText(error.message),
     };
   }
   if (typeof error === 'string') {
     return {
       name: 'Error',
-      message: redactSecrets(scrubUrlCredentials(error.replace(URL_PATTERN, URL_REDACTED))),
+      message: scrubLogText(error),
     };
   }
   return { name: 'Error', message: 'Unknown error' };
+}
+
+/**
+ * The loggable shape of an error for the LOGGER: the type, the scrubbed
+ * message and the scrubbed stack.
+ *
+ * The stack is kept (scrubbed) on purpose: the stack repeats the message,
+ * so it has to be scrubbed too, but dropping it would make production
+ * debugging impossible. Pino's own `stdSerializers.err` writes the message
+ * and the stack in clear, which is what T5 flagged.
+ */
+export function redactLogError(error: unknown): unknown {
+  if (error instanceof Error) {
+    return {
+      type: error.name,
+      message: scrubLogText(error.message),
+      stack: typeof error.stack === 'string' ? scrubLogText(error.stack) : undefined,
+    };
+  }
+  return error;
+}
+
+/**
+ * Recursively scrub a value for the log.
+ *
+ * Strings are scrubbed, Errors become their scrubbed loggable shape, and
+ * arrays and plain objects are walked. Objects that are NOT plain (a
+ * Date, a Buffer, a class instance) are left alone: walking them would
+ * destroy their shape for no gain, and pino has its own serializers for
+ * the common ones.
+ */
+export function redactLogValue(value: unknown): unknown {
+  if (typeof value === 'string') return scrubLogText(value);
+  if (value instanceof Error) return redactLogError(value);
+  if (Array.isArray(value)) return value.map(redactLogValue);
+  if (value && typeof value === 'object') {
+    const proto = Object.getPrototypeOf(value);
+    if (proto !== Object.prototype && proto !== null) return value;
+    return redactLogObject(value as Record<string, unknown>);
+  }
+  return value;
+}
+
+/**
+ * Recursively scrub a log object.
+ *
+ * This is what the logger's formatter runs on every line: the old one only
+ * looked at TOP-LEVEL strings, so `logger.error({ err })` wrote the error's
+ * message and stack in clear.
+ */
+export function redactLogObject<T extends Record<string, unknown>>(obj: T): T {
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    result[key] = redactLogValue(value);
+  }
+  return result as T;
 }
