@@ -2,7 +2,7 @@
 
 > Análisis de amenazas antes de codear dash-bi. Define los controles de seguridad obligatorios antes de implementar SQL execution, BYOK, multi-tenant y AI integration.
 
-**Status:** v0.8 (reconciliado contra el código — 2026-11-03)
+**Status:** v0.9 (reconciliado contra el código — 2026-11-03)
 **Prioridad:** P0 — bloquea implementación
 **Responsable:** codehak
 
@@ -209,10 +209,14 @@ formatters: {
   - Archivos: `app/src/hooks/use-active-org-role.ts`, `canExportPdf()` en `app/src/lib/auth/permissions.ts`, `app/src/components/dashboard/ExportShareDialog.tsx`.
   - Test: `app/tests/unit/components/ExportShareDialog.test.tsx` ("no muestra el botón a un viewer").
 - [ ] Límites escalonados por plan (20/200/ilimitado) — **no implementado**: las capacidades son constantes fijas por ruta (`app/src/app/api/nlqa/ask/route.ts`, `app/src/app/api/dashboards/generate/route.ts`, etc.) y **no** varían por `org.plan`. El plan solo aparece en el presupuesto de gasto.
-- [x] Presupuesto de gasto por org, chequeado ANTES de gastar — `app/src/lib/ai/quota.ts`: `PLAN_LLM_BUDGET_USD` (free `$5`, pro `$50`, enterprise `0` = ilimitado) y `assertOrgCanSpendLlm()`, llamado desde `app/src/app/api/nlqa/ask/route.ts`, `app/src/app/api/dashboards/generate/route.ts` y `app/src/app/api/widgets/explain/route.ts` antes de invocar al modelo.
-  - Test: `app/tests/unit/ai/quota.test.ts`.
-- [ ] El presupuesto es DIARIO y medido en TOKENS — **no implementado**: el presupuesto es **mensual** y se mide en **USD**. Además el gate es check-then-spend: el gasto se registra **después** de la llamada (`recordLLMUsage`), así que un burst concurrente se pasa del límite.
-- [ ] Circuit breaker: si costo/hora > umbral, desactivar IA — **no implementado**: `evaluateLLMQuota()` (`app/src/lib/observability/llm-quota.ts:45`) calcula el estado `ok`/`warn`/`block` y emite breadcrumb/Sentry, pero **no tiene ningún caller de producción**: solo lo referencia `app/tests/unit/observability/llm-quota.test.ts`. El gate real es el presupuesto mensual de `app/src/lib/ai/quota.ts`.
+- [x] Presupuesto de gasto por org, chequeado ANTES de gastar — `app/src/lib/ai/quota.ts`: `PLAN_LLM_BUDGET_USD` (free `$5`, pro `$50`, enterprise `0` = ilimitado) y `assertOrgCanSpendLlm()`. El chequeo vive en el **gateway** (`app/src/lib/ai/gateway.ts`, `assertCanSpend()` antes de CADA llamada al modelo), no en la ruta: una pregunta de NLQA hace DOS llamadas (el SQL y después la respuesta) y la segunda corría **sin chequear**. Las tres rutas pasan el guard al gateway.
+  - Los topes son configurables por entorno (`LLM_BUDGET_FREE_USD`, `LLM_BUDGET_PRO_USD`, `LLM_BUDGET_ENTERPRISE_USD`): el tope de enterprise es una decisión comercial y se cambia sin desplegar. Un valor inválido se ignora y queda el default (un `LLM_BUDGET_ENTERPRISE_USD=roto` no puede dejar a una org sin tope).
+  - Test: `app/tests/unit/ai/quota.test.ts`, `app/tests/unit/ai/gateway-spend-guard.test.ts`.
+- [ ] El presupuesto es DIARIO y medido en TOKENS — **no implementado**: el presupuesto es **mensual** y se mide en **USD**.
+  - El gate sigue siendo **check-then-spend**: el gasto se registra **después** de la llamada (`recordLLMUsage`), así que un burst concurrente ve el mismo gasto y se pasa del límite. Lo que acota el burst es el rate limit por org (NLQA: capacidad 30, refill 0.5/s → 30 requests concurrentes, 2 llamadas cada uno). Cerrarlo del todo necesita una reserva del gasto estimado ANTES de la llamada (una fila en `llm_usage` con el costo estimado, liquidada después), que es un ledger de reservas y no un chequeo más.
+- [x] La señal de presupuesto (warn/block) tiene caller de producción — `evaluateLLMQuota()` (`app/src/lib/observability/llm-quota.ts`) ahora lo invoca `assertOrgCanSpendLlm()`: el breadcrumb de Sentry al 80% del tope y el `captureException` al 100% se emiten de verdad, y el estado `block` es el que corta la llamada. Antes la función solo la referenciaba un test: la "alerta de presupuesto" que este documento daba por implementada era código muerto.
+  - Test: `app/tests/unit/ai/quota-signals.test.ts`.
+- [ ] Circuit breaker por hora (desactivar la IA si el costo/hora pasa un umbral) — **no implementado**: el corte real es el tope MENSUAL por org. El `block` de `evaluateLLMQuota` es el mismo corte que el presupuesto mensual, no un umbral horario.
 - [ ] Alerta en UI si se acerca al límite — **no implementado**: `evaluateLLMQuota` no se invoca, así que no hay señal que la UI pueda mostrar. El panel de uso (`LlmUsagePanel`) muestra consumo histórico, no cercanía al límite.
 - [ ] Revoke de API key si se detecta abuso — **no implementado**: no existe detección de abuso en `app/src` (ningún módulo lo nombra) ni revocación automática de la key del tenant.
 

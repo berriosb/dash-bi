@@ -94,9 +94,11 @@ export async function POST(req: Request) {
     const modelName = orgConfig?.llmModel ?? 'gpt-4o';
     const apiKeyEncrypted = orgConfig?.llmApiKeyEncrypted ?? undefined;
 
-    await assertOrgCanSpendLlm(ctx.orgId, ctx.userId, orgConfig?.plan ?? 'free');
-
-    const gateway = new AiGateway(provider, modelName, apiKeyEncrypted);
+    // The budget gate lives in the gateway: it runs before EVERY model
+    // call, not once per request.
+    const gateway = new AiGateway(provider, modelName, apiKeyEncrypted, () =>
+      assertOrgCanSpendLlm(ctx.orgId, ctx.userId, orgConfig?.plan ?? 'free'),
+    );
 
     const startTime = Date.now();
     const explanation = await gateway.explainWidgetData({

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   PLAN_LLM_BUDGET_USD,
   resolveBudgetUsd,
@@ -18,6 +18,10 @@ import {
  * `getOrgMonthSpendUsd` y se prueba con el helper de org context.
  */
 describe('LLM budget quota', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   describe('PLAN_LLM_BUDGET_USD', () => {
     it('define a budget for every plan', () => {
       expect(Object.keys(PLAN_LLM_BUDGET_USD).sort()).toEqual([
@@ -52,6 +56,25 @@ describe('LLM budget quota', () => {
     it('falls back to the free budget for an unknown plan', () => {
       // A bad value must not silently disable the cap.
       expect(resolveBudgetUsd('platinum' as never)).toBe(PLAN_LLM_BUDGET_USD.free);
+    });
+
+    it('deja que el operador configure el tope por entorno', () => {
+      // El tope de enterprise (0 = ilimitado) es una decisión comercial:
+      // el código la hace configurable sin tener que desplegar.
+      vi.stubEnv('LLM_BUDGET_ENTERPRISE_USD', '250');
+      expect(resolveBudgetUsd('enterprise')).toBe(250);
+
+      vi.stubEnv('LLM_BUDGET_FREE_USD', '12.5');
+      expect(resolveBudgetUsd('free')).toBe(12.5);
+    });
+
+    it('ignora un override inválido y usa el default', () => {
+      // Un valor roto no puede dejar la org sin tope.
+      vi.stubEnv('LLM_BUDGET_ENTERPRISE_USD', 'mucho');
+      expect(resolveBudgetUsd('enterprise')).toBe(PLAN_LLM_BUDGET_USD.enterprise);
+
+      vi.stubEnv('LLM_BUDGET_FREE_USD', '-5');
+      expect(resolveBudgetUsd('free')).toBe(PLAN_LLM_BUDGET_USD.free);
     });
   });
 

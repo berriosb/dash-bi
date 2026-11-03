@@ -16,6 +16,7 @@ import { withOrgContext } from '@/db/client';
 import { llmUsage } from '@/db/schema';
 import { logger } from '@/lib/logger';
 import { calculateCostUsd, type LLMUsage } from '@/lib/ai/types';
+import { evaluateLLMQuota } from '@/lib/observability/llm-quota';
 
 /** Presupuesto mensual en USD por plan. 0 = ilimitado. */
 export const PLAN_LLM_BUDGET_USD = {
@@ -41,14 +42,40 @@ export class LLMBudgetExceededError extends Error {
 }
 
 /**
+ * The env var that overrides a plan's budget.
+ *
+ * The caps are a COMMERCIAL decision (an enterprise contract may be
+ * unlimited), so the operator has to be able to change them without a
+ * code change. `0` keeps the "unlimited" meaning of the defaults.
+ */
+const BUDGET_ENV_VARS: Record<LLMPlan, string> = {
+  free: 'LLM_BUDGET_FREE_USD',
+  pro: 'LLM_BUDGET_PRO_USD',
+  enterprise: 'LLM_BUDGET_ENTERPRISE_USD',
+};
+
+/**
  * Resolve the budget for a plan. An unrecognized plan falls back to the
  * `free` cap: a bad value must not silently disable the limit.
+ *
+ * The env var wins over the default. A malformed or negative override is
+ * IGNORED (with a warning): a broken variable must never leave an org
+ * without a cap.
  */
 export function resolveBudgetUsd(plan: string): number {
-  if (plan in PLAN_LLM_BUDGET_USD) {
-    return PLAN_LLM_BUDGET_USD[plan as LLMPlan];
+  const key: LLMPlan = plan in PLAN_LLM_BUDGET_USD ? (plan as LLMPlan) : 'free';
+  const raw = process.env[BUDGET_ENV_VARS[key]];
+
+  if (raw !== undefined && raw.trim() !== '') {
+    const parsed = Number(raw);
+    if (Number.isFinite(parsed) && parsed >= 0) return parsed;
+    logger.warn(
+      { plan: key, envVar: BUDGET_ENV_VARS[key] },
+      'llm-quota: invalid budget override, using the default',
+    );
   }
-  return PLAN_LLM_BUDGET_USD.free;
+
+  return PLAN_LLM_BUDGET_USD[key];
 }
 
 /**
@@ -85,18 +112,19 @@ export function monthStart(reference: Date = new Date()): Date {
  * to the caller's org — reading another tenant's spend is as much a leak
  * as reading their dashboards.
  */
-export async function getOrgMonthSpendUsd(
+export async function getOrgMonthUsage(
   orgId: string,
   userId: string,
   now: Date = new Date(),
-): Promise<number> {
+): Promise<{ spendUsd: number; requests: number }> {
   const since = monthStart(now);
   const until = now;
 
   const rows = await withOrgContext(orgId, userId, async (tx) =>
     tx.execute(
       sql`
-        SELECT COALESCE(SUM(${llmUsage.costUsd}::numeric), 0)::text AS spend
+        SELECT COALESCE(SUM(${llmUsage.costUsd}::numeric), 0)::text AS spend,
+               COUNT(*)::int AS requests
         FROM ${llmUsage}
         WHERE ${llmUsage.orgId} = ${orgId}::uuid
           AND ${llmUsage.createdAt} >= ${since.toISOString()}::timestamptz
@@ -105,9 +133,23 @@ export async function getOrgMonthSpendUsd(
     ),
   );
 
-  const raw = (rows as Array<{ spend?: string | null }>)[0]?.spend;
-  const parsed = Number(raw ?? 0);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+  const row = (rows as Array<{ spend?: string | null; requests?: number | null }>)[0];
+  const parsed = Number(row?.spend ?? 0);
+  const spendUsd = Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+  const requests = Number(row?.requests ?? 0);
+  return { spendUsd, requests: Number.isFinite(requests) ? requests : 0 };
+}
+
+/**
+ * Total USD this org has spent on LLM calls since the start of the
+ * current month.
+ */
+export async function getOrgMonthSpendUsd(
+  orgId: string,
+  userId: string,
+  now: Date = new Date(),
+): Promise<number> {
+  return (await getOrgMonthUsage(orgId, userId, now)).spendUsd;
 }
 
 /**
@@ -124,8 +166,22 @@ export async function assertOrgCanSpendLlm(
   const budget = resolveBudgetUsd(plan);
   // Unlimited plans skip the query entirely.
   if (budget <= 0) return;
-  const spend = await getOrgMonthSpendUsd(orgId, userId, now);
-  assertWithinLLMBudget(spend, budget);
+
+  const { spendUsd, requests } = await getOrgMonthUsage(orgId, userId, now);
+
+  // The SAME evaluation that decides to block also emits the signal: a
+  // Sentry breadcrumb at 80% of the budget and a captureException at
+  // 100%. Before this, `evaluateLLMQuota` had no production caller at
+  // all: the "budget alert" the threat model claimed existed was dead
+  // code.
+  const verdict = evaluateLLMQuota(
+    { orgId, monthSpendUsd: spendUsd, monthRequests: requests },
+    { monthlyBudgetUsd: budget },
+  );
+
+  if (verdict.status === 'block') {
+    throw new LLMBudgetExceededError(spendUsd, budget);
+  }
 }
 
 export interface RecordLLMUsageInput {
