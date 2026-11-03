@@ -2,7 +2,7 @@
 
 > Análisis de amenazas antes de codear dash-bi. Define los controles de seguridad obligatorios antes de implementar SQL execution, BYOK, multi-tenant y AI integration.
 
-**Status:** v0.6 (reconciliado contra el código — 2026-11-02)
+**Status:** v0.7 (reconciliado contra el código — 2026-11-03)
 **Prioridad:** P0 — bloquea implementación
 **Responsable:** codehak
 
@@ -27,6 +27,7 @@ Este documento declaraba controles implementados que el código no tenía. La ta
 | **T5** — el control de export se oculta a `viewer` | `7d73e1b` | El backend ya respondía 403; ahora la UI tampoco renderiza el botón "Exportar & Compartir" cuando el rol de la org activa sabe que no puede exportar. |
 | **T8** — aislamiento del worker de PDF | `fix/worker-pdf-isolation` | El renderer corre en un servicio sin credenciales de base de datos ni master key (los job workers van aparte, con import dinámico), Chrome se lanza con el sandbox activo y un env mínimo, las peticiones a hosts internos se abortan y la URL del logo del tenant se valida. |
 | **C6** — gate CSRF por origen | `fix/csrf-origin-gate` | Las rutas mutantes de la app verifican el `Origin` (o el `Referer`): `SameSite=Lax` no frena a un atacante same-site, y el ataque no necesita preflight porque `text/plain` es CORS-safelisted. |
+| **C1** — redacción recursiva en el logger | `fix/logging-redaction` | El formatter de Pino recorre el objeto entero: `logger.error({ err })` ya no escribe el mensaje ni el stack del error en claro. El SQL del tenant se loguea como hash + preview de 100 chars, y el print token no se loguea. |
 
 Los controles que **no** están implementados y que antes figuraban como `[x]` se marcaron `[ ]` y dicen dónde vive el hueco. Los que sí están implementados y antes figuraban como `[ ]` (por ejemplo `robots.txt`) se marcaron `[x]`.
 
@@ -301,10 +302,16 @@ if (!ipLimit.allowed) {
 ### C1 — Logging sin secrets
 - [x] Logger Pino con formateador que redacta secrets — `app/src/lib/logger.ts:39` (formatter `log`) + `app/src/lib/redact.ts:27` (`redactSecrets`), más las rutas de campo de `pino.redact` (`llmApiKeyEncrypted`, `apiKey`, `password`, `connectionString`, `BETTER_AUTH_SECRET`, `LLM_KEY_ENCRYPTION_KEY`, …).
   - Test: `app/tests/unit/redact.test.ts`.
-- [ ] Redacción recursiva de objetos y errores — **no implementado**: el formatter de Pino solo redacta los **strings de nivel superior** (`app/src/lib/logger.ts:40`). `logger.error({ err })` escribe el mensaje y el stack del objeto `Error` sin redactar. La función que sí recursiona, `redactObject()` (`app/src/lib/redact.ts:37`), **no tiene ningún caller de producción** — solo `app/tests/unit/redact.test.ts` la referencia.
+- [x] Redacción recursiva de objetos y errores — el formatter de Pino ahora recorre el objeto entero (`app/src/lib/logger.ts`, `formatLogObject` → `app/src/lib/redact.ts`, `redactLogObject`): los strings se limpian, los `Error` pasan por `redactLogError` (mensaje **y stack** limpios) y los objetos anidados y arrays se recorren. Los serializers de Pino para `err` y `error` se reemplazan por los mismos: el de Pino escribía el mensaje y el stack en claro, y el de `error` perdía el diagnóstico (lo serializaba a `{}`).
+  - El stack se conserva (limpio) a propósito: se lo necesita para depurar en producción, y se limpia porque repite el mensaje.
+  - Test: `app/tests/unit/logger.test.ts` (el logger real, sobre un destino capturable) y `app/tests/unit/redact.test.ts`.
 - [x] No loguear config descifrado — las rutas de campo de `pino.redact` cubren `llmApiKeyEncrypted`, `llmApiKey`, `apiKey`, `api_key`, `password` y `connectionString` (`app/src/lib/logger.ts:11`), y el valor descifrado viaja en variables locales (`app/src/lib/ai/router.ts:12`, los connectors), no dentro de un payload de log.
-- [ ] No loguear SQL completo en error (solo query hash + primeros 100 chars) — **no implementado**: la ruta de NLQA loguea el SQL generado **completo** en dos ramas (`app/src/app/api/nlqa/ask/route.ts:238` y `:266`, `logger.warn({ sql: sqlResult.sql, … })`).
-- [ ] No loguear tokens de un solo uso — **no implementado**: el print token se loguea en claro (`app/src/lib/export/print-token.ts:62`, `logger.error({ err: error, token }, …)`); el token es un base64url de 24 bytes que no coincide con los patrones de `redactSecrets` (necesitan 40+ caracteres).
+- [x] No loguear SQL completo en error (solo query hash + primeros 100 chars) — las dos ramas de NLQA loguean `sqlLogFields(sql)` (`app/src/lib/log/sql-preview.ts`): un **hash estable** de 12 caracteres (la misma query hashea igual, para correlacionar) y el **preview de los primeros 100 caracteres**, limpio. El SQL del tenant es la forma de su warehouse: nombres de tabla, joins y los literales de sus datos.
+  - El invariante se afirma sobre las **fuentes**: un test escanea `app/src` y falla si algún `logger.*` loguea la propiedad `sql` completa, así que la próxima ruta que lo haga rompe el build.
+  - Test: `app/tests/unit/security/no-full-sql-in-logs.test.ts`.
+- [x] No loguear tokens de un solo uso — el print token ya no se loguea (`app/src/lib/export/print-token.ts:64`): es una credencial de portador del dashboard, y el que lee los logs se la llevaba. El worker tampoco lo loguea (loguea la URL sin query string, `app/src/worker/render-pdf.ts`).
+  - Nota: el token es un base64url de 24 bytes, así que no coincidía con los patrones de `redactSecrets` (que necesitan 40+ caracteres): la redacción no lo habría agarrado, tenía que dejar de loguearse.
+  - Test: `app/tests/unit/export/print-token.test.ts`.
 
 ### C2 — Audit log completo
 - [ ] Login / logout / signup — **no implementado**: `auth.login`, `auth.logout`, `auth.signup`, `auth.failed_login`, `auth.magic_link_sent`, `auth.magic_link_used`, `auth.password_reset_requested`, `auth.password_reset_completed`, `auth.email_verification_sent` y `auth.email_verified` están **declarados** en `app/src/lib/audit/events.ts` pero **no tienen ningún sitio de emisión** en `app/src`.
