@@ -2,7 +2,7 @@
 
 > Análisis de amenazas antes de codear dash-bi. Define los controles de seguridad obligatorios antes de implementar SQL execution, BYOK, multi-tenant y AI integration.
 
-**Status:** v0.7 (reconciliado contra el código — 2026-11-03)
+**Status:** v0.8 (reconciliado contra el código — 2026-11-03)
 **Prioridad:** P0 — bloquea implementación
 **Responsable:** codehak
 
@@ -168,7 +168,9 @@ export function validatePostgresHost(host: string): void {
 - [x] Regex redaction en logs — `app/src/lib/redact.ts:27` (`redactSecrets`): OpenAI, Anthropic, Google, Stripe, AWS, `Bearer …`, JWT y strings aleatorios largos.
   - Test: `app/tests/unit/redact.test.ts`.
   - Ver **C1** para el límite real de esta redacción.
-- [x] Field-level encryption en DB (no plaintext en ningún campo) — la key del tenant se guarda cifrada con AES-256-GCM; las alertas cifran el webhook (`app/src/lib/alerts/schemas.ts:156`). **Excepción**: los `headers` de un canal webhook (bearer tokens) se guardan **en claro** — `encryptAlertChannels` cifra la URL pero no el mapa de headers. El hueco está en `app/src/lib/alerts/schemas.ts:156`.
+- [x] Field-level encryption en DB (no plaintext en ningún campo) — la key del tenant se guarda cifrada con AES-256-GCM; las alertas cifran el webhook (`app/src/lib/alerts/schemas.ts`). Los **headers** de un canal webhook también se cifran ahora, valor por valor (`encryptHeaderValues`): el bearer token vivía en el mapa de headers, que se guardaba en claro junto a su propio endpoint. Los nombres de los headers no son secretos y quedan legibles.
+  - Una fila escrita antes de este cambio (headers en claro) sigue funcionando: el camino de entrega deja el valor como está y la regla se re-cifra sola la próxima vez que se guarda. El residuo es que las filas viejas siguen en claro hasta que se editan.
+  - Test: `app/tests/unit/alerts/channel-encryption.test.ts` (cifra, descifra, idempotencia, fila vieja, y que la API siga enmascarando los headers).
 - [x] API keys NUNCA en responses (select whitelist explícito) — la API de BYOK devuelve el placeholder `[REDACTED]`, no el ciphertext (`app/src/app/api/organizations/llm-key/route.ts`, `maskAlertChannels` en `app/src/lib/alerts/schemas.ts`).
   - Test: `app/tests/unit/api/llm-key-byok.test.ts`.
 - [ ] Audit log de cada lectura de key — **no implementado**: no hay ningún sitio de emisión para una lectura de key. El ciclo de vida de la key se audita como `org.settings_updated` genérico (`app/src/app/api/organizations/llm-key/route.ts:150` y `:196`), no con los eventos declarados `llm.api_key_created` / `llm.api_key_rotated` / `llm.api_key_deleted`, que no tienen ningún sitio de emisión.

@@ -161,11 +161,54 @@ export function encryptAlertChannels(
     if (channel.type === 'slack' && !isEncrypted(channel.webhookUrl)) {
       return { ...channel, webhookUrl: encryptApiKey(channel.webhookUrl) };
     }
-    if (channel.type === 'webhook' && !isEncrypted(channel.url)) {
-      return { ...channel, url: encryptApiKey(channel.url) };
+    if (channel.type === 'webhook') {
+      return {
+        ...channel,
+        url: isEncrypted(channel.url) ? channel.url : encryptApiKey(channel.url),
+        ...(channel.headers ? { headers: encryptHeaderValues(channel.headers) } : {}),
+      };
     }
     return channel;
   });
+}
+
+/**
+ * Encrypt the values of a custom header map.
+ *
+ * The bearer token of a webhook lives in the HEADERS, not in the URL: the
+ * endpoint was encrypted and the header map was not, so the secret was
+ * stored in plaintext next to its own endpoint.
+ *
+ * Each VALUE is encrypted on its own (the header NAMES are not secrets,
+ * and keeping the map a map keeps the type stable). A value that is
+ * already a ciphertext is left alone, so the function stays idempotent and
+ * a row saved twice does not get encrypted twice.
+ */
+function encryptHeaderValues(
+  headers: Record<string, string>,
+): Record<string, string> {
+  const encrypted: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    encrypted[key] = isEncrypted(value) ? value : encryptApiKey(value);
+  }
+  return encrypted;
+}
+
+/**
+ * The reverse of `encryptHeaderValues`.
+ *
+ * A value that is NOT a ciphertext is a row written before the headers
+ * were encrypted: it is left as-is, so the delivery keeps working and the
+ * rule re-encrypts itself the next time it is saved.
+ */
+function decryptHeaderValues(
+  headers: Record<string, string>,
+): Record<string, string> {
+  const decrypted: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    decrypted[key] = isEncrypted(value) ? decryptApiKey(value) : value;
+  }
+  return decrypted;
 }
 
 /**
@@ -181,8 +224,12 @@ export function decryptAlertChannels(
     if (channel.type === 'slack' && isEncrypted(channel.webhookUrl)) {
       return { ...channel, webhookUrl: decryptApiKey(channel.webhookUrl) };
     }
-    if (channel.type === 'webhook' && isEncrypted(channel.url)) {
-      return { ...channel, url: decryptApiKey(channel.url) };
+    if (channel.type === 'webhook') {
+      return {
+        ...channel,
+        url: isEncrypted(channel.url) ? decryptApiKey(channel.url) : channel.url,
+        ...(channel.headers ? { headers: decryptHeaderValues(channel.headers) } : {}),
+      };
     }
     return channel;
   });
