@@ -59,7 +59,9 @@ export async function validatePrintToken(token: string): Promise<PrintTokenPaylo
     await getRedis().del(key);
     return payload;
   } catch (error) {
-    logger.error({ err: error, token }, 'print-token: malformed JSON in Redis');
+    // The token is NOT logged: it is a bearer credential for the
+    // dashboard, and whoever reads the logs would get it.
+    logger.error({ err: error }, 'print-token: malformed JSON in Redis');
     return null;
   }
 }

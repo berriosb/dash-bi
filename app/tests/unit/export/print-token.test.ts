@@ -95,5 +95,17 @@ describe('print-token', () => {
       expect(result).toBeNull();
       expect(mockRedisDel).not.toHaveBeenCalled();
     });
+
+    it('does not log the one-time token', async () => {
+      // The print token is a bearer credential for the dashboard: whoever
+      // has it can read it. Logging it hands it to whoever reads the logs.
+      const { logger } = await import('@/lib/logger');
+      mockRedisGet.mockResolvedValueOnce('not-json{');
+
+      await validatePrintToken('super-secret-token-value');
+
+      const logged = JSON.stringify((logger.error as ReturnType<typeof vi.fn>).mock.calls);
+      expect(logged).not.toContain('super-secret-token-value');
+    });
   });
 });
