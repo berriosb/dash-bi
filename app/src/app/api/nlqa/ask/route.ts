@@ -160,11 +160,12 @@ export async function POST(req: Request) {
     const provider = (orgConfig?.llmProvider ?? 'openai') as 'openai' | 'anthropic' | 'gemini';
     const modelName = orgConfig?.llmModel ?? 'gpt-4o';
     const apiKeyEncrypted = orgConfig?.llmApiKeyEncrypted ?? undefined;
-    // Budget gate BEFORE any token is spent. Two LLM calls happen per
-    // question, so letting them run and warning afterwards is worthless.
-    await assertOrgCanSpendLlm(ctx.orgId, ctx.userId, orgConfig?.plan ?? 'free');
-
-    const gateway = new AiGateway(provider, modelName, apiKeyEncrypted ?? undefined);
+    // The budget gate lives in the gateway: it runs before EVERY model
+    // call. Two LLM calls happen per question (the SQL and then the
+    // answer), and the second one used to run with no check at all.
+    const gateway = new AiGateway(provider, modelName, apiKeyEncrypted ?? undefined, () =>
+      assertOrgCanSpendLlm(ctx.orgId, ctx.userId, orgConfig?.plan ?? 'free'),
+    );
 
     const sqlStartedAt = Date.now();
     const sqlResult = await gateway.generateNLQASql({

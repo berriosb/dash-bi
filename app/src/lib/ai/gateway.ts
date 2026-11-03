@@ -166,12 +166,38 @@ export interface ExplainWidgetOutput extends WidgetExplanationResult {
   };
 }
 
+/**
+ * The check that runs before EVERY model call.
+ *
+ * The budget used to be checked once per REQUEST, at the route. An NLQA
+ * question makes two model calls (generate the SQL, then answer it), so
+ * the second one ran with no check at all: a budget exhausted by the
+ * first call still got a second one.
+ *
+ * The gateway is the funnel every model call goes through, so the check
+ * belongs here: a new AI route cannot forget it.
+ */
+export type AiGatewaySpendGuard = () => Promise<void>;
+
 export class AiGateway {
   constructor(
     private provider: LLMProvider = 'openai',
     private modelName: string = 'gpt-4o',
     private encryptedApiKey?: string,
+    /** Checked before every model call. Optional for callers without a budget. */
+    private spendGuard?: AiGatewaySpendGuard,
   ) {}
+
+  /**
+   * Refuse the call when the org is over its monthly budget.
+   *
+   * Throws whatever the guard throws (the budget error maps to a 402 in
+   * the error contract).
+   */
+  private async assertCanSpend(): Promise<void> {
+    if (!this.spendGuard) return;
+    await this.spendGuard();
+  }
 
   async generateDashboard(input: GenerateDashboardInput): Promise<Dashboard & { usage?: LLMUsage }> {
     const selection = selectArchetype({
@@ -205,6 +231,8 @@ Reglas estrictas:
 7. La variante solo puede usar density, accent, timeWindow y comparativo de los enums del schema.
 8. No generes colores, fuentes, radios, sombras, gradientes, animaciones ni clases CSS. El renderer resuelve todo desde tokens semánticos.
 `;
+
+    await this.assertCanSpend();
 
     const result = await generateObject({
       model,
@@ -269,6 +297,8 @@ ${input.question}
 # OUTPUT (solo JSON válido, sin texto extra)
 `;
 
+    await this.assertCanSpend();
+
     const result = await generateObject({
       model,
       schema: nlqaSqlSchema,
@@ -320,6 +350,8 @@ Devolvé JSON con:
 - Si el result tiene 0 filas, chartSuggestion = null.
 
 ${input.history?.length ? `# HISTORIAL (contexto)\n${input.history.map((h) => `${h.role.toUpperCase()}: ${h.content}`).join('\n')}\n\n` : ''}`;
+
+    await this.assertCanSpend();
 
     const result = await generateObject({
       model,
@@ -386,6 +418,8 @@ ${input.prompt}
       modifyWidgetId: z.string().optional(),
     });
 
+    await this.assertCanSpend();
+
     const result = await generateObject({
       model,
       schema: editResultSchema,
@@ -426,6 +460,8 @@ ${JSON.stringify(input.data ?? { value: null }, null, 2)}
 6. "suggestedAction": Una recomendación ejecutiva de acción directa y accionable (<300 caracteres).
 7. Idioma: Español ejecutivo neutro.
 `;
+
+    await this.assertCanSpend();
 
     const result = await generateObject({
       model,

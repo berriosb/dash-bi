@@ -141,7 +141,14 @@ describe('POST /api/dashboards/generate — BYOK (HIGH-9)', () => {
     const res = await POST(makeRequest({ prompt: 'ventas por mes', dataSourceId: 'ds-1' }));
 
     expect(res.status).toBe(201);
-    expect(mockAiGateway).toHaveBeenCalledWith('anthropic', 'claude-sonnet-4', 'encrypted-key-abc');
+    // The 4th argument is the spend guard: the budget is checked by the
+    // gateway before EVERY model call, not once per request.
+    expect(mockAiGateway).toHaveBeenCalledWith(
+      'anthropic',
+      'claude-sonnet-4',
+      'encrypted-key-abc',
+      expect.any(Function),
+    );
   });
 
   it('records usage against the provider and model it actually used', async () => {
@@ -180,7 +187,12 @@ describe('POST /api/dashboards/generate — BYOK (HIGH-9)', () => {
     const res = await POST(makeRequest({ prompt: 'ventas', dataSourceId: 'ds-1' }));
 
     expect(res.status).toBe(201);
-    expect(mockAiGateway).toHaveBeenCalledWith('openai', 'gpt-4o', undefined);
+    expect(mockAiGateway).toHaveBeenCalledWith(
+      'openai',
+      'gpt-4o',
+      undefined,
+      expect.any(Function),
+    );
   });
 
   it('uses the org config in edit mode too, not just on create', async () => {
@@ -223,7 +235,14 @@ describe('POST /api/dashboards/generate — BYOK (HIGH-9)', () => {
     );
 
     expect(res.status).toBe(200);
-    expect(mockAiGateway).toHaveBeenCalledWith('anthropic', 'claude-sonnet-4', 'encrypted-key-abc');
+    // The 4th argument is the spend guard: the budget is checked by the
+    // gateway before EVERY model call, not once per request.
+    expect(mockAiGateway).toHaveBeenCalledWith(
+      'anthropic',
+      'claude-sonnet-4',
+      'encrypted-key-abc',
+      expect.any(Function),
+    );
     expect(mockRecordLLMUsage).toHaveBeenCalledWith(
       expect.objectContaining({ provider: 'anthropic', model: 'claude-sonnet-4' }),
     );
