@@ -169,6 +169,44 @@ describe('T8: no raw error.message reaches the client', () => {
     expect(res.headers.get('x-correlation-id')).toBeTruthy();
   });
 
+  it('a successful connection test is audited as datasource.tested', async () => {
+    mockResolveConnector.mockResolvedValue({
+      testConnection: async () => ({ ok: true, latencyMs: 12 }),
+    });
+
+    await testConnection(post(`/api/data-sources/${ID}/test`), {
+      params: Promise.resolve({ id: ID }),
+    });
+
+    const { audit } = await import('@/lib/audit/log');
+    expect(audit).toHaveBeenCalledWith(
+      'org-1',
+      'user-123',
+      'datasource.tested',
+      `datasource:${ID}`,
+      expect.objectContaining({ metadata: expect.objectContaining({ latencyMs: 12 }) }),
+    );
+  });
+
+  it('a failed connection test is audited as datasource.connection_failed', async () => {
+    mockResolveConnector.mockResolvedValue({
+      testConnection: async () => ({ ok: false, latencyMs: 30, error: 'ENOTFOUND db.internal' }),
+    });
+
+    await testConnection(post(`/api/data-sources/${ID}/test`), {
+      params: Promise.resolve({ id: ID }),
+    });
+
+    const { audit } = await import('@/lib/audit/log');
+    expect(audit).toHaveBeenCalledWith(
+      'org-1',
+      'user-123',
+      'datasource.connection_failed',
+      `datasource:${ID}`,
+      expect.anything(),
+    );
+  });
+
   it('instantiate does not forward the thrown message', async () => {
     mockInstantiateTemplate.mockRejectedValue(
       new Error('duplicate key value violates unique constraint "orgs_slug_idx"'),

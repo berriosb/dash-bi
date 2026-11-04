@@ -135,7 +135,20 @@ export async function PUT(req: Request) {
 
     const encrypted = encryptApiKey(apiKey);
 
+    // The event depends on whether the org ALREADY had a key: the first
+    // one is a creation and the next ones are rotations. Audited as
+    // `org.settings_updated` the two were indistinguishable — and the
+    // rotation of a tenant's BYOK is exactly the event that has to answer
+    // "who changed this org's credential".
+    let hadKey = false;
     await withOrgContext(ctx.orgId, ctx.userId, ctx.role, async (tx) => {
+      const [current] = await tx
+        .select({ llmApiKeyEncrypted: orgs.llmApiKeyEncrypted })
+        .from(orgs)
+        .where(eq(orgs.id, ctx.orgId))
+        .limit(1);
+      hadKey = Boolean(current?.llmApiKeyEncrypted);
+
       await tx
         .update(orgs)
         .set({
@@ -147,11 +160,17 @@ export async function PUT(req: Request) {
         .where(eq(orgs.id, ctx.orgId));
     });
 
-    await audit(ctx.orgId, ctx.userId, 'org.settings_updated', `org:${ctx.orgId}`, {
-      // Deliberately no key material: only the shape of the change.
-      metadata: { apiKeySet: true, provider, model },
-      req,
-    });
+    await audit(
+      ctx.orgId,
+      ctx.userId,
+      hadKey ? 'llm.api_key_rotated' : 'llm.api_key_created',
+      `org:${ctx.orgId}`,
+      {
+        // Deliberately no key material: only the shape of the change.
+        metadata: { apiKeySet: true, provider, model },
+        req,
+      },
+    );
 
     return NextResponse.json({ ok: true, hasApiKey: true });
   } catch (error) {
@@ -193,7 +212,7 @@ export async function DELETE(req: Request) {
         .where(eq(orgs.id, ctx.orgId));
     });
 
-    await audit(ctx.orgId, ctx.userId, 'org.settings_updated', `org:${ctx.orgId}`, {
+    await audit(ctx.orgId, ctx.userId, 'llm.api_key_deleted', `org:${ctx.orgId}`, {
       metadata: { apiKeyCleared: true },
       req,
     });

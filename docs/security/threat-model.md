@@ -2,7 +2,7 @@
 
 > Análisis de amenazas antes de codear dash-bi. Define los controles de seguridad obligatorios antes de implementar SQL execution, BYOK, multi-tenant y AI integration.
 
-**Status:** v0.9 (reconciliado contra el código — 2026-11-03)
+**Status:** v0.10 (reconciliado contra el código — 2026-11-03)
 **Prioridad:** P0 — bloquea implementación
 **Responsable:** codehak
 
@@ -320,12 +320,15 @@ if (!ipLimit.allowed) {
   - Test: `app/tests/unit/export/print-token.test.ts`.
 
 ### C2 — Audit log completo
-- [ ] Login / logout / signup — **no implementado**: `auth.login`, `auth.logout`, `auth.signup`, `auth.failed_login`, `auth.magic_link_sent`, `auth.magic_link_used`, `auth.password_reset_requested`, `auth.password_reset_completed`, `auth.email_verification_sent` y `auth.email_verified` están **declarados** en `app/src/lib/audit/events.ts` pero **no tienen ningún sitio de emisión** en `app/src`.
+- [x] Login / logout / signup — `auth.login` y `auth.logout` se emiten desde los hooks de sesión de better-auth (`app/src/lib/auth/config.ts`, `databaseHooks.session.create.after` / `delete.after`) y `auth.signup` desde la misma transacción que crea la org. La org del evento se resuelve por la membresía del usuario (`auditAuthEvent`, `app/src/lib/audit/log.ts`): `audit_log.org_id` es NOT NULL y no hay org de sistema donde archivar un evento sin tenant.
+  - Test: `app/tests/unit/auth/session-audit-hooks.test.ts` (los hooks reales) y `app/tests/unit/audit/audit-auth-event.test.ts`.
+  - **Siguen sin emission**: `auth.failed_login`, `auth.magic_link_sent`, `auth.magic_link_used`, `auth.password_reset_requested`, `auth.password_reset_completed`, `auth.email_verification_sent` y `auth.email_verified`. Los dos últimos grupos ocurren **antes** de que el usuario tenga org (no hay dónde archivarlos con el schema actual) y `auth.failed_login` no tiene hook: better-auth no expone uno.
 - [x] Dashboard created/updated/deleted — `app/src/app/api/dashboards/route.ts:99`, `app/src/app/api/dashboards/[id]/route.ts:130` y `:150`.
 - [x] Data source connected/deleted — `datasource.created` en `app/src/app/api/data-sources/route.ts:357`; `datasource.deleted` en `app/src/app/api/files/[id]/route.ts:120`.
-- [ ] Test de conexión de data source auditado — **no implementado**: `datasource.tested` y `datasource.connection_failed` están declarados y no tienen sitio de emisión; la ruta `app/src/app/api/data-sources/[id]/test/route.ts` no llama a `audit()`.
+- [x] Test de conexión de data source auditado — `datasource.tested` y `datasource.connection_failed` se emiten en `app/src/app/api/data-sources/[id]/test/route.ts`. Un `connection_failed` repetido es el rastro de alguien probando credenciales contra las fuentes del tenant.
+  - Test: `app/tests/unit/api/error-contract-leaks.test.ts`.
 - [x] AI generation — `dashboard.generated`, `nlqa.question_asked`, `nlqa.answer_generated`, `nlqa.widget_explained`.
-- [x] Export (PDF/PNG/link) — `export.pdf_requested` / `export.pdf_completed` / `export.pdf_failed` (`app/src/app/api/dashboards/[id]/export/pdf/route.ts`), `export.link_generated` (`dashboards/[id]/share/route.ts:106`) y `export.link_revoked` (`app/src/app/api/public-links/[id]/route.ts:22`). El export PNG **no existe** como ruta: los eventos `export.png_requested` / `export.png_completed` están declarados y no tienen emisión.
+- [x] Export (PDF/PNG/link) — `export.pdf_requested` / `export.pdf_completed` / `export.pdf_failed` (`app/src/app/api/dashboards/[id]/export/pdf/route.ts`), `export.link_generated` (`dashboards/[id]/share/route.ts:106`) y `export.link_revoked` (`app/src/app/api/public-links/[id]/route.ts:22`). El export PNG es **client side** (html2canvas en el browser): no hay ruta de servidor que auditar, así que los eventos `export.png_requested` / `export.png_completed` se SACARON del enum en vez de quedar declarados sin emisión posible.
 - [ ] BYOK key created/rotated/deleted — **no implementado como eventos propios**: el ciclo de vida se audita con el evento genérico `org.settings_updated` (`app/src/app/api/organizations/llm-key/route.ts:150` y `:196`), no con `llm.api_key_created` / `llm.api_key_rotated` / `llm.api_key_deleted`, que no tienen ningún sitio de emisión.
 - [ ] Guard de metadata sensible en `assertSafeMetadata` — **no implementado donde importa**: `assertSafeMetadata()` (`app/src/lib/audit/events.ts:141`) hace `if (process.env.NODE_ENV === 'production') return;` antes de validar, así que la lista `AUDIT_FORBIDDEN_METADATA_KEYS` **no se aplica en producción**.
 
@@ -438,7 +441,9 @@ Antes de escribir la primera línea de código de SQL execution:
 - [x] Pino con redactor implementado + tests — `app/src/lib/logger.ts:39`, `app/src/lib/redact.ts:27` — test: `app/tests/unit/redact.test.ts`
 - [x] Rate limit por org implementado + tests — `app/src/lib/rate-limit.ts` + las rutas de referencia `app/src/app/api/nlqa/ask/route.ts` y `app/src/app/api/dashboards/generate/route.ts` — tests: `app/tests/unit/api/route-rate-limits.test.ts`, `app/tests/unit/http/client-ip.test.ts`
 - [x] ESLint rule custom instalada — `app/.eslint-rules/no-raw-db-queries.cjs`, activada en `app/eslint.config.mjs`
-- [x] Audit log funcionando — `app/src/lib/audit/log.ts` (`audit()`), con eventos reales de dashboard, data source, export, NLQA, scheduled report y alerts. **Los eventos de autenticación no se emiten** (ver **C2**).
+- [x] Audit log funcionando — `app/src/lib/audit/log.ts` (`audit()`), con eventos reales de dashboard, data source, export, NLQA, scheduled report, alerts y **auth** (ver **C2**).
+  - El metadata no puede guardar secrets: `assertSafeMetadata` corre en **todos** los entornos (antes hacía early-return en producción, y la redacción solo cubría strings de nivel superior: un `{ apiKey: 'sk-…' }` anidado se guardaba en claro, en producción, justo donde el guard debía detenerlo) y el chequeo de keys es recursivo. La redacción del metadata usa el mismo scrubber recursivo que el logger.
+  - Test: `app/tests/unit/audit/metadata-guard.test.ts`.
 - [x] DB user read-only creado en docker-compose — `scripts/postgres/init-roles.sh` (rol `dashbi_readonly`) + `app/drizzle/migrations/0019_readonly_revoke_internal_tables.sql` — tests: `app/tests/unit/security/readonly-role-grants.test.ts`, `app/tests/integration/rls-isolation.test.ts`
 
 **Los 10 controles pre-implementación están verificados contra el código (ver Sprint 1 en `README.md` §Status). Cada línea de esta lista apunta a la implementación y a su test; el detalle de lo que falta está en las secciones 1 y 2.**
