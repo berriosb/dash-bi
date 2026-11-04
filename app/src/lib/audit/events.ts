@@ -135,15 +135,45 @@ export const AUDIT_FORBIDDEN_METADATA_KEYS = [
 ] as const;
 
 /**
- * Assert en tiempo de dev que el metadata no incluye keys prohibidas.
- * En producción, el log igual redacta (defense in depth).
+ * The keys of a metadata object, at every depth.
+ */
+function collectKeys(value: unknown, out: string[] = []): string[] {
+  if (!value || typeof value !== 'object') return out;
+  for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+    out.push(key);
+    collectKeys(nested, out);
+  }
+  return out;
+}
+
+/**
+ * `apiKey`, `api_key`, `API-KEY` and `apiKey` are the same intent.
+ */
+function normalizeKey(key: string): string {
+  return key.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+const FORBIDDEN_KEYS_NORMALIZED = new Set(
+  (AUDIT_FORBIDDEN_METADATA_KEYS as readonly string[]).map(normalizeKey),
+);
+
+/**
+ * Assert that the metadata does not carry a forbidden key.
+ *
+ * This runs in EVERY environment, including production. It used to skip
+ * production on the assumption that "the log redacts anyway" — and it does
+ * not: the redaction only handled top-level strings, so a nested
+ * `{ apiKey: 'sk-…' }` landed in `audit_log.metadata` in clear, in
+ * production, exactly where this guard was supposed to stop it.
+ *
+ * The check is recursive: a secret does not stop being a secret because
+ * it is nested one level down.
  */
 export function assertSafeMetadata(metadata: Record<string, unknown> | undefined): void {
   if (!metadata) return;
-  if (process.env.NODE_ENV === 'production') return; // Skip en prod (ya hay redaction)
 
-  for (const key of Object.keys(metadata)) {
-    if ((AUDIT_FORBIDDEN_METADATA_KEYS as readonly string[]).includes(key)) {
+  for (const key of collectKeys(metadata)) {
+    if (FORBIDDEN_KEYS_NORMALIZED.has(normalizeKey(key))) {
       throw new Error(
         `Audit metadata uses forbidden key "${key}". This is likely a security bug — remove sensitive data before logging.`,
       );

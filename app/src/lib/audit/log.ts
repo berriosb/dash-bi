@@ -2,7 +2,7 @@ import { withOrgContext } from '@/db/client';
 import { auditLog } from '@/db/schema';
 import { logger } from '@/lib/logger';
 import { getClientIp } from '@/lib/http/client-ip';
-import { redactSecrets } from '@/lib/redact';
+import { redactLogObject } from '@/lib/redact';
 import {
   assertSafeMetadata,
   type AuditEvent,
@@ -62,14 +62,17 @@ function extractRequestMetadata(req: Request | undefined): {
   };
 }
 
+/**
+ * Scrub the metadata before it is stored.
+ *
+ * Recursive: the redaction used to only touch top-level strings, so a
+ * secret nested one level down (`{ config: { keyPreview: 'sk-…' } }`)
+ * was stored in clear. The same recursive scrubber the logger uses
+ * (`redactLogObject`) applies here.
+ */
 function redactMetadata(meta?: Record<string, unknown>): Record<string, unknown> | undefined {
   if (!meta) return undefined;
-  return Object.fromEntries(
-    Object.entries(meta).map(([k, v]) => [
-      k,
-      typeof v === 'string' ? redactSecrets(v) : v,
-    ]),
-  );
+  return redactLogObject(meta);
 }
 
 export async function audit(
