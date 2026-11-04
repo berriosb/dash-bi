@@ -119,7 +119,7 @@ describe('T4 — BYOK: the org LLM key is actually stored, encrypted, and never 
     expect(raw).not.toContain(encryptApiKey(PLAINTEXT));
   });
 
-  it('PUT records org.settings_updated in the audit trail', async () => {
+  it('PUT records llm.api_key_created when the org had no key', async () => {
     mockOrgRow({ id: ORG_ID, llmProvider: 'openai', llmModel: 'gpt-4o', llmApiKeyEncrypted: null });
 
     await PUT(REQ('PUT', { provider: 'openai', model: 'gpt-4o', apiKey: PLAINTEXT }));
@@ -127,7 +127,29 @@ describe('T4 — BYOK: the org LLM key is actually stored, encrypted, and never 
     expect(audit).toHaveBeenCalledWith(
       ORG_ID,
       USER_ID,
-      'org.settings_updated',
+      'llm.api_key_created',
+      `org:${ORG_ID}`,
+      expect.objectContaining({ metadata: expect.objectContaining({ apiKeySet: true }) }),
+    );
+  });
+
+  it('PUT records llm.api_key_rotated when the org already had a key', async () => {
+    // La rotación de la key BYOK es el evento que dice quien cambió la
+    // credencial del tenant: auditado como `org.settings_updated` no se
+    // distinguía de un cambio de cualquier otro ajuste.
+    mockOrgRow({
+      id: ORG_ID,
+      llmProvider: 'openai',
+      llmModel: 'gpt-4o',
+      llmApiKeyEncrypted: encryptApiKey(PLAINTEXT),
+    });
+
+    await PUT(REQ('PUT', { provider: 'openai', model: 'gpt-4o', apiKey: PLAINTEXT }));
+
+    expect(audit).toHaveBeenCalledWith(
+      ORG_ID,
+      USER_ID,
+      'llm.api_key_rotated',
       `org:${ORG_ID}`,
       expect.objectContaining({ metadata: expect.objectContaining({ apiKeySet: true }) }),
     );
@@ -187,7 +209,7 @@ describe('T4 — BYOK: the org LLM key is actually stored, encrypted, and never 
     expect(audit).toHaveBeenCalledWith(
       ORG_ID,
       USER_ID,
-      'org.settings_updated',
+      'llm.api_key_deleted',
       `org:${ORG_ID}`,
       expect.objectContaining({ metadata: expect.objectContaining({ apiKeyCleared: true }) }),
     );

@@ -6,6 +6,7 @@ import { checkRateLimit } from '@/lib/rate-limit';
 import { getClientIp } from '@/lib/http/client-ip';
 import { logger } from '@/lib/logger';
 import { redactError } from '@/lib/redact';
+import { audit } from '@/lib/audit/log';
 
 export const dynamic = 'force-dynamic';
 
@@ -74,6 +75,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const result = await connector.testConnection();
 
     if (result.ok) {
+      // Probar una conexión es un evento de auditoría: dice que alguien
+      // tocó la configuración de una fuente de datos del tenant.
+      await audit(ctx.orgId, ctx.userId, 'datasource.tested', `datasource:${id}`, {
+        metadata: { latencyMs: result.latencyMs },
+        req,
+      });
       return NextResponse.json(result);
     }
 
@@ -88,6 +95,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     // straight out of this route. The detail now stays here, and the client
     // gets a stable code plus a message it can show.
     const detail = redactError(result.error);
+
+    // El fallo también queda auditado: un_connection_failed repetido es
+    // el rastro de alguien probando credenciales contra las fuentes del
+    // tenant.
+    await audit(ctx.orgId, ctx.userId, 'datasource.connection_failed', `datasource:${id}`, {
+      metadata: { latencyMs: result.latencyMs },
+      req,
+    });
+
     logger.warn(
       {
         dataSourceId: id,
