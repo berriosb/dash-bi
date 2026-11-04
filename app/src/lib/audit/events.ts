@@ -102,7 +102,9 @@ export const AUDIT_EVENT_CATEGORIES = {
   datasource: ['datasource.created', 'datasource.tested', 'datasource.connection_failed', 'datasource.schema_refreshed', 'datasource.updated', 'datasource.deleted'],
   dashboard: ['dashboard.created', 'dashboard.generated', 'dashboard.updated', 'dashboard.shared', 'dashboard.unshared', 'dashboard.deleted', 'dashboard.duplicated', 'dashboard.exported'],
   query: ['query.executed', 'query.failed', 'query.cache_hit'],
-  export: ['export.pdf_requested', 'export.pdf_completed', 'export.pdf_failed', 'export.png_requested', 'export.png_completed', 'export.link_generated', 'export.link_revoked'],
+  // The PNG export is CLIENT side (html2canvas in the browser): there is no
+  // server route to audit, so there is no event for it.
+  export: ['export.pdf_requested', 'export.pdf_completed', 'export.pdf_failed', 'export.link_generated', 'export.link_revoked'],
   public_link: ['public_link.viewed'],
   nlqa: ['nlqa.question_asked', 'nlqa.answer_generated', 'nlqa.widget_explained'],
   scheduled_report: ['scheduled_report.created', 'scheduled_report.updated', 'scheduled_report.deleted', 'scheduled_report.executed', 'scheduled_report.failed', 'scheduled_report.paused', 'scheduled_report.resumed'],
