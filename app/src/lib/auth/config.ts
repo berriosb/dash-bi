@@ -9,6 +9,7 @@ import { randomUUID } from 'node:crypto';
 import { sendEmail } from '@/lib/email';
 import { MagicLinkEmail } from './messages';
 import { logger } from '@/lib/logger';
+import { auditAuthEvent } from '@/lib/audit/log';
 import { redactError } from '@/lib/redact';
 
 function slugify(value: string): string {
@@ -106,13 +107,24 @@ async function provisionOrgForUser(
       .set({ activeOrgId: orgId })
       .where(eq(schema.users.id, userId));
 
-    // Write the audit row inside the same transaction so it is also
+    // Write the audit rows inside the same transaction so they are also
     // visible under the same GUCs (audit_log_isolation).
     await tx.insert(schema.auditLog).values({
       orgId,
       userId,
       action: 'org.created',
       resource: `org:${orgId}`,
+      metadata: { source: 'signup' },
+    });
+
+    // The account was created. It is the same moment as the org, but a
+    // different fact: `auth.signup` is what the auth category is for, and
+    // the category was empty until now.
+    await tx.insert(schema.auditLog).values({
+      orgId,
+      userId,
+      action: 'auth.signup',
+      resource: `user:${userId}`,
       metadata: { source: 'signup' },
     });
 
@@ -202,6 +214,20 @@ export const auth = betterAuth({
   },
 
   databaseHooks: {
+    session: {
+      create: {
+        after: async (session) => {
+          // A session was created: somebody signed in. This is the event
+          // that makes a brute-force campaign visible.
+          await auditAuthEvent(session.userId, 'auth.login');
+        },
+      },
+      delete: {
+        after: async (session) => {
+          await auditAuthEvent(session.userId, 'auth.logout');
+        },
+      },
+    },
     user: {
       create: {
         before: async (user) => {

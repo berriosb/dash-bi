@@ -1,5 +1,6 @@
-import { withOrgContext } from '@/db/client';
-import { auditLog } from '@/db/schema';
+import { db, withOrgContext } from '@/db/client';
+import { auditLog, orgMembers } from '@/db/schema';
+import { eq, sql } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
 import { getClientIp } from '@/lib/http/client-ip';
 import { redactLogObject } from '@/lib/redact';
@@ -111,6 +112,54 @@ export async function audit(
         resource,
       },
       'audit log failed',
+    );
+  }
+}
+
+/**
+ * The org a user belongs to, for the events that happen BEFORE a request
+ * exists (a login, a logout).
+ *
+ * `audit_log.org_id` is NOT NULL, so an event that cannot be attributed to
+ * an org cannot be stored at all: there is no "system" org to file it
+ * under, and inventing one would put a tenant's login in another
+ * tenant's audit log.
+ */
+async function resolveUserOrgId(userId: string): Promise<string | null> {
+  const rows = await db.transaction(async (tx) => {
+    // The `org_members_isolation` policy reads `app.current_user_id`.
+    await tx.execute(sql`SELECT set_config('app.current_user_id', ${userId}, true)`);
+    return tx
+      .select({ orgId: orgMembers.orgId })
+      .from(orgMembers)
+      .where(eq(orgMembers.userId, userId))
+      .limit(1);
+  });
+  return rows[0]?.orgId ?? null;
+}
+
+/**
+ * Audit an event that belongs to a USER rather than to a request: a login,
+ * a logout, a signup.
+ *
+ * The org comes from the user's membership. When the user has no org yet
+ * (the signup flow creates it right after), there is nowhere to file the
+ * event and it is skipped: an audit row with a wrong org would be worse
+ * than no row.
+ */
+export async function auditAuthEvent(
+  userId: string,
+  action: AuditEvent,
+  options: AuditOptions = {},
+): Promise<void> {
+  try {
+    const orgId = await resolveUserOrgId(userId);
+    if (!orgId) return;
+    await audit(orgId, userId, action, `user:${userId}`, options);
+  } catch (error) {
+    logger.warn(
+      { err: error, userId, action },
+      'audit: could not resolve the org for an auth event',
     );
   }
 }
