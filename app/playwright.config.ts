@@ -53,12 +53,11 @@ export default defineConfig({
     },
   ],
   
-  // The suite runs against `next dev`, as it always has.
+  // The suite runs against the PRODUCTION build.
   //
-  // Running it against the production build (`next build && next start`)
-  // was tried and reverted. Measured here, it is dramatically faster and
-  // removed the local flakiness entirely — 40/40 on three consecutive
-  // chromium runs, ~10 min down to ~3 min:
+  // Measured here, `next start` is dramatically faster than `next dev`,
+  // and that is what removed the suite's local flakiness — 40/40 on
+  // three consecutive chromium runs, ~10 min down to ~3 min:
   //
   //   next dev      3.3s cold · 0.35s warm · ~10s with two browsers in flight
   //   next start    0.038s cold · 0.006s warm · flat under load
@@ -70,28 +69,39 @@ export default defineConfig({
   // measuring, and why the failing set moved between runs with no code
   // change.
   //
-  // It was reverted because in CI that variant lost 5 tests, all in
-  // firefox and mobile-safari, all inside the shared auth helper
-  // (`signup.ok()` false, sign-in never leaving /login). Chromium stayed
-  // fully green, and those two browsers cannot be reproduced on this
-  // machine — firefox and webkit need system libraries (libicu74,
-  // libxml2, libflite1) that require sudo to install. So the cause could
-  // not be diagnosed, only observed, and main has been green on `next dev`.
+  // An earlier attempt at this change lost 5 tests in CI, all in firefox
+  // and mobile-safari, all inside the shared auth helper. It was not the
+  // browsers: the auth rate limiter is per IP, all three Playwright
+  // projects sign up from 127.0.0.1, and the production ceiling is 3
+  // sign-ups per minute. The faster build clustered the sign-ups inside
+  // one 60s window, so the fourth one got a 429 — and the failing test
+  // moved with whichever project ran first, which is why it looked
+  // browser-specific. Reproduced directly: signups 1-3 return 200 and
+  // the 4th returns 429 "Too many requests".
   //
-  // The worker cap and the 60s budget below are the part of the fix that
-  // does not depend on the server type, and they are kept: they took the
-  // local suite from 24/40 to 36/40 before the build variant was tried.
+  // Fixed at the source: the ceilings are configurable
+  // (AUTH_RATE_LIMIT_SIGN_UP_MAX / _SIGN_IN_MAX / _MAX) with the
+  // production values as defaults, CI raises them, and the e2e helper
+  // waits out a 429 instead of failing on it. The limiter stays enabled
+  // everywhere; only its ceiling moves, and only where the traffic comes
+  // from a single IP.
   //
-  // Revisit with someone who can run all three browsers locally: if the
-  // failures are not from the build variant, this is a ~3x speedup and a
-  // strictly higher-fidelity target still on the table.
+  // `NODE_ENV=production` is explicit and load-bearing: Playwright injects
+  // `NODE_ENV=development` into the webServer environment, and a
+  // `next build` that inherits it fails while prerendering the error
+  // boundaries with "Cannot read properties of null (reading 'useContext')".
+  //
+  // `next build` regenerates the output it serves, so `.next` is not wiped
+  // first: that would also drop the webpack cache, and a cold build of
+  // this app measures 214s against 112s warm.
   webServer: {
-    command: 'pnpm dev',
+    command: 'NODE_ENV=production pnpm build && NODE_ENV=production pnpm start',
     url: 'http://localhost:3000',
     reuseExistingServer: !process.env.CI,
-    // Covers server boot. `pnpm dev` compiles routes on demand, so the
-    // first run after a change pays that cost inside this budget.
-    timeout: 300_000,
+    // Covers the build plus the server boot, not just the boot. A cold
+    // build measured 214s, so 600s leaves room for a slower CI runner
+    // while still failing a genuinely hung build.
+    timeout: 600_000,
     stdout: 'pipe',
     stderr: 'pipe',
   },
