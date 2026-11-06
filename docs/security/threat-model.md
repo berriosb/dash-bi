@@ -2,7 +2,7 @@
 
 > Análisis de amenazas antes de codear dash-bi. Define los controles de seguridad obligatorios antes de implementar SQL execution, BYOK, multi-tenant y AI integration.
 
-**Status:** v0.11 (reconciliado contra el código — 2026-11-05)
+**Status:** v0.12 (reconciliado contra el código — 2026-11-06)
 **Prioridad:** P0 — bloquea implementación
 **Responsable:** codehak
 
@@ -28,6 +28,7 @@ Este documento declaraba controles implementados que el código no tenía. La ta
 | **T8** — aislamiento del worker de PDF | `fix/worker-pdf-isolation` | El renderer corre en un servicio sin credenciales de base de datos ni master key (los job workers van aparte, con import dinámico), Chrome se lanza con el sandbox activo y un env mínimo, las peticiones a hosts internos se abortan y la URL del logo del tenant se valida. |
 | **C6** — gate CSRF por origen | `fix/csrf-origin-gate` | Las rutas mutantes de la app verifican el `Origin` (o el `Referer`): `SameSite=Lax` no frena a un atacante same-site, y el ataque no necesita preflight porque `text/plain` es CORS-safelisted. |
 | **C1** — redacción recursiva en el logger | `fix/logging-redaction` | El formatter de Pino recorre el objeto entero: `logger.error({ err })` ya no escribe el mensaje ni el stack del error en claro. El SQL del tenant se loguea como hash + preview de 100 chars, y el print token no se loguea. |
+| **T1** — la escritura en `org_members` queda dentro de la org activa | `0020_org_members_write_scope` | El `WITH CHECK` de la migración 0017 (`user_id = current_user_id OR org_id = app_current_org_id()`) lo cumplía cualquier fila **del llamador**, y una fila del llamador puede nombrar otra org: un usuario podía insertarse a sí mismo en el tenant ajeno con el rol que quisiera. Ahora la escritura exige `org_id = app_current_org_id()`. La lectura no cambia: las dos ramas siguen, porque el switcher necesita todas las membresías del usuario y el listado de miembros, las de la org activa. |
 | **T1** — la cache del query engine no confunde dos preguntas | `2f6a611` | La clave de la cache se construía con `JSON.stringify(query, Object.keys(query).sort())`, y un replacer ARRAY se aplica en todos los niveles: todo objeto anidado salía vacío y dos preguntas distintas compartían clave (y respuesta). Ahora la clave sale de una forma canónica, con las keys ordenadas en todos los niveles. |
 
 Los controles que **no** están implementados y que antes figuraban como `[x]` se marcaron `[ ]` y dicen dónde vive el hueco. Los que sí están implementados y antes figuraban como `[ ]` (por ejemplo `robots.txt`) se marcaron `[x]`.
@@ -48,6 +49,9 @@ Los controles que **no** están implementados y que antes figuraban como `[x]` s
 - [x] ESLint rule custom que rechaza `db.select()` directo en `/app/api/` — `app/.eslint-rules/no-raw-db-queries.cjs`, regla `dash-bi/no-raw-db-queries`, activada en `app/eslint.config.mjs`. También rechaza `db.X()` **dentro** de un callback de `withOrgContext` y cubre `app/src/worker/`.
 - [x] DB user con permisos SELECT-only (sin DML/DDL) — el rol `dashbi_readonly` es el único que ejecuta SQL de usuario. `app/drizzle/migrations/0019_readonly_revoke_internal_tables.sql` le revoca `ALL` sobre `dashboards`, `dashboard_versions`, `llm_usage`, `nlqa_conversations`, `nlqa_messages`, `scheduled_reports`, `scheduled_report_runs`, `alert_events` y `uploaded_files`, y revoca el `DEFAULT PRIVILEGE` sobre `public` que el bootstrap concedía. El bootstrap ya no lo concede: `scripts/postgres/init-roles.sh` y `app/tests/integration/postgres.ts`.
   - Tests: `app/tests/unit/security/readonly-role-grants.test.ts` (revocación sobre las 9 tablas + ausencia del default privilege en ambos bootstraps) y los dos casos de la migración `0019` en `app/tests/integration/rls-isolation.test.ts` (privilegio real contra Postgres + tabla creada después no legible).
+- [x] La escritura de una membresía no puede salir de la org activa — `org_members` es la tabla que decide a qué orgs PERTENECE un usuario: `orgs_isolation` deriva de ahí la visibilidad, y el listado de miembros es esa tabla. Su `WITH CHECK` (migración `0020`) exige `org_id = app_current_org_id()`, así que una fila nueva tiene que ser de la org en la que está la sesión. La migración `0017` lo dejaba en `user_id = current_user_id OR org_id = app_current_org_id()`, y la primera rama la cumple cualquier fila **del llamador**: con eso, insertar `(user_id = yo, org_id = <otro tenant>, role = 'admin')` pasaba el control, y la fila insertada le daba visibilidad de ese tenant.
+  - La LECTURA conserva las dos ramas a propósito: el switcher de orgs tiene que ver TODAS las membresías del usuario (y su GUC es `app.current_user_id` a secas, sin org), y el listado de miembros, los de la org activa.
+  - Tests: `app/tests/integration/rls-isolation.test.ts` (el ataque y el alta del signup, contra Postgres real) y `app/tests/unit/security/org-members-write-scope.test.ts` (el texto de la migración y el invariante de que `provisionOrgForUser` fija el GUC a la org que crea).
 - [x] Tests Vitest de aislamiento (cross-tenant queries devuelven `[]`) — `app/tests/security/tenant-isolation.test.ts` (capa lógica: filtros por rol) y `app/tests/integration/rls-isolation.test.ts` (Postgres real, RLS enforcing).
 - [x] La cache del query engine no confunde dos preguntas distintas — `generateCacheKey` (`app/src/lib/query-engine/cache.ts`) arma la clave con una **forma canónica**: las keys de los objetos se ordenan en todos los niveles. Antes usaba `JSON.stringify(query, Object.keys(query).sort())`, y un replacer array se aplica en todos los niveles, no solo en el de arriba: todo objeto anidado se filtraba con la lista de keys del nivel superior y salía vacío. Dos preguntas que solo difieren en un valor anidado —un `params.limit` de Stripe, un `params[0].id` de SQL, un `dateRange` de GA4— producían la MISMA clave, y el segundo que preguntaba recibía las filas del primero.
   - El orden de un array se preserva a propósito: en SQL el array es el orden de binding.
@@ -371,7 +375,7 @@ if (!ipLimit.allowed) {
 // app/tests/security/tenant-isolation.test.ts   (capa lógica: filtros por rol)
 describe('Cross-tenant isolation', () => {
   it('read isolation', ...);       // conOrgContext(orgA) no ve filas de orgB
-  it('write isolation', ...);      // org_members_isolation bloquea writes cross-org
+  it('write isolation', ...);      // app/tests/integration/rls-isolation.test.ts (migración 0020)
   it('export isolation', ...);     // scheduled_reports / scheduled_report_runs (0013)
   it('cache isolation', ...);      // app/tests/unit/query-engine/cache-key.test.ts
   it('error log isolation', ...);  // — sin cobertura
