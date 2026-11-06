@@ -28,13 +28,30 @@ import { schemaRef } from './postgres';
  */
 const RUNTIME_UNAVAILABLE = /container runtime|Could not find a working container runtime/i;
 
+/**
+ * Drizzle wraps the driver error and keeps the server's message in `cause`,
+ * so "Failed query: insert into …" is all that reaches the top. The reason
+ * the database gave — the one that matters — is further down the chain.
+ */
+function errorChain(error: unknown): string {
+  const parts: string[] = [];
+  let current: unknown = error;
+
+  while (current && typeof current === 'object' && parts.length < 5) {
+    const err = current as { message?: string; cause?: unknown };
+    if (typeof err.message === 'string') parts.push(err.message);
+    current = err.cause;
+  }
+
+  return parts.join(' | ');
+}
+
 async function setRoleAndGucs(
   tx: TestDb,
   orgId: string | null,
   userId: string | null,
   role: 'admin' | 'editor' | 'viewer',
-): Promise<void> {
-  // `set_config(name, value, is_local=true)` mirrors what withOrgContext
+): Promise<void> {  // `set_config(name, value, is_local=true)` mirrors what withOrgContext
   // does in production. SET LOCAL ROLE switches the session to the
   // non-superuser `dashbi` so FORCE RLS applies.
   await tx.execute(sql.raw("SET LOCAL ROLE dashbi"));
@@ -372,6 +389,113 @@ describe('T1 — Cross-tenant isolation (Postgres RLS, real DB)', () => {
         });
       }),
     ).rejects.toThrow();
+  });
+
+  itWithDb('org_members_isolation blocks a cross-org insert made with the CALLER OWN userId (migration 0020)', async () => {
+    const { users, orgs, orgMembers } = schemaRef();
+
+    const [orgA, orgB] = await db.insert(orgs).values([
+      { name: 'Org A', slug: 'self-join-org-a' },
+      { name: 'Org B', slug: 'self-join-org-b' },
+    ]).returning();
+    if (!orgA || !orgB) throw new Error('seed: orgs missing');
+
+    const [adminA, userB] = await db.insert(users).values([
+      { email: 'self-admin-a@test.invalid', name: 'Admin A' },
+      { email: 'self-user-b@test.invalid', name: 'User B' },
+    ]).returning();
+    if (!adminA || !userB) throw new Error('seed: users missing');
+
+    await db.insert(orgMembers).values([
+      { orgId: orgA.id, userId: adminA.id, role: 'admin', joinedAt: new Date() },
+      { orgId: orgB.id, userId: userB.id, role: 'admin', joinedAt: new Date() },
+    ]);
+
+    // THE ATTACK: the admin of Org A adds THEMSELVES to Org B, with the
+    // role they please.
+    //
+    // The `WITH CHECK` of migration 0017 was
+    // `user_id = current_user_id OR org_id = app_current_org_id()`, and the
+    // FIRST branch is satisfied by a row about the caller. So the write went
+    // through — and `orgs_isolation` derives "which orgs can this user see"
+    // from `org_members`, which meant the inserted row granted the attacker
+    // visibility of Org B. Admin of one tenant, admin of all of them.
+    //
+    // The test that claimed to cover this (migration 0017) inserted with
+    // ANOTHER user's id — the invitee's — which the first branch does not
+    // match, so it passed while the actual escalation sat one branch away.
+    await expect(
+      db.transaction(async (tx) => {
+        await setRoleAndGucs(tx, orgA.id, adminA.id, 'admin');
+        await tx.insert(orgMembers).values({
+          orgId: orgB.id,
+          userId: adminA.id,
+          role: 'admin',
+          joinedAt: new Date(),
+        });
+      }),
+    ).rejects.toThrow();
+
+    // Y el motivo del rechazo es el control de RLS, no un crash cualquiera.
+    const error = await db
+      .transaction(async (tx) => {
+        await setRoleAndGucs(tx, orgA.id, adminA.id, 'admin');
+        await tx.insert(orgMembers).values({
+          orgId: orgB.id,
+          userId: adminA.id,
+          role: 'admin',
+          joinedAt: new Date(),
+        });
+      })
+      .catch((e: unknown) => e);
+    expect(errorChain(error)).toMatch(/row-level security/i);
+
+    // And nothing was left behind: the attacker is not a member of Org B.
+    const memberships = await db.transaction(async (tx) => {
+      await setRoleAndGucs(tx, orgA.id, adminA.id, 'admin');
+      return tx
+        .select({ orgId: orgMembers.orgId })
+        .from(orgMembers)
+        .where(eq(orgMembers.userId, adminA.id));
+    });
+    expect(memberships.map((m) => m.orgId)).not.toContain(orgB.id);
+  });
+
+  itWithDb('org_members_isolation still allows the signup provisioning into the org being created (migration 0020)', async () => {
+    const { users, orgs, orgMembers } = schemaRef();
+
+    const [newUser] = await db.insert(users).values({
+      email: 'provisioning@test.invalid',
+      name: 'New Signup',
+    }).returning();
+    if (!newUser) throw new Error('seed: user missing');
+
+    const orgId = '11111111-2222-4333-8444-555555555555';
+
+    // This is what `provisionOrgForUser` does: it sets the GUC to the org it
+    // is about to create and then inserts the FIRST membership row of that
+    // brand-new org. The tightened `WITH CHECK` must not break it.
+    await db.transaction(async (tx) => {
+      await setRoleAndGucs(tx, orgId, newUser.id, 'admin');
+      await tx.insert(orgs).values({
+        id: orgId,
+        name: 'Brand New Org',
+        slug: 'brand-new-org',
+      });
+      await tx.insert(orgMembers).values({
+        orgId,
+        userId: newUser.id,
+        role: 'admin',
+        joinedAt: new Date(),
+      });
+    });
+
+    const [membership] = await db.transaction(async (tx) => {
+      await setRoleAndGucs(tx, orgId, newUser.id, 'admin');
+      return tx.select().from(orgMembers).where(eq(orgMembers.orgId, orgId));
+    });
+    expect(membership?.userId).toBe(newUser.id);
+    expect(membership?.role).toBe('admin');
   });
 
   itWithDb('dashbi_due_scheduled_reports works across orgs for app role and dashbi_readonly cannot read auth tables (migration 0017)', async () => {

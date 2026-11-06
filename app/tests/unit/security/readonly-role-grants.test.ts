@@ -61,14 +61,18 @@ describe('dashbi_readonly — revoked from the internal tenant tables', () => {
     expect(typeof entry?.when).toBe('number');
   });
 
-  it('is the last entry of the journal', () => {
+  it('the journal entries are contiguous and in order', () => {
+    // "0019 is the last entry" was true for one instant: the next migration
+    // stops it from being. What does not depend on the instant is that the
+    // idx form a gapless sequence — a gap means the migrator skips an
+    // entry, and the migration that follows it never runs.
     const journal = JSON.parse(readFileSync(JOURNAL_PATH, 'utf8')) as {
       entries: Array<{ idx: number; tag: string }>;
     };
 
-    const last = journal.entries[journal.entries.length - 1];
-    expect(last?.idx).toBe(19);
-    expect(last?.tag).toBe('0019_readonly_revoke_internal_tables');
+    expect(journal.entries.map((e) => e.idx)).toEqual(
+      journal.entries.map((_, i) => i),
+    );
   });
 
   it.each(INTERNAL_TABLES)('revokes the privilege on %s from dashbi_readonly', (table) => {

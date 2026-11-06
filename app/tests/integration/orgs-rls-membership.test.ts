@@ -160,6 +160,13 @@ describe('RLS on orgs, by membership', () => {
     // This mirrors `provisionOrgForUser` step for step. The org id comes from
     // the app and the INSERT has no RETURNING, because of the trap asserted
     // in the next test.
+    //
+    // The org GUC is the org BEING CREATED, because that is what
+    // `provisionOrgForUser` sets (`app/src/lib/auth/config.ts`): the session
+    // is scoped to the new org for the whole transaction. The membership
+    // policy of migration 0020 writes only inside the active org, so this
+    // test has to carry the same GUC the code carries — with a placeholder
+    // org it was modeling a transaction that does not exist.
     const orgId = '66666666-6666-6666-6666-666666666666';
     const visible = await asApp(
       async (tx) => {
@@ -184,7 +191,7 @@ describe('RLS on orgs, by membership', () => {
         );
       },
       USER_NEW,
-      NO_ORG_YET,
+      orgId,
     );
     expect(visible[0]?.n).toBe(1);
   });
