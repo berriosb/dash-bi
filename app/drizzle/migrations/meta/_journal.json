@@ -141,6 +141,13 @@
       "when": 1791997200000,
       "tag": "0019_readonly_revoke_internal_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1792000800000,
+      "tag": "0020_org_members_write_scope",
+      "breakpoints": true
     }
   ]
 }
