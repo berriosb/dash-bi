@@ -15,8 +15,6 @@ import { sql } from 'drizzle-orm';
 import { withOrgContext } from '@/db/client';
 import { llmUsage } from '@/db/schema';
 import { logger } from '@/lib/logger';
-import { calculateCostUsd, type LLMUsage } from '@/lib/ai/types';
-import { evaluateLLMQuota } from '@/lib/observability/llm-quota';
 
 /** Presupuesto mensual en USD por plan. 0 = ilimitado. */
 export const PLAN_LLM_BUDGET_USD = {
@@ -150,85 +148,4 @@ export async function getOrgMonthSpendUsd(
   now: Date = new Date(),
 ): Promise<number> {
   return (await getOrgMonthUsage(orgId, userId, now)).spendUsd;
-}
-
-/**
- * Throw if the org has already exhausted its monthly budget. Call this
- * BEFORE invoking the model — once the tokens are spent, a warning is
- * worth nothing.
- */
-export async function assertOrgCanSpendLlm(
-  orgId: string,
-  userId: string,
-  plan: string,
-  now: Date = new Date(),
-): Promise<void> {
-  const budget = resolveBudgetUsd(plan);
-  // Unlimited plans skip the query entirely.
-  if (budget <= 0) return;
-
-  const { spendUsd, requests } = await getOrgMonthUsage(orgId, userId, now);
-
-  // The SAME evaluation that decides to block also emits the signal: a
-  // Sentry breadcrumb at 80% of the budget and a captureException at
-  // 100%. Before this, `evaluateLLMQuota` had no production caller at
-  // all: the "budget alert" the threat model claimed existed was dead
-  // code.
-  const verdict = evaluateLLMQuota(
-    { orgId, monthSpendUsd: spendUsd, monthRequests: requests },
-    { monthlyBudgetUsd: budget },
-  );
-
-  if (verdict.status === 'block') {
-    throw new LLMBudgetExceededError(spendUsd, budget);
-  }
-}
-
-export interface RecordLLMUsageInput {
-  orgId: string;
-  userId: string | null;
-  provider: string;
-  model: string;
-  usage: LLMUsage | undefined;
-  latencyMs?: number;
-  success?: boolean;
-  error?: string;
-}
-
-/**
- * Record one model call in `llm_usage` and raise the observability
- * signal for the org's budget state.
- *
- * Centralizing this means a new AI route cannot forget to bill: it only
- * has to call this. Recording is best-effort — a failure to write the
- * telemetry row must never fail the user's request, since the tokens
- * are already spent either way.
- */
-export async function recordLLMUsage(input: RecordLLMUsageInput): Promise<void> {
-  const { orgId, userId, provider, model, usage, latencyMs, success = true, error } = input;
-  if (!usage) return;
-
-  const costUsd = calculateCostUsd(model, usage.promptTokens, usage.completionTokens);
-
-  try {
-    await withOrgContext(orgId, userId, 'admin', async (tx) =>
-      tx.insert(llmUsage).values({
-        orgId,
-        userId,
-        provider: provider as never,
-        model,
-        promptTokens: usage.promptTokens,
-        completionTokens: usage.completionTokens,
-        costUsd,
-        latencyMs: latencyMs ?? null,
-        success,
-        error: error ?? null,
-      }),
-    );
-  } catch (writeError) {
-    logger.warn(
-      { orgId, model, reason: (writeError as Error).message },
-      'llm_usage write failed; spend not recorded',
-    );
-  }
 }

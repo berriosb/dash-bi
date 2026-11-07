@@ -22,8 +22,7 @@ const {
   mockAiGateway,
   mockGenerateDashboard,
   mockGenerateNLQAEdit,
-  mockRecordLLMUsage,
-  mockAssertOrgCanSpendLlm,
+  mockReserveLlmBudget,
   mockAudit,
   mockResolveConnector,
   mockHydrateDashboard,
@@ -34,8 +33,7 @@ const {
   mockAiGateway: vi.fn(),
   mockGenerateDashboard: vi.fn(),
   mockGenerateNLQAEdit: vi.fn(),
-  mockRecordLLMUsage: vi.fn(),
-  mockAssertOrgCanSpendLlm: vi.fn(),
+  mockReserveLlmBudget: vi.fn(),
   mockAudit: vi.fn(),
   mockResolveConnector: vi.fn(),
   mockHydrateDashboard: vi.fn(),
@@ -45,9 +43,8 @@ vi.mock('@/lib/auth/request', () => ({ requireAuth: mockRequireAuth }));
 vi.mock('@/db/client', () => ({ withOrgContext: mockWithOrgContext }));
 vi.mock('@/lib/rate-limit', () => ({ checkRateLimit: mockCheckRateLimit }));
 vi.mock('@/lib/ai/gateway', () => ({ AiGateway: mockAiGateway }));
-vi.mock('@/lib/ai/quota', () => ({
-  recordLLMUsage: mockRecordLLMUsage,
-  assertOrgCanSpendLlm: mockAssertOrgCanSpendLlm,
+vi.mock('@/lib/ai/budget-ledger', () => ({
+  reserveLlmBudget: mockReserveLlmBudget,
 }));
 vi.mock('@/lib/audit/log', () => ({ audit: mockAudit }));
 vi.mock('@/lib/query-engine/resolve', () => ({
@@ -57,6 +54,9 @@ vi.mock('@/lib/query-engine/resolve', () => ({
 vi.mock('@/lib/query-engine/dashboard', () => ({ hydrateDashboard: mockHydrateDashboard }));
 
 import { POST } from '@/app/api/dashboards/generate/route';
+
+/** The budget guard the route handed to the gateway. */
+let capturedGuard: (() => Promise<unknown>) | undefined;
 
 /** The org the fake `withOrgContext` returns for the config SELECT. */
 let orgRow: {
@@ -84,8 +84,7 @@ describe('POST /api/dashboards/generate — BYOK (HIGH-9)', () => {
       orgId: 'org-456',
       role: 'editor',
     });
-    mockAssertOrgCanSpendLlm.mockResolvedValue(undefined);
-    mockRecordLLMUsage.mockResolvedValue(undefined);
+    mockReserveLlmBudget.mockResolvedValue({ id: 'res-1', settle: vi.fn() });
     mockAudit.mockResolvedValue(undefined);
     mockHydrateDashboard.mockImplementation(
       async (_orgId: string, _userId: string, widgets: unknown[]) => widgets,
@@ -121,7 +120,15 @@ describe('POST /api/dashboards/generate — BYOK (HIGH-9)', () => {
     // The route builds `new AiGateway(...)`. Vitest 4 checks that the
     // implementation is constructible before applying `new`, so this is a
     // regular function, not an arrow.
-    mockAiGateway.mockImplementation(function () {
+    mockAiGateway.mockImplementation(function (
+      _provider: unknown,
+      _model: unknown,
+      _key: unknown,
+      guard?: () => Promise<unknown>,
+    ) {
+      // The budget is reserved by the gateway before every model call, so
+      // the guard is what the test has to trigger to see the reservation.
+      capturedGuard = guard;
       return {
         generateDashboard: mockGenerateDashboard,
         generateNLQAEdit: mockGenerateNLQAEdit,
@@ -164,7 +171,10 @@ describe('POST /api/dashboards/generate — BYOK (HIGH-9)', () => {
 
     // The cost row has to name the org's provider, not the platform default.
     // Asserting only the token counts is what let the original bug hide.
-    expect(mockRecordLLMUsage).toHaveBeenCalledWith(
+    // The reservation has to name the org's provider, not the platform
+    // default: it is what the budget accounts for.
+    await capturedGuard?.();
+    expect(mockReserveLlmBudget).toHaveBeenCalledWith(
       expect.objectContaining({ provider: 'anthropic', model: 'claude-sonnet-4' }),
     );
   });
@@ -243,7 +253,10 @@ describe('POST /api/dashboards/generate — BYOK (HIGH-9)', () => {
       'encrypted-key-abc',
       expect.any(Function),
     );
-    expect(mockRecordLLMUsage).toHaveBeenCalledWith(
+    // The reservation has to name the org's provider, not the platform
+    // default: it is what the budget accounts for.
+    await capturedGuard?.();
+    expect(mockReserveLlmBudget).toHaveBeenCalledWith(
       expect.objectContaining({ provider: 'anthropic', model: 'claude-sonnet-4' }),
     );
   });

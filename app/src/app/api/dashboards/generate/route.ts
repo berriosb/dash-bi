@@ -8,7 +8,7 @@ import { resolveConnector } from '@/lib/query-engine/resolve';
 import { hydrateDashboard } from '@/lib/query-engine/dashboard';
 import { pruneSchemaForPrompt } from '@/lib/connectors/types';
 import { AiGateway } from '@/lib/ai/gateway';
-import { recordLLMUsage, assertOrgCanSpendLlm } from '@/lib/ai/quota';
+import { reserveLlmBudget } from '@/lib/ai/budget-ledger';
 import { checkRateLimit } from '@/lib/rate-limit';
 import { getClientIp } from '@/lib/http/client-ip';
 import { audit } from '@/lib/audit/log';
@@ -97,7 +97,13 @@ export async function POST(req: Request) {
     // call, not once per request. A request that makes two calls (NLQA:
     // the SQL and then the answer) had its second call unchecked.
     const gateway = new AiGateway(provider, modelName, apiKeyEncrypted, () =>
-      assertOrgCanSpendLlm(ctx.orgId, ctx.userId, orgConfig?.plan ?? 'free'),
+      reserveLlmBudget({
+        orgId: ctx.orgId,
+        userId: ctx.userId,
+        plan: orgConfig?.plan ?? 'free',
+        provider,
+        model: modelName,
+      }),
     );
 
     let responsePayload: {
@@ -116,7 +122,6 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: 'Dashboard not found' }, { status: 404 });
       }
 
-      const editStartedAt = Date.now();
       const editResult = await gateway.generateNLQAEdit({
         prompt,
         existingDashboard: {
@@ -168,14 +173,6 @@ export async function POST(req: Request) {
           .returning()
       );
 
-      await recordLLMUsage({
-        orgId: ctx.orgId,
-        userId: ctx.userId,
-        provider,
-        model: modelName,
-        usage: editResult.usage,
-        latencyMs: Date.now() - editStartedAt,
-      });
 
       await audit(ctx.orgId, ctx.userId, 'dashboard.updated', `dashboard:${dashboardId}`, {
         metadata: {
@@ -192,7 +189,6 @@ export async function POST(req: Request) {
         reasoning: editResult.reasoning,
       };
     } else {
-      const generatedStartedAt = Date.now();
       const generated = await gateway.generateDashboard({
         prompt,
         schemaInfo: JSON.stringify(prunedSchema, null, 2),
@@ -200,14 +196,6 @@ export async function POST(req: Request) {
         dataSourceType: dsType,
       });
 
-      await recordLLMUsage({
-        orgId: ctx.orgId,
-        userId: ctx.userId,
-        provider,
-        model: modelName,
-        usage: generated.usage,
-        latencyMs: Date.now() - generatedStartedAt,
-      });
 
       const hydratedWidgets = await hydrateDashboard(ctx.orgId, ctx.userId, generated.widgets, ctx.role);
 

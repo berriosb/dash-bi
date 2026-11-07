@@ -7,7 +7,7 @@ import { orgs } from '@/db/schema';
 import { requireAuth } from '@/lib/auth/request';
 import { AiGateway } from '@/lib/ai/gateway';
 import { type LLMProvider } from '@/lib/ai/types';
-import { recordLLMUsage, assertOrgCanSpendLlm } from '@/lib/ai/quota';
+import { reserveLlmBudget } from '@/lib/ai/budget-ledger';
 import { checkRateLimit } from '@/lib/rate-limit';
 import { getClientIp } from '@/lib/http/client-ip';
 import { audit } from '@/lib/audit/log';
@@ -97,25 +97,20 @@ export async function POST(req: Request) {
     // The budget gate lives in the gateway: it runs before EVERY model
     // call, not once per request.
     const gateway = new AiGateway(provider, modelName, apiKeyEncrypted, () =>
-      assertOrgCanSpendLlm(ctx.orgId, ctx.userId, orgConfig?.plan ?? 'free'),
+      reserveLlmBudget({
+        orgId: ctx.orgId,
+        userId: ctx.userId,
+        plan: orgConfig?.plan ?? 'free',
+        provider,
+        model: modelName,
+      }),
     );
 
-    const startTime = Date.now();
     const explanation = await gateway.explainWidgetData({
       widgetTitle,
       widgetType,
       data,
       context,
-    });
-    const latencyMs = Date.now() - startTime;
-
-    await recordLLMUsage({
-      orgId: ctx.orgId,
-      userId: ctx.userId,
-      provider,
-      model: modelName,
-      usage: explanation.usage,
-      latencyMs,
     });
 
     await audit(ctx.orgId, ctx.userId, 'nlqa.widget_explained', `widget:${widgetTitle}`, {

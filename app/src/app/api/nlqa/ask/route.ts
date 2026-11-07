@@ -8,7 +8,7 @@ import { requireAuth } from '@/lib/auth/request';
 import { resolveConnector } from '@/lib/query-engine/resolve';
 import { executeWithTimeout } from '@/lib/query-engine/execute';
 import { AiGateway, type NLQAHistoryTurn } from '@/lib/ai/gateway';
-import { recordLLMUsage, assertOrgCanSpendLlm } from '@/lib/ai/quota';
+import { reserveLlmBudget } from '@/lib/ai/budget-ledger';
 import { validateQuery, ValidationError } from '@/lib/security/validate-query';
 import { sqlLogFields } from '@/lib/log/sql-preview';
 import { audit } from '@/lib/audit/log';
@@ -164,10 +164,15 @@ export async function POST(req: Request) {
     // call. Two LLM calls happen per question (the SQL and then the
     // answer), and the second one used to run with no check at all.
     const gateway = new AiGateway(provider, modelName, apiKeyEncrypted ?? undefined, () =>
-      assertOrgCanSpendLlm(ctx.orgId, ctx.userId, orgConfig?.plan ?? 'free'),
+      reserveLlmBudget({
+        orgId: ctx.orgId,
+        userId: ctx.userId,
+        plan: orgConfig?.plan ?? 'free',
+        provider,
+        model: modelName,
+      }),
     );
 
-    const sqlStartedAt = Date.now();
     const sqlResult = await gateway.generateNLQASql({
       question,
       schemaInfo: JSON.stringify(rawSchema, null, 2),
@@ -175,14 +180,6 @@ export async function POST(req: Request) {
       history,
     });
 
-    await recordLLMUsage({
-      orgId: ctx.orgId,
-      userId: ctx.userId,
-      provider,
-      model: modelName,
-      usage: sqlResult.usage,
-      latencyMs: Date.now() - sqlStartedAt,
-    });
 
     if (!sqlResult.sql) {
       const fallback = sqlResult.fallbackAnswer ?? 'No puedo responder esa pregunta con los datos disponibles.';
@@ -290,7 +287,6 @@ export async function POST(req: Request) {
     }
     const execMs = Date.now() - execStart;
 
-    const answerStartedAt = Date.now();
     const answerResult = await gateway.generateNLQAAnswer({
       question,
       sql: sqlResult.sql,
@@ -300,14 +296,6 @@ export async function POST(req: Request) {
 
     // Second model call of the same question — billed separately, since
     // it is a distinct request with its own prompt and completion.
-    await recordLLMUsage({
-      orgId: ctx.orgId,
-      userId: ctx.userId,
-      provider,
-      model: modelName,
-      usage: answerResult.usage,
-      latencyMs: Date.now() - answerStartedAt,
-    });
 
     const [assistantMsg] = await withOrgContext(ctx.orgId, ctx.userId, ctx.role, async (tx) =>
       tx.insert(nlqaMessages)
