@@ -23,6 +23,7 @@ import * as schema from '@/db/schema';
 export const RESET_SQL = `
 DROP TABLE IF EXISTS alert_events CASCADE;
 DROP TABLE IF EXISTS alert_rules CASCADE;
+DROP TABLE IF EXISTS llm_budget_reservations CASCADE;
 DROP TABLE IF EXISTS nlqa_messages CASCADE;
 DROP TABLE IF EXISTS nlqa_conversations CASCADE;
 DROP TABLE IF EXISTS audit_log CASCADE;
@@ -161,6 +162,19 @@ export async function getTestDb(): Promise<TestDb> {
     await applyMigrations(baseDb);
   }
   return baseDb!;
+}
+
+/**
+ * The container's connection URI.
+ *
+ * The app's own DB client (`@/db/client`) reads `DATABASE_URL` when the
+ * module loads, so a test that exercises the app's client against the
+ * container has to point that variable at the container BEFORE the module
+ * is imported (with `vi.resetModules()` in between).
+ */
+export function testDbUri(): string {
+  if (!container) throw new Error('getTestDb() must run before testDbUri()');
+  return appConnectionUri(container);
 }
 
 export async function resetDb(): Promise<void> {
