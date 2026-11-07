@@ -68,7 +68,7 @@ describe('AiGateway — NLQA methods', () => {
           sql: 'SELECT SUM(amount) FROM subs WHERE date BETWEEN $1 AND $2',
           params: ['2026-07-01', '2026-07-31'],
         },
-        usage: { promptTokens: 100, completionTokens: 50 },
+        usage: { inputTokens: 100, outputTokens: 50 },
       });
 
       const gateway = new AiGateway('openai', 'gpt-4o');
@@ -90,7 +90,7 @@ describe('AiGateway — NLQA methods', () => {
           sql: null,
           fallbackAnswer: 'Pregunta conceptual sin datos disponibles.',
         },
-        usage: { promptTokens: 80, completionTokens: 40 },
+        usage: { inputTokens: 80, outputTokens: 40 },
       });
 
       const gateway = new AiGateway('openai', 'gpt-4o');
@@ -107,7 +107,7 @@ describe('AiGateway — NLQA methods', () => {
     it('includes history in prompt when provided', async () => {
       mockGenerateObject.mockResolvedValueOnce({
         object: { reasoning: '', sql: 'SELECT COUNT(*) FROM t', params: [] },
-        usage: { promptTokens: 0, completionTokens: 0 },
+        usage: { inputTokens: 0, outputTokens: 0 },
       });
 
       const gateway = new AiGateway('openai', 'gpt-4o');
@@ -138,7 +138,7 @@ describe('AiGateway — NLQA methods', () => {
             config: { format: 'currency' },
           },
         },
-        usage: { promptTokens: 200, completionTokens: 80 },
+        usage: { inputTokens: 200, outputTokens: 80 },
       });
 
       const gateway = new AiGateway('openai', 'gpt-4o');
@@ -158,7 +158,7 @@ describe('AiGateway — NLQA methods', () => {
           answer: 'No hay datos.',
           chartSuggestion: null,
         },
-        usage: { promptTokens: 100, completionTokens: 40 },
+        usage: { inputTokens: 100, outputTokens: 40 },
       });
 
       const gateway = new AiGateway('openai', 'gpt-4o');
@@ -187,7 +187,7 @@ describe('AiGateway — NLQA methods', () => {
             },
           ],
         },
-        usage: { promptTokens: 300, completionTokens: 120 },
+        usage: { inputTokens: 300, outputTokens: 120 },
       });
 
       const gateway = new AiGateway('openai', 'gpt-4o');
@@ -211,7 +211,7 @@ describe('AiGateway — NLQA methods', () => {
           action: 'noop',
           reasoning: 'No está claro qué hacer',
         },
-        usage: { promptTokens: 0, completionTokens: 0 },
+        usage: { inputTokens: 0, outputTokens: 0 },
       });
 
       const gateway = new AiGateway('openai', 'gpt-4o');

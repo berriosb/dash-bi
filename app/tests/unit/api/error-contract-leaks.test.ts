@@ -61,9 +61,8 @@ vi.mock('@/lib/logger', () => ({
   logRequest: vi.fn(() => ({ correlationId: 'req_test', logger: mockLogger })),
 }));
 vi.mock('@/lib/audit/log', () => ({ audit: vi.fn().mockResolvedValue(undefined) }));
-vi.mock('@/lib/ai/quota', () => ({
-  recordLLMUsage: vi.fn().mockResolvedValue(undefined),
-  assertOrgCanSpendLlm: vi.fn().mockResolvedValue(undefined),
+vi.mock('@/lib/ai/budget-ledger', () => ({
+  reserveLlmBudget: vi.fn().mockResolvedValue({ id: 'res-1', settle: vi.fn() }),
 }));
 vi.mock('@/lib/ai/gateway', () => ({
   // The route builds `new AiGateway(...)`. Vitest 4 checks that the

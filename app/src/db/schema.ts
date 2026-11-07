@@ -388,6 +388,54 @@ export const llmUsage = pgTable(
 );
 
 // ─────────────────────────────────────────────────────────────────
+// LLM budget reservations (the ledger)
+// ─────────────────────────────────────────────────────────────────
+
+/**
+ * The money that is COMMITTED but not yet spent.
+ *
+ * `llm_usage` records what a call cost, and it can only know that after
+ * the call. The budget gate runs before it, so a gate that only reads
+ * `llm_usage` is a check and not a gate: N calls that start at the same
+ * time all read the same spend, all pass, and all spend.
+ *
+ * A reservation is the estimate a call commits BEFORE it starts. The
+ * next caller sees it, so the burst has something to run into. When the
+ * call finishes, the reservation is settled with the real cost and the
+ * real cost lands in `llm_usage` — in the same transaction, so the money
+ * is never counted twice.
+ *
+ * `settled_usd` is NULL while the call is in flight; `reserved_usd` is
+ * what it was assumed to cost.
+ */
+export const llmBudgetReservations = pgTable(
+  'llm_budget_reservations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id').references(() => users.id),
+
+    provider: llmProviderEnum('provider').notNull(),
+    model: text('model').notNull(),
+
+    /** What the call was assumed to cost while it was in flight. */
+    reservedUsd: text('reserved_usd').notNull(),
+    /** What it actually cost. NULL until the call is settled. */
+    settledUsd: text('settled_usd'),
+    /** 'pending' while in flight, 'settled' once the real cost is known. */
+    status: text('status').notNull().default('pending'),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    settledAt: timestamp('settled_at', { withTimezone: true }),
+  },
+  (t) => ({
+    orgIdx: index('llm_budget_reservations_org_idx').on(t.orgId),
+    pendingIdx: index('llm_budget_reservations_pending_idx').on(t.orgId, t.status),
+    createdAtIdx: index('llm_budget_reservations_created_at_idx').on(t.createdAt),
+  }),
+);
+
+// ─────────────────────────────────────────────────────────────────
 // Audit Log
 // ─────────────────────────────────────────────────────────────────
 

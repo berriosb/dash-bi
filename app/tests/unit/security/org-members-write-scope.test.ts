@@ -73,14 +73,18 @@ describe('org_members — la escritura queda dentro de la org activa', () => {
     expect(typeof entry?.when).toBe('number');
   });
 
-  it('is the last entry of the journal', () => {
+  it('the journal entries are contiguous and in order', () => {
+    // "0020 is the last entry" was true for one instant: the next
+    // migration stops it from being. What does not depend on the instant
+    // is that the idx form a gapless sequence — a gap means the migrator
+    // skips an entry, and the migration after it never runs.
     const journal = JSON.parse(readFileSync(JOURNAL_PATH, 'utf8')) as {
       entries: Array<{ idx: number; tag: string }>;
     };
 
-    const last = journal.entries[journal.entries.length - 1];
-    expect(last?.idx).toBe(20);
-    expect(last?.tag).toBe('0020_org_members_write_scope');
+    expect(journal.entries.map((e) => e.idx)).toEqual(
+      journal.entries.map((_, i) => i),
+    );
   });
 
   it('recreates the policy instead of adding a second one', () => {

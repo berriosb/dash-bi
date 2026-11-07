@@ -166,8 +166,27 @@ export interface ExplainWidgetOutput extends WidgetExplanationResult {
   };
 }
 
+/** The usage shape the AI SDK reports, narrowed to what the budget needs. */
+export interface AiGatewayUsage {
+  inputTokens?: number | undefined;
+  outputTokens?: number | undefined;
+}
+
 /**
- * The check that runs before EVERY model call.
+ * The reservation a call holds while it is in flight.
+ *
+ * The gateway only needs to know how to close it. Where the reservation
+ * lives, and what it reserves, is the budget's business.
+ */
+export interface AiGatewayReservation {
+  settle(
+    usage: LLMUsage | undefined,
+    meta: { latencyMs?: number; success: boolean; error?: string },
+  ): Promise<void>;
+}
+
+/**
+ * Reserves the budget before EVERY model call.
  *
  * The budget used to be checked once per REQUEST, at the route. An NLQA
  * question makes two model calls (generate the SQL, then answer it), so
@@ -176,27 +195,57 @@ export interface ExplainWidgetOutput extends WidgetExplanationResult {
  *
  * The gateway is the funnel every model call goes through, so the check
  * belongs here: a new AI route cannot forget it.
+ *
+ * And it is a RESERVATION, not a check. A check reads the month's spend
+ * and compares it with the cap, but the spend is recorded after the
+ * call: N calls that started together all read the SAME spend, all
+ * passed, and all spent. The returned reservation is part of what the
+ * next caller sees, so the burst has something to run into.
+ *
+ * Throwing from the guard refuses the call (the budget error maps to a
+ * 402 in the error contract).
  */
-export type AiGatewaySpendGuard = () => Promise<void>;
+export type AiGatewaySpendGuard = () => Promise<AiGatewayReservation | null>;
 
 export class AiGateway {
   constructor(
     private provider: LLMProvider = 'openai',
     private modelName: string = 'gpt-4o',
     private encryptedApiKey?: string,
-    /** Checked before every model call. Optional for callers without a budget. */
+    /** Reserves the budget before every model call. Optional for callers without a budget. */
     private spendGuard?: AiGatewaySpendGuard,
   ) {}
 
   /**
-   * Refuse the call when the org is over its monthly budget.
+   * Run a model call with the budget reserved around it.
    *
-   * Throws whatever the guard throws (the budget error maps to a 402 in
-   * the error contract).
+   * The reservation is taken BEFORE the call and settled after, and it
+   * happens in the same place for every call: a new AI route cannot
+   * forget it, and no call starts without the budget knowing about it.
    */
-  private async assertCanSpend(): Promise<void> {
-    if (!this.spendGuard) return;
-    await this.spendGuard();
+  private async guardedCall<T extends { usage?: AiGatewayUsage }>(
+    call: () => Promise<T>,
+  ): Promise<T> {
+    const reservation = this.spendGuard ? await this.spendGuard() : null;
+    const startedAt = Date.now();
+
+    try {
+      const result = await call();
+      await reservation?.settle(toLLMUsage(result.usage), {
+        latencyMs: Date.now() - startedAt,
+        success: true,
+      });
+      return result;
+    } catch (error) {
+      // A failed call still has to close its reservation: the estimate
+      // would otherwise sit against the budget until the TTL expires.
+      await reservation?.settle(undefined, {
+        latencyMs: Date.now() - startedAt,
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
   }
 
   async generateDashboard(input: GenerateDashboardInput): Promise<Dashboard & { usage?: LLMUsage }> {
@@ -232,14 +281,15 @@ Reglas estrictas:
 8. No generes colores, fuentes, radios, sombras, gradientes, animaciones ni clases CSS. El renderer resuelve todo desde tokens semánticos.
 `;
 
-    await this.assertCanSpend();
 
-    const result = await generateObject({
-      model,
-      schema: generatedDashboardSchema,
-      prompt: `Prompt del usuario: "${input.prompt}"`,
-      system: systemPrompt,
-    });
+    const result = await this.guardedCall(() =>
+      generateObject({
+        model,
+        schema: generatedDashboardSchema,
+        prompt: `Prompt del usuario: "${input.prompt}"`,
+        system: systemPrompt,
+      }),
+    );
 
     const generatedObj = result.object;
     const theme = archetypeTemplate.recommendedTheme === 'auto'
@@ -297,14 +347,15 @@ ${input.question}
 # OUTPUT (solo JSON válido, sin texto extra)
 `;
 
-    await this.assertCanSpend();
 
-    const result = await generateObject({
-      model,
-      schema: nlqaSqlSchema,
-      prompt: systemPrompt,
-      temperature: 0.1,
-    });
+    const result = await this.guardedCall(() =>
+      generateObject({
+        model,
+        schema: nlqaSqlSchema,
+        prompt: systemPrompt,
+        temperature: 0.1,
+      }),
+    );
 
     return { ...result.object, usage: toLLMUsage(result.usage) };
   }
@@ -351,14 +402,15 @@ Devolvé JSON con:
 
 ${input.history?.length ? `# HISTORIAL (contexto)\n${input.history.map((h) => `${h.role.toUpperCase()}: ${h.content}`).join('\n')}\n\n` : ''}`;
 
-    await this.assertCanSpend();
 
-    const result = await generateObject({
-      model,
-      schema: nlqaAnswerSchema,
-      prompt: systemPrompt,
-      temperature: 0.3,
-    });
+    const result = await this.guardedCall(() =>
+      generateObject({
+        model,
+        schema: nlqaAnswerSchema,
+        prompt: systemPrompt,
+        temperature: 0.3,
+      }),
+    );
 
     return { ...result.object, usage: toLLMUsage(result.usage) };
   }
@@ -418,14 +470,15 @@ ${input.prompt}
       modifyWidgetId: z.string().optional(),
     });
 
-    await this.assertCanSpend();
 
-    const result = await generateObject({
-      model,
-      schema: editResultSchema,
-      prompt: systemPrompt,
-      temperature: 0.2,
-    });
+    const result = await this.guardedCall(() =>
+      generateObject({
+        model,
+        schema: editResultSchema,
+        prompt: systemPrompt,
+        temperature: 0.2,
+      }),
+    );
 
     return { ...(result.object as Omit<NLQAEditResult, 'usage'>), usage: toLLMUsage(result.usage) };
   }
@@ -461,14 +514,15 @@ ${JSON.stringify(input.data ?? { value: null }, null, 2)}
 7. Idioma: Español ejecutivo neutro.
 `;
 
-    await this.assertCanSpend();
 
-    const result = await generateObject({
-      model,
-      schema: widgetExplanationSchema,
-      prompt: systemPrompt,
-      temperature: 0.2,
-    });
+    const result = await this.guardedCall(() =>
+      generateObject({
+        model,
+        schema: widgetExplanationSchema,
+        prompt: systemPrompt,
+        temperature: 0.2,
+      }),
+    );
 
     return {
       ...result.object,
