@@ -22,6 +22,75 @@ function slugify(value: string): string {
     .slice(0, 64) || 'org';
 }
 
+/**
+ * Lee un límite de tasa desde el entorno, con fallback.
+ *
+ * Un valor no numérico o no positivo se ignora: un typo en la variable
+ * tiene que dejar el límite de producción en su valor por defecto, no
+ * desactivarlo.
+ */
+function rateLimitFromEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === '') return fallback;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    logger.warn({ env: name, reason: 'invalid value, using default' }, 'auth rate limit override ignored');
+    return fallback;
+  }
+  return parsed;
+}
+
+/**
+ * Techos del limitador de auth.
+ *
+ * Los valores por defecto son los de producción y no cambian: el
+ * limitador sigue activo y con el mismo tope. Lo que se hace configurable
+ * es el techo, y solo para entornos donde el traffic es de una sola IP.
+ *
+ * El motivo es concreto: la suite e2e crea una cuenta por test, y los tres
+ * proyectos de Playwright (chromium, firefox, mobile-safari) salen todos
+ * desde 127.0.0.1. Con el tope de 3 sign-ups por minuto, el cuarto signup
+ * dentro de la ventana recibía un 429 y el test fallaba por un límite que
+ * no tenía nada que ver con el código bajo prueba. Peor: el síntoma
+ * cambiaba según qué proyecto corría primero, así que parecía un problema
+ * de un navegador concreto cuando era del limitador.
+ *
+ * Subir el techo en el entorno de e2e deja el limitador ejercitándose —
+ * no se desactiva — y con un techo que la suite no atraviesa.
+ */
+/**
+ * Si la cookie de sesión debe llevar el flag `Secure`.
+ *
+ * No se deriva de NODE_ENV sino del esquema real de la URL pública.
+ *
+ * Con NODE_ENV=production la cookie salía con `Secure` siempre, y el
+ * navegador solo la manda por HTTPS. Chrome y Firefox aceptan un
+ * origen `http://localhost` como confiable y la dejan pasar; WebKit no.
+ * El síntoma era un bucle de redirección en mobile-safari: /dashboards
+ * respondía con un redirect a /login porque la cookie nunca salía.
+ *
+ * Pero el problema de fondo no es el test: dash-bi es self-hosted, y un
+ * operador que lo sirva por HTTP en una red interna —o detrás de un
+ * proxy que termina TLS y publica un origin http://— queda con una
+ * cookie que el navegador no manda, y nadie puede entrar. La pregunta
+ * correcta es "la app se sirve por HTTPS", y eso se deduce de la URL
+ * pública.
+ *
+ * AUTH_USE_SECURE_COOKIES fuerza el valor cuando la respuesta
+ * automatica no alcanza.
+ */
+function useSecureCookiesFromEnv(): boolean {
+  const override = process.env.AUTH_USE_SECURE_COOKIES;
+  if (override === 'true') return true;
+  if (override === 'false') return false;
+  const publicUrl = process.env.BETTER_AUTH_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? '';
+  return publicUrl.startsWith('https://');
+}
+
+const authRateLimitMax = rateLimitFromEnv('AUTH_RATE_LIMIT_MAX', 30);
+const signUpRateLimitMax = rateLimitFromEnv('AUTH_RATE_LIMIT_SIGN_UP_MAX', 3);
+const signInRateLimitMax = rateLimitFromEnv('AUTH_RATE_LIMIT_SIGN_IN_MAX', 5);
+
 async function uniqueSlug(tx: Tx, base: string): Promise<string> {
   let candidate = base;
   let suffix = 0;
@@ -181,7 +250,7 @@ export const auth = betterAuth({
   // `defaultRandom()` and pass it back through RETURNING.
   advanced: {
     cookiePrefix: 'dashbi',
-    useSecureCookies: process.env.NODE_ENV === 'production',
+    useSecureCookies: useSecureCookiesFromEnv(),
     database: {
       generateId: false,
     },
@@ -298,10 +367,10 @@ export const auth = betterAuth({
   rateLimit: {
     enabled: true,
     window: 60,  // 1 minuto
-    max: 30,     // 30 requests por ventana (global)
+    max: authRateLimitMax,
     customRules: {
-      '/sign-in/email': { window: 60, max: 5 },
-      '/sign-up/email': { window: 60, max: 3 },
+      '/sign-in/email': { window: 60, max: signInRateLimitMax },
+      '/sign-up/email': { window: 60, max: signUpRateLimitMax },
       '/magic-link/send': { window: 60, max: 3 },
       '/forgot-password': { window: 60, max: 3 },
       '/reset-password': { window: 60, max: 5 },

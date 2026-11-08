@@ -219,6 +219,15 @@ jobs:
             echo "REDIS_URL=redis://localhost:6379"
             echo "BETTER_AUTH_URL=http://localhost:3000"
             echo "NEXT_PUBLIC_APP_URL=http://localhost:3000"
+            # The auth rate limiter is per IP, and every Playwright project
+            # signs up from 127.0.0.1. The production ceilings (3 sign-ups
+            # and 5 sign-ins per minute) are below what the suite needs, so
+            # the fourth signup in a window got a 429 and failed a test for
+            # reasons unrelated to the code under test. The limiter stays
+            # enabled; only its ceiling moves, and only here.
+            echo "AUTH_RATE_LIMIT_SIGN_UP_MAX=200"
+            echo "AUTH_RATE_LIMIT_SIGN_IN_MAX=200"
+            echo "AUTH_RATE_LIMIT_MAX=1000"
           } >> "$GITHUB_ENV"
 
       # Migrations reference the dashbi_readonly role (GRANT statements
